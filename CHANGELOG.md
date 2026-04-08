@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - mock bridge coverage for transforms, parenting, prefab instantiation, and recursive scene cleanup
 - MCP adapter coverage for initialize, tools/list, and real tools/call flows against the mock Unity bridge
 - curated MCP matrix coverage now exercises most of the high-level tool surface in one pass
+- the live MCP pass runner can now emit debug reports, capture failure console snapshots, and follow Unity editor port rebinds during play-mode transitions
 - docs and test plan coverage for the higher-level sample-building workflow
 - public contribution flow with a lightweight CLA policy, commit sign-off guidance, and PR checklist updates
 

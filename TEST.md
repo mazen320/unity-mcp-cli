@@ -31,4 +31,10 @@ python -m pip install -e .
 python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp.tests.test_full_e2e -v
 cli-anything-unity-mcp --help
 python .\scripts\run_live_mcp_pass.py --port 7891
+python .\scripts\run_live_mcp_pass.py --port 7891 --include-heavy --debug --report-file .\.cli-anything-unity-mcp\live-pass-heavy-debug.json
 ```
+
+Live pass notes:
+- The live pass runner now follows Unity bridge rebinds across the configured scan range instead of assuming the editor stays on a single port.
+- `--debug` records per-step timings, raw MCP payloads, and Unity console snapshots for failed steps.
+- `--report-file` writes the full run report to disk for later inspection.
