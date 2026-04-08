@@ -40,6 +40,7 @@ setup(
     entry_points={
         "console_scripts": [
             "cli-anything-unity-mcp=cli_anything.unity_mcp.unity_mcp_cli:cli",
+            "cli-anything-unity-mcp-mcp=cli_anything.unity_mcp.mcp_server:main",
         ]
     },
 )

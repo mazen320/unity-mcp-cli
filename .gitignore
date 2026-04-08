@@ -10,6 +10,7 @@ __pycache__/
 .coverage
 htmlcov/
 tmp*/
+tmp-game-capture-*.png
 dist/
 build/
 .vs/

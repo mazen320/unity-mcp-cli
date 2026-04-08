@@ -83,6 +83,14 @@ After installation, the command is:
 cli-anything-unity-mcp
 ```
 
+Optional thin MCP adapter:
+
+```powershell
+cli-anything-unity-mcp-mcp --default-port <port> --port-range-start <port> --port-range-end <port>
+```
+
+That adapter stays intentionally small. It exposes a curated high-level tool set and a `unity_tool_call` escape hatch instead of mirroring hundreds of tools one-by-one.
+
 ## Plugin Setup
 
 The CLI is not the Unity plugin.
@@ -149,6 +157,7 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - run a reusable advanced-tool audit across safe categories and sample-backed graphics/physics probes
 - validate scenes for missing references and compile problems
 - control play mode with recovery when the bridge rebinds
+- optionally expose a thin MCP server with curated tools when a client needs MCP transport
 
 For faster FPS iteration, use:
 
@@ -157,6 +166,7 @@ cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase 
 ```
 
 `quick` skips captures and play-mode checks, `standard` keeps a single game capture, and `deep` runs the full validation pass.
+
 - run high-level smoke tests that clean up after themselves
 - emulate MCP-style meta-tools like `unity_list_advanced_tools` and `unity_advanced_tool`
 - fall back to raw `tool` and `route` calls when a dedicated command does not exist yet
@@ -181,6 +191,40 @@ cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase 
 - `console`
 - `tool`
 - `route`
+- `cli-anything-unity-mcp-mcp`
+
+## Thin MCP Adapter
+
+This repo also ships an optional MCP server entry point:
+
+```powershell
+cli-anything-unity-mcp-mcp --default-port <port> --port-range-start <port> --port-range-end <port>
+```
+
+It is designed to stay efficient:
+
+- curated tool set instead of hundreds of mirrored tools
+- efficient defaults for expensive workflows
+- direct delegation into the existing CLI/core instead of maintaining a second implementation
+
+The adapter exposes tools like:
+
+- `unity_instances`
+- `unity_select_instance`
+- `unity_inspect`
+- `unity_console`
+- `unity_play`
+- `unity_validate_scene`
+- `unity_reset_scene`
+- `unity_create_behaviour`
+- `unity_wire_reference`
+- `unity_create_prefab`
+- `unity_build_sample`
+- `unity_build_fps_sample`
+- `unity_audit_advanced`
+- `unity_advanced_tools`
+- `unity_tool_info`
+- `unity_tool_call`
 
 More beginner-friendly docs live in `START_HERE.md`.
 

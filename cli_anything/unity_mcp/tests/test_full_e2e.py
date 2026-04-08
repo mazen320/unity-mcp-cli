@@ -28,6 +28,17 @@ def get_cli_command() -> list[str]:
     return [sys.executable, "-m", "cli_anything.unity_mcp"]
 
 
+def get_mcp_command() -> list[str]:
+    override = os.environ.get("CLI_ANYTHING_UNITY_MCP_MCP_BIN")
+    if override:
+        return [override]
+    for name in ("cli-anything-unity-mcp-mcp.exe", "cli-anything-unity-mcp-mcp"):
+        found = shutil.which(name)
+        if found:
+            return [found]
+    return [sys.executable, "-m", "cli_anything.unity_mcp.mcp_server"]
+
+
 class MockBridgeServer(ThreadingMixIn, TCPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -1136,6 +1147,7 @@ class FullE2ETests(unittest.TestCase):
         cls.thread.start()
         cls.port = cls.server.server_address[1]
         cls.cli_command = get_cli_command()
+        cls.mcp_command = get_mcp_command()
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -1192,6 +1204,95 @@ class FullE2ETests(unittest.TestCase):
         if result.returncode != 0:
             self.fail(f"CLI failed.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
         return result
+
+    def start_mcp_server(self) -> subprocess.Popen[str]:
+        command = [
+            *self.mcp_command,
+            "--host",
+            "127.0.0.1",
+            "--default-port",
+            str(self.port),
+            "--port-range-start",
+            str(self.port),
+            "--port-range-end",
+            str(self.port),
+            "--registry-path",
+            str(self.registry_path),
+            "--session-path",
+            str(self.session_path),
+        ]
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.addCleanup(self.stop_mcp_server, process)
+
+        initialize = self.call_mcp(
+            process,
+            1,
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "unittest", "version": "1.0"},
+            },
+        )
+        self.assertIn("tools", initialize["capabilities"])
+        self.send_mcp_notification(process, "notifications/initialized", {})
+        return process
+
+    def stop_mcp_server(self, process: subprocess.Popen[str]) -> None:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:  # pragma: no cover - defensive cleanup
+                process.kill()
+        if process.stderr:
+            process.stderr.close()
+        if process.stdout:
+            process.stdout.close()
+        if process.stdin:
+            process.stdin.close()
+
+    def send_mcp_notification(self, process: subprocess.Popen[str], method: str, params: dict | None = None) -> None:
+        self.assertIsNotNone(process.stdin)
+        payload = {
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params or {},
+        }
+        process.stdin.write(json.dumps(payload) + "\n")
+        process.stdin.flush()
+
+    def call_mcp(
+        self,
+        process: subprocess.Popen[str],
+        request_id: int,
+        method: str,
+        params: dict | None = None,
+    ) -> dict:
+        self.assertIsNotNone(process.stdin)
+        self.assertIsNotNone(process.stdout)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": params or {},
+        }
+        process.stdin.write(json.dumps(payload) + "\n")
+        process.stdin.flush()
+        line = process.stdout.readline()
+        if not line:
+            stderr = process.stderr.read() if process.stderr else ""
+            self.fail(f"MCP server did not respond.\nSTDERR:\n{stderr}")
+        response = json.loads(line)
+        if "error" in response:
+            self.fail(f"MCP call failed: {response['error']}")
+        return response["result"]
 
     def test_instances_and_select_persist_session(self) -> None:
         result = self.run_cli("--json", "instances")
@@ -1535,3 +1636,58 @@ class FullE2ETests(unittest.TestCase):
         advanced_payload = json.loads(advanced_tool_result.stdout.strip())
         self.assertEqual(advanced_payload["sceneName"], "MainScene")
         self.assertEqual(advanced_payload["totalGameObjects"], 1)
+
+    def test_mcp_server_lists_tools_and_executes_curated_calls(self) -> None:
+        process = self.start_mcp_server()
+
+        tools_result = self.call_mcp(process, 2, "tools/list")
+        tool_names = {tool["name"] for tool in tools_result["tools"]}
+        self.assertIn("unity_build_sample", tool_names)
+        self.assertIn("unity_build_fps_sample", tool_names)
+        self.assertIn("unity_tool_call", tool_names)
+
+        instances_result = self.call_mcp(process, 3, "tools/call", {"name": "unity_instances"})
+        self.assertFalse(instances_result["isError"])
+        self.assertEqual(instances_result["structuredContent"]["totalCount"], 1)
+
+        inspect_result = self.call_mcp(
+            process,
+            4,
+            "tools/call",
+            {"name": "unity_inspect", "arguments": {"assetLimit": 5}},
+        )
+        self.assertFalse(inspect_result["isError"])
+        self.assertEqual(inspect_result["structuredContent"]["summary"]["projectName"], "Demo")
+
+        build_result = self.call_mcp(
+            process,
+            5,
+            "tools/call",
+            {
+                "name": "unity_build_sample",
+                "arguments": {
+                    "name": "McpProbeArena",
+                    "cleanup": True,
+                    "capture": "none",
+                    "playCheck": False,
+                },
+            },
+        )
+        self.assertFalse(build_result["isError"])
+        self.assertEqual(build_result["structuredContent"]["summary"]["sampleName"], "McpProbeArena")
+
+        tool_call_result = self.call_mcp(
+            process,
+            6,
+            "tools/call",
+            {
+                "name": "unity_tool_call",
+                "arguments": {
+                    "toolName": "unity_execute_code",
+                    "params": {"code": "return 1;"},
+                },
+            },
+        )
+        self.assertFalse(tool_call_result["isError"])
+        self.assertTrue(tool_call_result["structuredContent"]["success"])
+        self.assertEqual(tool_call_result["structuredContent"]["echo"], "return 1;")

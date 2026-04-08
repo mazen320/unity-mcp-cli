@@ -6,6 +6,8 @@ import unittest
 import uuid
 from pathlib import Path
 
+from cli_anything.unity_mcp.core.embedded_cli import EmbeddedCLIOptions, run_cli_json
+from cli_anything.unity_mcp.core.mcp_tools import get_mcp_tool, iter_mcp_tools
 from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConnectionError
 from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_route
 from cli_anything.unity_mcp.core.session import SessionStore
@@ -73,6 +75,27 @@ class RebindingBackend(UnityMCPBackend):
 
 
 class CoreTests(unittest.TestCase):
+    def test_embedded_cli_runner_returns_json_payload(self) -> None:
+        payload = run_cli_json(["tool-template", "unity_scene_stats"], EmbeddedCLIOptions())
+
+        self.assertEqual(payload["name"], "unity_scene_stats")
+        self.assertEqual(payload["route"], "search/scene-stats")
+        self.assertIn("template", payload)
+
+    def test_mcp_tool_registry_is_curated_and_has_fast_defaults(self) -> None:
+        names = [tool["name"] for tool in iter_mcp_tools()]
+
+        self.assertIn("unity_build_fps_sample", names)
+        self.assertIn("unity_tool_call", names)
+        self.assertIn("unity_validate_scene", names)
+
+        fps_tool = get_mcp_tool("unity_build_fps_sample")
+        self.assertIsNotNone(fps_tool)
+        self.assertEqual(
+            fps_tool.input_schema["properties"]["verifyLevel"]["default"],
+            "quick",
+        )
+
     def test_fps_controller_script_prefers_input_system_when_available(self) -> None:
         script = build_demo_fps_controller_script("SampleFpsController")
 
