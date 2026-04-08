@@ -1,72 +1,103 @@
 # Unity MCP CLI
 
-`unity-mcp-cli` is a Codex-first CLI harness for the AnkleBreaker Unity MCP editor bridge.
+`unity-mcp-cli` is a Codex-first CLI harness for the AnkleBreaker Unity MCP bridge.
 
-Instead of exposing Unity through MCP tool registration, this project talks directly to the Unity plugin's localhost HTTP bridge and uses the shared instance registry to discover running Unity editors.
+Instead of exposing Unity through MCP tool registration, this project talks directly to the Unity plugin's local HTTP bridge and uses the shared instance registry to discover running editors.
 
-This keeps the backend power of the Unity plugin while cutting out the extra MCP overhead.
+The result is a lighter, easier-to-debug workflow that still uses the real Unity-side backend.
 
-## Requirements
+## What This Repo Is
 
-To use this project, you need:
+This repository publishes the standalone CLI layer only.
 
-- Python `3.11` or newer
-- a Unity project with the AnkleBreaker Unity MCP plugin installed and running in the editor
-- localhost access to the Unity bridge started by that plugin
+It is meant for people who want:
+
+- a shell-friendly way to drive Unity
+- lower overhead than a full MCP session
+- a good fit for Codex and other command-driven agents
+- direct access to the same Unity backend the MCP stack uses
+
+## What You Need
+
+To use this repo, you need:
+
+- Python `3.11+`
+- a Unity project with the AnkleBreaker Unity MCP plugin installed
+- the Unity Editor running so the plugin can start its local bridge
 
 Python dependency requirements are intentionally small:
 
 - `click>=8.1`
 
-They are listed in `requirements.txt` and also in `setup.py`.
+## What You Do Not Need
+
+You do not need the `unity-mcp-server` repo to use this CLI.
+
+For normal usage, the setup is:
+
+1. Install the Unity plugin in your Unity project.
+2. Run Unity so the bridge starts.
+3. Use this CLI repo to talk to that bridge.
+
+The old server repo matters only if you want the MCP transport layer itself.
+
+## How It Works
+
+The system is split into two layers:
+
+- Unity plugin: the real backend that edits scenes, scripts, components, assets, and play mode
+- This CLI: a direct client for that backend over `127.0.0.1`
+
+That means this repo is not reimplementing Unity behavior. It is wrapping the existing Unity bridge in a CLI that is easier for Codex to drive.
 
 ## Installation
 
-Clone the repo, then from the repository root run:
+From the repository root:
 
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
-If you do not care about `requirements.txt`, this also works:
+The shorter path also works:
 
 ```powershell
 python -m pip install -e .
 ```
 
-## Why This Exists
+After installation, the command is:
 
-- lower overhead than a full MCP session
-- easier to debug because every action is a CLI command
-- works well with Codex and shell-driven agents
-- keeps the Unity plugin as the real backend, so scenes, scripts, components, prefabs, and play mode still work
-
-## What It Can Do
-
-- inspect the active Unity project and scene
-- create MonoBehaviour scripts and attach them to scene objects
-- wire serialized references between objects and assets
-- save scene objects as prefabs and instantiate them back into the scene
-- validate scenes for missing references and compilation issues
-- run rollback-friendly smoke tests
-- drive play mode with recovery when the Unity bridge rebinds during Play Mode transitions
+```powershell
+cli-anything-unity-mcp
+```
 
 ## Quick Start
 
 1. Open your Unity project.
-2. Make sure the AnkleBreaker Unity MCP plugin is installed in that project.
-3. Wait for Unity to log that the bridge server started and note the port.
+2. Make sure the Unity MCP plugin is installed in that project.
+3. Wait for Unity to log the bridge port.
 4. From this repo, install the CLI and connect to the running editor.
 
 ```powershell
-python -m pip install -e .
 cli-anything-unity-mcp instances
-cli-anything-unity-mcp select 7891
-cli-anything-unity-mcp --json workflow inspect --port 7891
-cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port 7891
-cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port 7891
+cli-anything-unity-mcp select <port>
+cli-anything-unity-mcp --json workflow inspect --port <port>
+cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port <port>
+cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port <port>
 ```
+
+## What It Can Do
+
+- discover running Unity instances
+- inspect project, scene, editor, hierarchy, and assets
+- create and update scripts
+- create scene objects and attach components
+- wire serialized references between scene objects and assets
+- create prefabs and instantiate them back into the scene
+- validate scenes for missing references and compile problems
+- control play mode with recovery when the bridge rebinds
+- run high-level smoke tests that clean up after themselves
+- fall back to raw `tool` and `route` calls when a dedicated command does not exist yet
 
 ## Main Commands
 
@@ -75,23 +106,33 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - `workflow wire-reference`
 - `workflow create-prefab`
 - `workflow validate-scene`
+- `workflow reset-scene`
 - `workflow smoke-test`
 - `play play`
 - `play stop`
+- `tool`
+- `route`
 
-More beginner-friendly usage notes live in `START_HERE.md`.
+More beginner-friendly docs live in `START_HERE.md`.
 
-## How People Use It
+## Current Status
 
-The normal flow is:
+This project is already useful for real Unity authoring work. It has been live-tested against a real Unity project for:
 
-1. Unity starts the local bridge through the plugin.
-2. This CLI discovers that running Unity instance through the shared registry and ping checks.
-3. You run either high-level `workflow` commands or lower-level `tool` and `route` commands.
-4. The CLI sends HTTP requests directly to Unity on `127.0.0.1`.
+- script creation
+- component attachment
+- serialized reference wiring
+- prefab creation and instantiation
+- scene validation
+- scene reset with explicit save or discard behavior
+- play-mode enter and stop
+- cleanup-safe smoke testing
 
-So people do not use this by itself.
-They use it together with the Unity plugin running inside their Unity project.
+## Known Limitations
+
+- This repo depends on the Unity plugin being present in the target Unity project.
+- If you want to publish Unity-side fixes, those belong in a separate plugin fork or plugin PR.
+- Some bridge routes can vary by plugin version, so the CLI includes fallbacks where possible.
 
 ## Validation
 
@@ -100,11 +141,24 @@ python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp
 cli-anything-unity-mcp --help
 ```
 
+## Repo Layout
+
+```text
+agent-harness/
+├── README.md
+├── START_HERE.md
+├── TEST.md
+├── requirements.txt
+├── setup.py
+└── cli_anything/
+    └── unity_mcp/
+```
+
 ## Credits
 
 This project was inspired by CLI-Anything and built around the AnkleBreaker Unity MCP ecosystem:
 
-- https://github.com/AnkleBreaker-Studio/unity-mcp-server
-- https://github.com/AnkleBreaker-Studio/unity-mcp-plugin
+- [AnkleBreaker-Studio/unity-mcp-server](https://github.com/AnkleBreaker-Studio/unity-mcp-server)
+- [AnkleBreaker-Studio/unity-mcp-plugin](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin)
 
-This repository publishes the standalone CLI layer only.
+This repository publishes the CLI layer only.
