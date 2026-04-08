@@ -1,4 +1,6 @@
 include README.md
+include ATTRIBUTION.md
+include CHANGELOG.md
 include START_HERE.md
 include TEST.md
 include UNITY_MCP.md

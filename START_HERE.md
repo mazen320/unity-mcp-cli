@@ -48,6 +48,18 @@ Python package requirements are intentionally small:
 
 That dependency is listed in both `requirements.txt` and `setup.py`.
 
+## Which Repo Is The Real Project?
+
+For most people, this CLI repo is the real project.
+
+You need the Unity plugin installed inside the Unity project you want to control, but you do not need to actively maintain a separate plugin source fork unless you are changing Unity-side backend behavior.
+
+Simple rule:
+
+- customize this CLI repo for your workflows
+- use the upstream plugin in Unity
+- only fork the plugin when a fix cannot be solved in the CLI layer
+
 ## Installation
 
 From the repository root:

@@ -41,6 +41,14 @@ For normal usage, the setup is:
 
 The old server repo matters only if you want the MCP transport layer itself.
 
+You also do not need your own plugin fork just to use this CLI.
+
+Most users should:
+
+1. install the upstream Unity plugin in their Unity project
+2. keep this CLI repo as the thing they customize
+3. only fork the plugin if they need Unity-side backend changes
+
 ## How It Works
 
 The system is split into two layers:
@@ -128,6 +136,41 @@ This project is already useful for real Unity authoring work. It has been live-t
 - play-mode enter and stop
 - cleanup-safe smoke testing
 
+## FAQ
+
+### Do I need both the CLI repo and the plugin repo?
+
+No.
+
+You need:
+
+- this CLI repo
+- the Unity plugin installed in the Unity project you want to control
+
+You do not need to actively work inside a plugin source clone unless you are changing the Unity-side backend itself.
+
+### Do I need the `unity-mcp-server` repo?
+
+No, not for this project.
+
+This CLI talks directly to the Unity plugin bridge. The old server repo is only relevant if you want the MCP transport layer.
+
+### What if the upstream plugin keeps changing?
+
+That is expected.
+
+The intended maintenance model for this repo is:
+
+- keep the CLI as the main project
+- stay compatible with upstream plugin releases where possible
+- keep plugin-side patches small and upstreamable
+
+### Should the plugin fork be public too?
+
+Not necessarily.
+
+The CLI can be your public project. A plugin fork only needs to be public if you want to publish Unity-side fixes or open upstream pull requests from it.
+
 ## Known Limitations
 
 - This repo depends on the Unity plugin being present in the target Unity project.
@@ -167,6 +210,17 @@ If you are not sure whether a change belongs in this repo or the Unity plugin re
 
 If you find a security problem, especially around local bridge exposure, unsafe code execution, or destructive editor actions, please follow [SECURITY.md](SECURITY.md) instead of opening a public issue first.
 
+## Upstream Attribution
+
+This CLI integrates with the upstream AnkleBreaker Unity MCP plugin and server ecosystem.
+
+If you distribute a product or tool that includes or depends on that upstream software, check the upstream license terms and attribution requirements. The upstream license explicitly asks for attribution such as:
+
+- `Made with AnkleBreaker MCP`
+- `Powered by AnkleBreaker MCP`
+
+Project-specific guidance for this repo lives in [ATTRIBUTION.md](ATTRIBUTION.md).
+
 ## Validation
 
 ```powershell
@@ -178,6 +232,8 @@ cli-anything-unity-mcp --help
 
 ```text
 agent-harness/
+├── ATTRIBUTION.md
+├── CHANGELOG.md
 ├── README.md
 ├── START_HERE.md
 ├── TEST.md
