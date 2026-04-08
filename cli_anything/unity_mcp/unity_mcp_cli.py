@@ -65,6 +65,14 @@ def _run_and_emit(ctx: click.Context, callback: Callable[[], Any]) -> None:
     _emit(ctx, result)
 
 
+def _is_workflow_missing_error(result: Any) -> bool:
+    message = workflow_error_message(result)
+    if not message:
+        return False
+    lowered = message.lower()
+    return "not found" in lowered or "file not found" in lowered
+
+
 def _build_base_args(
     host: str,
     default_port: int,
@@ -2323,13 +2331,23 @@ def workflow_build_sample_command(
     help="Asset folder for generated FPS scripts and materials.",
 )
 @click.option("--replace", is_flag=True, help="Replace an existing generated scene and material assets with the same paths.")
-@click.option("--play-check/--no-play-check", default=True, help="Enter and exit play mode after building the FPS sample.")
+@click.option(
+    "--verify-level",
+    type=click.Choice(["quick", "standard", "deep"], case_sensitive=False),
+    default="standard",
+    show_default=True,
+    help="Validation depth: quick for fast rebuilds, standard for one game capture, deep for full captures, scene stats, and play-mode validation.",
+)
+@click.option(
+    "--play-check/--no-play-check",
+    default=None,
+    help="Override play-mode validation. When omitted, the value is derived from --verify-level.",
+)
 @click.option(
     "--capture",
     type=click.Choice(["none", "game", "scene", "both"], case_sensitive=False),
-    default="both",
-    show_default=True,
-    help="Capture validation screenshots from the Game View and/or Scene View.",
+    default=None,
+    help="Override capture mode. When omitted, the value is derived from --verify-level.",
 )
 @click.option("--capture-width", type=int, default=960, show_default=True, help="Width for validation captures.")
 @click.option("--capture-height", type=int, default=540, show_default=True, help="Height for validation captures.")
@@ -2344,8 +2362,9 @@ def workflow_build_fps_sample_command(
     scene_path: str,
     folder: str,
     replace: bool,
-    play_check: bool,
-    capture: str,
+    verify_level: str,
+    play_check: bool | None,
+    capture: str | None,
     capture_width: int,
     capture_height: int,
     save_if_dirty_start: bool,
@@ -2360,6 +2379,25 @@ def workflow_build_fps_sample_command(
         if port is not None:
             ctx.obj.backend.select_instance(port)
             workflow_port = None
+
+        verify_level_name = str(verify_level or "standard").lower()
+        default_capture_by_level = {
+            "quick": "none",
+            "standard": "game",
+            "deep": "both",
+        }
+        default_play_check_by_level = {
+            "quick": False,
+            "standard": False,
+            "deep": True,
+        }
+        effective_capture = str(capture or default_capture_by_level[verify_level_name]).lower()
+        effective_play_check = (
+            bool(play_check)
+            if play_check is not None
+            else default_play_check_by_level[verify_level_name]
+        )
+        include_deep_validation = verify_level_name == "deep"
 
         root_name = str(name or "").strip()
         if not root_name:
@@ -2441,8 +2479,9 @@ def workflow_build_fps_sample_command(
                 "assetFolder": normalized_folder,
                 "materialFolder": material_folder,
                 "replace": replace,
-                "playCheckRequested": play_check,
-                "captureMode": capture.lower(),
+                "verifyLevel": verify_level_name,
+                "playCheckRequested": effective_play_check,
+                "captureMode": effective_capture,
                 "savedAtStart": saved_at_start,
             },
             "before": {
@@ -2577,7 +2616,7 @@ def workflow_build_fps_sample_command(
             }
 
         def _record_captures() -> None:
-            capture_mode = capture.lower()
+            capture_mode = effective_capture
             requested_kinds: list[str] = []
             if capture_mode in {"game", "both"}:
                 requested_kinds.append("game")
@@ -2590,26 +2629,72 @@ def workflow_build_fps_sample_command(
                     payload["captures"][kind] = {"success": False, "error": str(exc)}
                     payload.setdefault("warnings", []).append(f"{kind} capture unavailable: {exc}")
 
-        try:
-            payload["script"] = _call_route(
-                "script/create",
-                f"Create FPS controller script {controller_script_path}",
-                {
-                    "path": controller_script_path,
-                    "content": build_demo_fps_controller_script(controller_class),
-                },
+        def _ensure_script_matches(path: str, content: str) -> tuple[dict[str, Any], bool]:
+            existing = ctx.obj.backend.call_route(
+                "script/read",
+                params={"path": path},
+                port=workflow_port,
+                record_history=False,
+            )
+            if not _is_workflow_missing_error(existing):
+                existing_payload = require_workflow_success(existing, f"Read script {path}")
+                if str(existing_payload.get("content") or "") == content:
+                    return (
+                        {
+                            "success": True,
+                            "path": path,
+                            "size": len(content),
+                            "status": "unchanged",
+                            "skippedWrite": True,
+                        },
+                        False,
+                    )
+                return (
+                    _call_route(
+                        "script/update",
+                        f"Update FPS controller script {path}",
+                        {"path": path, "content": content},
+                    )
+                    | {"status": "updated", "skippedWrite": False},
+                    True,
+                )
+
+            return (
+                _call_route(
+                    "script/create",
+                    f"Create FPS controller script {path}",
+                    {"path": path, "content": content},
+                )
+                | {"status": "created", "skippedWrite": False},
+                True,
             )
 
-            payload["compilation"] = wait_for_compilation(
-                _fetch_compilation,
-                timeout=timeout,
-                interval=interval,
+        try:
+            controller_script_content = build_demo_fps_controller_script(controller_class)
+            payload["script"], script_changed = _ensure_script_matches(
+                controller_script_path,
+                controller_script_content,
             )
-            if int((payload["compilation"] or {}).get("count") or 0) > 0:
-                entries = payload["compilation"].get("entries") or []
-                first_entry = entries[0] if entries and isinstance(entries[0], dict) else {}
-                first_message = first_entry.get("message") or "Unity reported compilation errors."
-                raise ValueError(f"build-fps-sample compilation failed: {first_message}")
+
+            if script_changed:
+                payload["compilation"] = wait_for_compilation(
+                    _fetch_compilation,
+                    timeout=timeout,
+                    interval=interval,
+                )
+                if int((payload["compilation"] or {}).get("count") or 0) > 0:
+                    entries = payload["compilation"].get("entries") or []
+                    first_entry = entries[0] if entries and isinstance(entries[0], dict) else {}
+                    first_message = first_entry.get("message") or "Unity reported compilation errors."
+                    raise ValueError(f"build-fps-sample compilation failed: {first_message}")
+            else:
+                payload["compilation"] = {
+                    "count": 0,
+                    "isCompiling": False,
+                    "entries": [],
+                    "skipped": True,
+                    "reason": "Controller script was unchanged.",
+                }
 
             payload["sceneBuild"] = _call_route(
                 "editor/execute-code",
@@ -2753,44 +2838,49 @@ def workflow_build_fps_sample_command(
                     recover=True,
                     record_history=False,
                 ),
-                "hierarchy": _call_route(
-                    "scene/hierarchy",
-                    "Read FPS sample hierarchy",
-                    {"maxDepth": 4, "maxNodes": 80},
-                    recover=True,
-                    record_history=False,
-                ),
-                "stats": _call_tool(
-                    "unity_scene_stats",
-                    "Read FPS scene stats",
-                    {},
-                ),
-                "floorRenderer": _call_tool(
-                    "unity_graphics_renderer_info",
-                    "Inspect FPS floor renderer",
-                    {"objectPath": floor_path},
-                ),
-                "floorMaterial": _call_tool(
-                    "unity_graphics_material_info",
-                    "Inspect FPS floor material",
-                    {
-                        "assetPath": material_paths["floor"],
-                        "includePreview": False,
-                    },
-                ),
-                "accentMaterial": _call_tool(
-                    "unity_graphics_material_info",
-                    "Inspect FPS accent material",
-                    {
-                        "assetPath": material_paths["accent"],
-                        "includePreview": False,
-                    },
-                ),
             }
+            if include_deep_validation:
+                payload["validation"].update(
+                    {
+                        "hierarchy": _call_route(
+                            "scene/hierarchy",
+                            "Read FPS sample hierarchy",
+                            {"maxDepth": 4, "maxNodes": 80},
+                            recover=True,
+                            record_history=False,
+                        ),
+                        "stats": _call_tool(
+                            "unity_scene_stats",
+                            "Read FPS scene stats",
+                            {},
+                        ),
+                        "floorRenderer": _call_tool(
+                            "unity_graphics_renderer_info",
+                            "Inspect FPS floor renderer",
+                            {"objectPath": floor_path},
+                        ),
+                        "floorMaterial": _call_tool(
+                            "unity_graphics_material_info",
+                            "Inspect FPS floor material",
+                            {
+                                "assetPath": material_paths["floor"],
+                                "includePreview": False,
+                            },
+                        ),
+                        "accentMaterial": _call_tool(
+                            "unity_graphics_material_info",
+                            "Inspect FPS accent material",
+                            {
+                                "assetPath": material_paths["accent"],
+                                "includePreview": False,
+                            },
+                        ),
+                    }
+                )
 
             _record_captures()
 
-            if play_check:
+            if effective_play_check:
                 play_command_result = _call_route(
                     "editor/play-mode",
                     "Enter play mode",

@@ -1337,6 +1337,8 @@ class FullE2ETests(unittest.TestCase):
             "ArenaFps",
             "--scene-path",
             "Assets/Scenes/ArenaFps.unity",
+            "--verify-level",
+            "deep",
             "--capture-width",
             "320",
             "--capture-height",
@@ -1359,6 +1361,51 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(payload["captures"]["game"]["success"])
         self.assertTrue(payload["captures"]["scene"]["success"])
         self.assertTrue(payload["playMode"]["enter"]["state"]["isPlaying"])
+        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
+
+    def test_workflow_build_fps_sample_quick_mode_reuses_unchanged_script(self) -> None:
+        self.run_cli(
+            "--json",
+            "workflow",
+            "build-fps-sample",
+            "--name",
+            "ArenaFpsFast",
+            "--scene-path",
+            "Assets/Scenes/ArenaFpsFast.unity",
+            "--verify-level",
+            "quick",
+            "--timeout",
+            "5",
+            "--interval",
+            "0.1",
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "build-fps-sample",
+            "--name",
+            "ArenaFpsFast",
+            "--scene-path",
+            "Assets/Scenes/ArenaFpsFast.unity",
+            "--verify-level",
+            "quick",
+            "--timeout",
+            "5",
+            "--interval",
+            "0.1",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["summary"]["verifyLevel"], "quick")
+        self.assertEqual(payload["summary"]["captureMode"], "none")
+        self.assertFalse(payload["summary"]["playCheckRequested"])
+        self.assertEqual(payload["script"]["status"], "unchanged")
+        self.assertTrue(payload["script"]["skippedWrite"])
+        self.assertTrue(payload["compilation"]["skipped"])
+        self.assertEqual(payload["captures"], {})
+        self.assertNotIn("playMode", payload)
+        self.assertEqual(set(payload["validation"].keys()), {"scene", "editorState"})
         self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
 
     def test_workflow_audit_advanced_reports_probe_results_and_cleans_up(self) -> None:

@@ -149,6 +149,14 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - run a reusable advanced-tool audit across safe categories and sample-backed graphics/physics probes
 - validate scenes for missing references and compile problems
 - control play mode with recovery when the bridge rebinds
+
+For faster FPS iteration, use:
+
+```powershell
+cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase --replace --verify-level quick --port <port>
+```
+
+`quick` skips captures and play-mode checks, `standard` keeps a single game capture, and `deep` runs the full validation pass.
 - run high-level smoke tests that clean up after themselves
 - emulate MCP-style meta-tools like `unity_list_advanced_tools` and `unity_advanced_tool`
 - fall back to raw `tool` and `route` calls when a dedicated command does not exist yet
