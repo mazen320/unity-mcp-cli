@@ -10,7 +10,9 @@ from urllib.parse import quote
 
 from ..core.client import UnityMCPClient, UnityMCPClientError, UnityMCPConnectionError
 from ..core.routes import iter_known_tools, route_to_tool_name, tool_name_to_route
+from ..core.schema_templates import summarize_schema
 from ..core.session import SessionState, SessionStore
+from ..core.tool_catalog import get_upstream_tool, iter_upstream_tools
 
 
 def get_default_registry_path() -> Path:
@@ -120,6 +122,161 @@ class UnityMCPBackend:
         self.session_store.record_command("queue/info", {}, resolved_port)
         return payload
 
+    def get_tool_info(self, tool_name: str, port: Optional[int] = None) -> Dict[str, Any]:
+        tool = get_upstream_tool(tool_name)
+        if tool is None:
+            route = tool_name_to_route(tool_name)
+            tool = {
+                "name": tool_name,
+                "description": "Derived from CLI route resolution rules.",
+                "route": route,
+                "category": route.split("/", 1)[0],
+                "tier": "derived",
+                "execution": "route",
+                "unsupported": False,
+                "inputSchema": {"type": "object", "properties": {}},
+            }
+
+        payload = dict(tool)
+        route = payload.get("route")
+        if route:
+            payload["resolvedRoute"] = route
+        payload.update(summarize_schema(payload.get("inputSchema")))
+        if port is not None:
+            try:
+                live_routes = self.get_routes(port=port).get("routes", [])
+                payload["liveAvailable"] = bool(route and route in live_routes)
+            except (BackendSelectionError, UnityMCPClientError):
+                payload["liveAvailable"] = False
+        return payload
+
+    def get_tool_template(
+        self,
+        tool_name: str,
+        include_optional: bool = False,
+        port: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        info = self.get_tool_info(tool_name, port=port)
+        template_key = "fullTemplate" if include_optional else "requiredTemplate"
+        return {
+            "name": info.get("name"),
+            "route": info.get("resolvedRoute") or info.get("route"),
+            "tier": info.get("tier"),
+            "category": info.get("category"),
+            "required": info.get("required", []),
+            "optional": info.get("optional", []),
+            "template": info.get(template_key, {}),
+            "includeOptional": include_optional,
+        }
+
+    def list_upstream_tools(
+        self,
+        category: str | None = None,
+        tier: str | None = None,
+        search: str | None = None,
+        include_unsupported: bool = False,
+        port: Optional[int] = None,
+        merge_live: bool = False,
+    ) -> Dict[str, Any]:
+        tools = iter_upstream_tools(
+            category=category,
+            tier=tier,
+            search=search,
+            include_unsupported=include_unsupported,
+        )
+
+        live_routes: List[str] = []
+        dynamic_only: List[Dict[str, Any]] = []
+        if merge_live:
+            try:
+                live_routes = list(self.get_routes(port=port).get("routes", []))
+            except (BackendSelectionError, UnityMCPClientError):
+                live_routes = []
+
+            known_names = {tool["name"] for tool in tools}
+            for route in sorted(live_routes):
+                name = route_to_tool_name(route)
+                if name in known_names:
+                    continue
+                dynamic_tool = {
+                    "name": name,
+                    "route": route,
+                    "description": "Derived from the live Unity plugin route catalog.",
+                    "tier": "dynamic",
+                    "category": route.split("/", 1)[0],
+                    "execution": "route",
+                    "unsupported": False,
+                    "inputSchema": {"type": "object", "properties": {}},
+                    "liveAvailable": True,
+                }
+                if category and dynamic_tool["category"] != category.lower():
+                    continue
+                if tier and dynamic_tool["tier"] != tier.lower():
+                    continue
+                if search:
+                    lowered = search.lower()
+                    if lowered not in dynamic_tool["name"] and lowered not in dynamic_tool["description"].lower():
+                        continue
+                dynamic_only.append(dynamic_tool)
+
+        live_route_set = set(live_routes)
+        payload_tools: List[Dict[str, Any]] = []
+        for tool in tools:
+            item = dict(tool)
+            route = item.get("route")
+            if merge_live:
+                item["liveAvailable"] = bool(route and route in live_route_set)
+            payload_tools.append(item)
+        payload_tools.extend(dynamic_only)
+        payload_tools.sort(key=lambda item: str(item.get("name", "")))
+
+        return {
+            "tools": payload_tools,
+            "totalCount": len(payload_tools),
+            "filters": {
+                "category": category,
+                "tier": tier,
+                "search": search,
+                "includeUnsupported": include_unsupported,
+                "mergeLive": merge_live,
+            },
+            "dynamicOnlyCount": len(dynamic_only),
+        }
+
+    def list_advanced_tools(
+        self,
+        category: str | None = None,
+        search: str | None = None,
+        port: Optional[int] = None,
+        merge_live: bool = True,
+    ) -> Dict[str, Any]:
+        catalog = self.list_upstream_tools(
+            category=category,
+            tier="advanced",
+            search=search,
+            port=port,
+            merge_live=merge_live,
+        )
+        tools = catalog["tools"]
+        grouped: Dict[str, List[str]] = {}
+        for tool in tools:
+            tool_category = str(tool.get("category") or "misc")
+            grouped.setdefault(tool_category, []).append(str(tool["name"]))
+
+        if category:
+            return {
+                "category": category.lower(),
+                "tools": tools,
+                "totalCount": len(tools),
+                "dynamicOnlyCount": catalog["dynamicOnlyCount"],
+            }
+
+        return {
+            "totalAdvancedTools": len(tools),
+            "dynamicTools": catalog["dynamicOnlyCount"],
+            "categories": {key: sorted(value) for key, value in sorted(grouped.items())},
+        }
+
     def call_route_with_recovery(
         self,
         route: str,
@@ -181,11 +338,60 @@ class UnityMCPBackend:
         params: Optional[Dict[str, Any]] = None,
         port: Optional[int] = None,
     ) -> Any:
-        route = tool_name_to_route(tool_name)
-        return self.call_route(route, params=params, port=port)
+        payload = params or {}
 
-    def known_tools(self, category: str | None = None) -> List[Dict[str, str]]:
-        return iter_known_tools(category=category)
+        if tool_name == "unity_list_instances":
+            return self.list_instances()
+        if tool_name == "unity_select_instance":
+            if "port" not in payload:
+                raise ValueError("unity_select_instance requires a numeric `port` parameter.")
+            return self.select_instance(int(payload["port"]))
+        if tool_name == "unity_get_project_context":
+            category = payload.get("category")
+            return self.get_context(category=str(category) if category else None, port=port)
+        if tool_name == "unity_queue_info":
+            return self.get_queue_info(port=port)
+        if tool_name == "unity_queue_ticket_status":
+            ticket_id = payload.get("ticketId", payload.get("ticket_id"))
+            if ticket_id is None:
+                raise ValueError("unity_queue_ticket_status requires `ticketId`.")
+            resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
+            return self.client.get_api(resolved_port, "queue/status", query={"ticketId": ticket_id})
+        if tool_name == "unity_list_advanced_tools":
+            category = payload.get("category")
+            search = payload.get("search")
+            return self.list_advanced_tools(
+                category=str(category) if category else None,
+                search=str(search) if search else None,
+                port=port,
+                merge_live=True,
+            )
+        if tool_name == "unity_advanced_tool":
+            nested_tool = payload.get("tool")
+            nested_params = payload.get("params") or {}
+            if not nested_tool:
+                raise ValueError("unity_advanced_tool requires a `tool` parameter.")
+            if not isinstance(nested_params, dict):
+                raise ValueError("unity_advanced_tool expects `params` to be a JSON object.")
+            return self.call_tool(str(nested_tool), params=nested_params, port=port)
+
+        route = tool_name_to_route(tool_name)
+        use_get = route in {"context", "queue/status"}
+        return self.call_route(route, params=payload, port=port, use_get=use_get)
+
+    def known_tools(
+        self,
+        category: str | None = None,
+        tier: str | None = None,
+        search: str | None = None,
+        include_unsupported: bool = False,
+    ) -> List[Dict[str, str]]:
+        return iter_known_tools(
+            category=category,
+            tier=tier,
+            search=search,
+            include_unsupported=include_unsupported,
+        )
 
     def dynamic_tools(self, port: Optional[int] = None, category: str | None = None) -> List[Dict[str, str]]:
         routes_payload = self.get_routes(port=port)

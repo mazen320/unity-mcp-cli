@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- local upstream tool-catalog snapshot and schema-aware discovery commands
+- MCP-style meta-tool support for advanced-tool browsing and project-context access
+- `workflow build-sample` for generating a complete demo slice with scripts, transforms, prefab cloning, reference wiring, validation, play-mode checks, and optional cleanup
+
+### Improved
+
+- route resolution for plugin variants such as `unity_scene_stats`
+- mock bridge coverage for transforms, parenting, prefab instantiation, and recursive scene cleanup
+- docs and test plan coverage for the higher-level sample-building workflow
+
 ## 0.1.0 - 2026-04-08
 
 Initial public-ready release of the CLI harness.

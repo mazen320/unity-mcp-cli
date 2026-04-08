@@ -61,6 +61,18 @@ Good PRs usually include:
 
 If your PR changes public command behavior, include before/after examples in the description.
 
+## Refreshing the Upstream Tool Catalog
+
+This repo carries a generated snapshot of the upstream Unity MCP tool catalog so the CLI can expose richer discovery and MCP-compatible tool names without depending on the MCP server at runtime.
+
+When the upstream server adds or renames tools, refresh the snapshot from the local upstream clone:
+
+```powershell
+node scripts/build_upstream_tool_catalog.mjs
+```
+
+Then rerun the test suite before committing.
+
 ## Scope Tips
 
 Good issues and PRs for this repo:

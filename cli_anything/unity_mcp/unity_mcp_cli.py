@@ -16,10 +16,14 @@ from .core.session import SessionStore
 from .core.workflows import (
     build_asset_path,
     build_behaviour_script,
+    build_demo_bob_script,
+    build_demo_follow_script,
+    build_demo_spin_script,
     get_active_scene_path,
     require_workflow_success,
     sanitize_csharp_identifier,
     unique_probe_name,
+    vec3,
     wait_for_compilation,
     wait_for_result,
     workflow_error_message,
@@ -653,20 +657,108 @@ def routes_command(ctx: click.Context, port: int | None) -> None:
 
 @cli.command("tools")
 @click.option("--category", type=str, default=None, help="Optional category filter.")
+@click.option(
+    "--tier",
+    type=click.Choice(
+        ["core", "advanced", "meta", "instance", "context", "hub", "dynamic", "derived"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Optional tool tier filter.",
+)
+@click.option("--search", type=str, default=None, help="Filter by tool name or description text.")
+@click.option("--include-unsupported", is_flag=True, help="Include tool names this CLI cannot execute yet, such as Unity Hub tools.")
 @click.option("--live", is_flag=True, help="Query the connected Unity instance for live routes.")
+@click.option(
+    "--merged-live",
+    is_flag=True,
+    help="Merge the upstream tool catalog with the live Unity route list and mark live availability.",
+)
 @click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
 @click.pass_context
 def tools_command(
     ctx: click.Context,
     category: str | None,
+    tier: str | None,
+    search: str | None,
+    include_unsupported: bool,
     live: bool,
+    merged_live: bool,
     port: int | None,
 ) -> None:
-    """List known tool mappings for this harness."""
+    """Browse CLI-known, upstream, or live Unity tool mappings."""
     if live:
         _run_and_emit(ctx, lambda: ctx.obj.backend.dynamic_tools(port=port, category=category))
         return
-    _run_and_emit(ctx, lambda: ctx.obj.backend.known_tools(category=category))
+    _run_and_emit(
+        ctx,
+        lambda: ctx.obj.backend.list_upstream_tools(
+            category=category,
+            tier=tier,
+            search=search,
+            include_unsupported=include_unsupported,
+            port=port,
+            merge_live=merged_live,
+        ),
+    )
+
+
+@cli.command("advanced-tools")
+@click.option("--category", type=str, default=None, help="Optional advanced tool category filter.")
+@click.option("--search", type=str, default=None, help="Filter by advanced tool name or description text.")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def advanced_tools_command(
+    ctx: click.Context,
+    category: str | None,
+    search: str | None,
+    port: int | None,
+) -> None:
+    """List advanced tools in the same vocabulary used by the upstream MCP server."""
+    _run_and_emit(
+        ctx,
+        lambda: ctx.obj.backend.list_advanced_tools(
+            category=category,
+            search=search,
+            port=port,
+            merge_live=True,
+        ),
+    )
+
+
+@cli.command("tool-info")
+@click.argument("tool_name")
+@click.option("--port", type=int, default=None, help="Optionally check live availability against a specific Unity port.")
+@click.pass_context
+def tool_info_command(
+    ctx: click.Context,
+    tool_name: str,
+    port: int | None,
+) -> None:
+    """Describe a tool name, including route mapping, tier, and input schema when known."""
+    _run_and_emit(ctx, lambda: ctx.obj.backend.get_tool_info(tool_name, port=port))
+
+
+@cli.command("tool-template")
+@click.argument("tool_name")
+@click.option("--include-optional", is_flag=True, help="Include optional fields in the generated template.")
+@click.option("--port", type=int, default=None, help="Optionally check live availability against a specific Unity port.")
+@click.pass_context
+def tool_template_command(
+    ctx: click.Context,
+    tool_name: str,
+    include_optional: bool,
+    port: int | None,
+) -> None:
+    """Generate a compact JSON template for a tool's input schema."""
+    _run_and_emit(
+        ctx,
+        lambda: ctx.obj.backend.get_tool_template(
+            tool_name,
+            include_optional=include_optional,
+            port=port,
+        ),
+    )
 
 
 @cli.command("queue-info")
@@ -1403,6 +1495,619 @@ def workflow_smoke_test_command(
                 failure_message += " Cleanup issues: " + "; ".join(cleanup_errors)
             raise ValueError(failure_message)
 
+        return payload
+
+    _run_and_emit(ctx, _callback)
+
+
+@workflow_group.command("build-sample")
+@click.option("--name", type=str, default="CodexSampleArena", show_default=True, help="Root name for the generated sample in the scene.")
+@click.option("--folder", type=str, default="Assets/CodexSamples", show_default=True, help="Asset folder for generated sample scripts.")
+@click.option("--prefab-folder", type=str, default=None, help="Optional prefab folder. Defaults to <folder>/Prefabs.")
+@click.option("--replace", is_flag=True, help="Replace an existing sample with the same root name before building.")
+@click.option("--cleanup", is_flag=True, help="Remove the generated sample after validating it. Useful for repeatable testing.")
+@click.option("--play-check/--no-play-check", default=True, help="Enter and exit play mode after building the sample.")
+@click.option("--save-if-dirty-start", is_flag=True, help="Save the active scene first if cleanup might need to restore a dirty starting point safely.")
+@click.option("--timeout", type=float, default=30.0, show_default=True, help="Seconds to wait for compilation and play mode transitions.")
+@click.option("--interval", type=float, default=0.5, show_default=True, help="Polling interval while waiting for Unity to settle.")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def workflow_build_sample_command(
+    ctx: click.Context,
+    name: str,
+    folder: str,
+    prefab_folder: str | None,
+    replace: bool,
+    cleanup: bool,
+    play_check: bool,
+    save_if_dirty_start: bool,
+    timeout: float,
+    interval: float,
+    port: int | None,
+) -> None:
+    """Build a small gameplay sample that exercises scripts, transforms, prefabs, wiring, and play mode."""
+
+    def _callback() -> dict[str, Any]:
+        workflow_port = port
+        if port is not None:
+            ctx.obj.backend.select_instance(port)
+            workflow_port = None
+
+        root_name = str(name or "").strip()
+        if not root_name:
+            raise ValueError("A non-empty sample name is required.")
+        sample_id = sanitize_csharp_identifier(root_name)
+        normalized_folder = folder.replace("\\", "/").rstrip("/")
+        if not normalized_folder:
+            normalized_folder = "Assets/CodexSamples"
+        normalized_prefab_folder = (
+            (prefab_folder or f"{normalized_folder}/Prefabs").replace("\\", "/").rstrip("/")
+        )
+
+        scene_info = ctx.obj.backend.call_route_with_recovery(
+            "scene/info",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        )
+        editor_state = ctx.obj.backend.call_route_with_recovery(
+            "editor/state",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        )
+        scene_path = get_active_scene_path(scene_info)
+        starting_dirty = bool(editor_state.get("sceneDirty"))
+        saved_at_start = False
+
+        if cleanup and starting_dirty and not save_if_dirty_start:
+            raise ValueError(
+                "build-sample with --cleanup requires a clean starting scene. Save manually or rerun with --save-if-dirty-start."
+            )
+        if starting_dirty and save_if_dirty_start:
+            require_workflow_success(
+                ctx.obj.backend.call_route_with_recovery(
+                    "scene/save",
+                    port=workflow_port,
+                    recovery_timeout=15.0,
+                ),
+                f"Save dirty scene {scene_path}",
+            )
+            editor_state = ctx.obj.backend.call_route_with_recovery(
+                "editor/state",
+                port=workflow_port,
+                record_history=False,
+                recovery_timeout=10.0,
+            )
+            starting_dirty = bool(editor_state.get("sceneDirty"))
+            saved_at_start = True
+
+        object_names = {
+            "root": root_name,
+            "floor": f"{root_name}_Floor",
+            "player": f"{root_name}_Player",
+            "beacon": f"{root_name}_Beacon",
+            "observer": f"{root_name}_Observer",
+            "beaconClone": f"{root_name}_BeaconClone",
+        }
+        script_names = {
+            "spin": f"{sample_id}Spin",
+            "bob": f"{sample_id}Bob",
+            "follow": f"{sample_id}Follow",
+        }
+        script_paths = {
+            "spin": build_asset_path(normalized_folder, script_names["spin"]),
+            "bob": build_asset_path(normalized_folder, script_names["bob"]),
+            "follow": build_asset_path(normalized_folder, script_names["follow"]),
+        }
+        prefab_path = build_asset_path(
+            normalized_prefab_folder,
+            f"{sample_id}Beacon",
+            extension=".prefab",
+        )
+        created_assets: list[str] = []
+        failure_message: str | None = None
+
+        payload: dict[str, Any] = {
+            "summary": {
+                "sampleName": root_name,
+                "sampleId": sample_id,
+                "scenePath": scene_path,
+                "cleanupRequested": cleanup,
+                "playCheckRequested": play_check,
+                "savedAtStart": saved_at_start,
+            },
+            "before": {
+                "scene": scene_info,
+                "editorState": editor_state,
+            },
+            "scripts": {},
+            "objects": {},
+            "components": {},
+            "wiring": {},
+        }
+
+        def _call_route(
+            route: str,
+            action: str,
+            params: dict[str, Any] | None = None,
+            recover: bool = False,
+            record_history: bool = True,
+        ) -> dict[str, Any]:
+            result = (
+                ctx.obj.backend.call_route_with_recovery(
+                    route,
+                    params=params,
+                    port=workflow_port,
+                    record_history=record_history,
+                    recovery_timeout=max(timeout, 10.0),
+                    recovery_interval=max(0.25, interval),
+                )
+                if recover
+                else ctx.obj.backend.call_route(
+                    route,
+                    params=params,
+                    port=workflow_port,
+                    record_history=record_history,
+                )
+            )
+            return require_workflow_success(result, action)
+
+        def _call_tool(
+            tool_name: str,
+            action: str,
+            params: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            return require_workflow_success(
+                ctx.obj.backend.call_tool(tool_name, params=params, port=workflow_port),
+                action,
+            )
+
+        def _fetch_editor_state() -> dict[str, Any]:
+            result = ctx.obj.backend.call_route_with_recovery(
+                "editor/state",
+                port=workflow_port,
+                record_history=False,
+                recovery_timeout=max(timeout, 10.0),
+                recovery_interval=max(0.25, interval),
+            )
+            return result or {}
+
+        def _fetch_compilation() -> dict[str, Any]:
+            result = ctx.obj.backend.call_route_with_recovery(
+                "compilation/errors",
+                params={"count": 50},
+                port=workflow_port,
+                record_history=False,
+                recovery_timeout=max(timeout, 10.0),
+                recovery_interval=max(0.25, interval),
+            )
+            return require_workflow_success(result, "Read compilation status")
+
+        def _attach_component(game_object: str, component_type: str) -> dict[str, Any]:
+            return require_workflow_success(
+                wait_for_result(
+                    lambda: ctx.obj.backend.call_tool(
+                        "unity_component_add",
+                        params={
+                            "gameObjectPath": game_object,
+                            "componentType": component_type,
+                        },
+                        port=workflow_port,
+                    ),
+                    lambda result: workflow_error_message(result) is None,
+                    timeout=timeout,
+                    interval=interval,
+                ),
+                f"Attach component {component_type} to {game_object}",
+            )
+
+        def _set_component_property(
+            game_object: str,
+            component_type: str,
+            property_name: str,
+            value: Any,
+        ) -> dict[str, Any]:
+            return _call_tool(
+                "unity_component_set_property",
+                f"Set {component_type}.{property_name} on {game_object}",
+                {
+                    "gameObjectPath": game_object,
+                    "componentType": component_type,
+                    "propertyName": property_name,
+                    "value": value,
+                },
+            )
+
+        def _delete_asset_if_present(asset_path: str) -> dict[str, Any] | None:
+            try:
+                result = ctx.obj.backend.call_route(
+                    "asset/delete",
+                    params={"path": asset_path},
+                    port=workflow_port,
+                )
+            except (BackendSelectionError, UnityMCPClientError, ValueError):
+                return None
+            if isinstance(result, dict) and result.get("success"):
+                return result
+            return None
+
+        if replace:
+            replacements: dict[str, Any] = {}
+            try:
+                replacements["root"] = _call_tool(
+                    "unity_gameobject_delete",
+                    f"Delete existing sample root {root_name}",
+                    {"gameObjectPath": root_name},
+                )
+            except ValueError:
+                pass
+            for asset_path in [*script_paths.values(), prefab_path]:
+                deleted = _delete_asset_if_present(asset_path)
+                if deleted:
+                    replacements.setdefault("assets", []).append(deleted)
+            if replacements:
+                payload["replaced"] = replacements
+        else:
+            try:
+                _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect existing sample root {root_name}",
+                    {"gameObjectPath": root_name},
+                )
+                raise ValueError(
+                    f"A sample root named {root_name} already exists. Rerun with --replace to rebuild it."
+                )
+            except ValueError as exc:
+                if "already exists" in str(exc):
+                    raise
+
+        try:
+            payload["scripts"]["spin"] = _call_route(
+                "script/create",
+                f"Create sample script {script_paths['spin']}",
+                {
+                    "path": script_paths["spin"],
+                    "content": build_demo_spin_script(script_names["spin"]),
+                },
+            )
+            created_assets.append(script_paths["spin"])
+            payload["scripts"]["bob"] = _call_route(
+                "script/create",
+                f"Create sample script {script_paths['bob']}",
+                {
+                    "path": script_paths["bob"],
+                    "content": build_demo_bob_script(script_names["bob"]),
+                },
+            )
+            created_assets.append(script_paths["bob"])
+            payload["scripts"]["follow"] = _call_route(
+                "script/create",
+                f"Create sample script {script_paths['follow']}",
+                {
+                    "path": script_paths["follow"],
+                    "content": build_demo_follow_script(script_names["follow"]),
+                },
+            )
+            created_assets.append(script_paths["follow"])
+
+            payload["compilation"] = wait_for_compilation(
+                _fetch_compilation,
+                timeout=timeout,
+                interval=interval,
+            )
+            if int((payload["compilation"] or {}).get("count") or 0) > 0:
+                entries = payload["compilation"].get("entries") or []
+                first_entry = entries[0] if entries and isinstance(entries[0], dict) else {}
+                first_message = first_entry.get("message") or "Unity reported compilation errors."
+                raise ValueError(f"build-sample compilation failed: {first_message}")
+
+            payload["objects"]["root"] = _call_tool(
+                "unity_gameobject_create",
+                f"Create sample root {root_name}",
+                {
+                    "name": object_names["root"],
+                    "primitiveType": "Empty",
+                    "position": vec3(0, 0, 0),
+                },
+            )
+            payload["objects"]["floor"] = _call_tool(
+                "unity_gameobject_create",
+                f"Create sample floor {object_names['floor']}",
+                {
+                    "name": object_names["floor"],
+                    "primitiveType": "Plane",
+                    "parent": object_names["root"],
+                    "position": vec3(0, 0, 0),
+                    "scale": vec3(3.0, 1.0, 3.0),
+                },
+            )
+            payload["objects"]["player"] = _call_tool(
+                "unity_gameobject_create",
+                f"Create sample player {object_names['player']}",
+                {
+                    "name": object_names["player"],
+                    "primitiveType": "Capsule",
+                    "parent": object_names["root"],
+                    "position": vec3(0, 1, 0),
+                },
+            )
+            payload["objects"]["beacon"] = _call_tool(
+                "unity_gameobject_create",
+                f"Create sample beacon {object_names['beacon']}",
+                {
+                    "name": object_names["beacon"],
+                    "primitiveType": "Sphere",
+                    "parent": object_names["root"],
+                    "position": vec3(4, 1, 0),
+                    "scale": vec3(1.25, 1.25, 1.25),
+                },
+            )
+            payload["objects"]["observer"] = _call_tool(
+                "unity_gameobject_create",
+                f"Create sample observer {object_names['observer']}",
+                {
+                    "name": object_names["observer"],
+                    "primitiveType": "Empty",
+                    "parent": object_names["root"],
+                    "position": vec3(0, 4, -8),
+                },
+            )
+            payload["objects"]["observerTransform"] = _call_route(
+                "gameobject/set-transform",
+                f"Adjust sample observer transform for {object_names['observer']}",
+                {
+                    "path": object_names["observer"],
+                    "position": vec3(0, 5, -8),
+                },
+            )
+
+            payload["components"]["playerSpin"] = _attach_component(
+                object_names["player"],
+                script_names["spin"],
+            )
+            payload["components"]["beaconBob"] = _attach_component(
+                object_names["beacon"],
+                script_names["bob"],
+            )
+            payload["components"]["observerFollow"] = _attach_component(
+                object_names["observer"],
+                script_names["follow"],
+            )
+
+            payload["componentConfig"] = {
+                "playerSpeed": _set_component_property(
+                    object_names["player"],
+                    script_names["spin"],
+                    "Speed",
+                    120,
+                ),
+                "beaconHeight": _set_component_property(
+                    object_names["beacon"],
+                    script_names["bob"],
+                    "Height",
+                    0.45,
+                ),
+                "beaconSpeed": _set_component_property(
+                    object_names["beacon"],
+                    script_names["bob"],
+                    "Speed",
+                    1.8,
+                ),
+                "observerOffset": _set_component_property(
+                    object_names["observer"],
+                    script_names["follow"],
+                    "Offset",
+                    vec3(0, 4.5, -8),
+                ),
+            }
+            payload["wiring"]["observerTarget"] = _call_route(
+                "component/set-reference",
+                f"Wire observer target to {object_names['player']}",
+                {
+                    "gameObjectPath": object_names["observer"],
+                    "componentType": script_names["follow"],
+                    "propertyName": "Target",
+                    "referenceGameObject": object_names["player"],
+                    "referenceComponentType": "Transform",
+                },
+            )
+
+            payload["prefab"] = _call_route(
+                "asset/create-prefab",
+                f"Create sample prefab {prefab_path}",
+                {
+                    "gameObjectPath": object_names["beacon"],
+                    "savePath": prefab_path,
+                },
+            )
+            created_assets.append(prefab_path)
+            payload["objects"]["beaconClone"] = _call_route(
+                "asset/instantiate-prefab",
+                f"Instantiate sample prefab clone {object_names['beaconClone']}",
+                {
+                    "prefabPath": prefab_path,
+                    "name": object_names["beaconClone"],
+                    "parent": object_names["root"],
+                    "position": vec3(-4, 1, 0),
+                },
+            )
+            payload["componentConfig"]["beaconCloneSpeed"] = _set_component_property(
+                object_names["beaconClone"],
+                script_names["bob"],
+                "Speed",
+                2.2,
+            )
+
+            validation_hierarchy = _call_route(
+                "scene/hierarchy",
+                "Read sample hierarchy snapshot",
+                params={"maxDepth": 3, "maxNodes": 40},
+                recover=True,
+                record_history=False,
+            )
+            try:
+                validation_stats = _call_tool(
+                    "unity_scene_stats",
+                    "Read scene stats after building sample",
+                    {},
+                )
+            except ValueError as exc:
+                validation_stats = {
+                    "sceneName": scene_info.get("activeScene") or editor_state.get("activeScene"),
+                    "totalGameObjects": validation_hierarchy.get("totalSceneObjects")
+                    or validation_hierarchy.get("returnedNodes")
+                    or 0,
+                    "totalComponents": None,
+                    "fallback": True,
+                    "message": "Fell back to hierarchy-derived counts because unity_scene_stats was unavailable.",
+                }
+                payload.setdefault("warnings", []).append(f"unity_scene_stats unavailable: {exc}")
+
+            payload["validation"] = {
+                "editorState": _call_route(
+                    "editor/state",
+                    "Read editor state after building sample",
+                    recover=True,
+                    record_history=False,
+                ),
+                "scene": _call_route(
+                    "scene/info",
+                    "Read scene info after building sample",
+                    recover=True,
+                    record_history=False,
+                ),
+                "hierarchy": validation_hierarchy,
+                "stats": validation_stats,
+            }
+
+            if play_check:
+                play_command_result = _call_route(
+                    "editor/play-mode",
+                    "Enter play mode",
+                    {"action": "play"},
+                    recover=True,
+                )
+                play_state = wait_for_result(
+                    _fetch_editor_state,
+                    lambda state: bool((state or {}).get("isPlaying")),
+                    timeout=timeout,
+                    interval=interval,
+                )
+                if not bool(play_state.get("isPlaying")):
+                    raise ValueError("build-sample timed out waiting for Unity to enter play mode.")
+
+                stop_command_result = _call_route(
+                    "editor/play-mode",
+                    "Exit play mode",
+                    {"action": "stop"},
+                    recover=True,
+                )
+                stop_state = wait_for_result(
+                    _fetch_editor_state,
+                    lambda state: (not bool((state or {}).get("isPlaying")))
+                    and (not bool((state or {}).get("isPlayingOrWillChangePlaymode"))),
+                    timeout=timeout,
+                    interval=interval,
+                )
+                if bool(stop_state.get("isPlaying")) or bool(stop_state.get("isPlayingOrWillChangePlaymode")):
+                    raise ValueError("build-sample timed out waiting for Unity to exit play mode.")
+
+                payload["playMode"] = {
+                    "enter": {"command": play_command_result, "state": play_state},
+                    "exit": {"command": stop_command_result, "state": stop_state},
+                }
+        except Exception as exc:  # pragma: no cover - exercised via cleanup path
+            failure_message = str(exc)
+        finally:
+            should_cleanup = cleanup or failure_message is not None
+            cleanup_payload: dict[str, Any] = {"performed": should_cleanup}
+
+            if should_cleanup:
+                try:
+                    cleanup_state = _fetch_editor_state()
+                    if bool(cleanup_state.get("isPlaying")) or bool(cleanup_state.get("isPlayingOrWillChangePlaymode")):
+                        cleanup_payload["forceStop"] = _call_route(
+                            "editor/play-mode",
+                            "Force stop play mode during sample cleanup",
+                            {"action": "stop"},
+                            recover=True,
+                        )
+                        cleanup_payload["forceStopState"] = wait_for_result(
+                            _fetch_editor_state,
+                            lambda state: (not bool((state or {}).get("isPlaying")))
+                            and (not bool((state or {}).get("isPlayingOrWillChangePlaymode"))),
+                            timeout=timeout,
+                            interval=interval,
+                        )
+                except (BackendSelectionError, UnityMCPClientError, ValueError) as cleanup_exc:
+                    cleanup_payload["forceStopError"] = str(cleanup_exc)
+
+                can_reset_scene = (not starting_dirty) or saved_at_start
+                if can_reset_scene:
+                    try:
+                        cleanup_payload["sceneReset"] = _call_route(
+                            "scene/open",
+                            f"Reload scene {scene_path} during sample cleanup",
+                            {"path": scene_path, "discardUnsaved": True},
+                            recover=True,
+                        )
+                    except (BackendSelectionError, UnityMCPClientError, ValueError) as cleanup_exc:
+                        cleanup_payload["sceneResetError"] = str(cleanup_exc)
+                else:
+                    try:
+                        cleanup_payload["rootDelete"] = _call_tool(
+                            "unity_gameobject_delete",
+                            f"Delete sample root {root_name} during cleanup",
+                            {"gameObjectPath": root_name},
+                        )
+                    except (BackendSelectionError, UnityMCPClientError, ValueError) as cleanup_exc:
+                        cleanup_payload["rootDeleteError"] = str(cleanup_exc)
+                    cleanup_payload["sceneResetSkipped"] = (
+                        "Skipped scene reload because the scene started dirty and was not saved at the beginning."
+                    )
+
+                asset_cleanup: list[dict[str, Any]] = []
+                for asset_path in reversed(created_assets):
+                    deleted = _delete_asset_if_present(asset_path)
+                    if deleted:
+                        asset_cleanup.append(deleted)
+                if asset_cleanup:
+                    cleanup_payload["assets"] = asset_cleanup
+
+            try:
+                payload["after"] = {
+                    "editorState": ctx.obj.backend.call_route_with_recovery(
+                        "editor/state",
+                        port=workflow_port,
+                        record_history=False,
+                        recovery_timeout=10.0,
+                    ),
+                    "scene": ctx.obj.backend.call_route_with_recovery(
+                        "scene/info",
+                        port=workflow_port,
+                        record_history=False,
+                        recovery_timeout=10.0,
+                    ),
+                }
+            except (BackendSelectionError, UnityMCPClientError, ValueError) as after_exc:
+                cleanup_payload["afterStateError"] = str(after_exc)
+
+            payload["cleanup"] = cleanup_payload
+
+        if failure_message:
+            cleanup_errors = [
+                cleanup_error
+                for key, cleanup_error in payload.get("cleanup", {}).items()
+                if key.endswith("Error")
+            ]
+            if cleanup_errors:
+                failure_message += " Cleanup issues: " + "; ".join(cleanup_errors)
+            raise ValueError(failure_message)
+
+        payload["summary"]["createdAssetCount"] = len(created_assets)
+        payload["summary"]["cleanupPerformed"] = bool(payload.get("cleanup", {}).get("performed"))
+        payload["summary"]["finalSceneDirty"] = bool(
+            ((payload.get("after") or {}).get("editorState") or {}).get("sceneDirty")
+        )
         return payload
 
     _run_and_emit(ctx, _callback)

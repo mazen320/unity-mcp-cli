@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List
 
+from .tool_catalog import get_route_index, get_upstream_tool, iter_upstream_tools
+
 
 class RouteResolutionError(ValueError):
     """Raised when a Unity tool name cannot be mapped to an HTTP route."""
 
 
 TOOL_ROUTE_OVERRIDES: Dict[str, str] = {
+    "unity_get_project_context": "context",
+    "unity_queue_info": "queue/info",
+    "unity_queue_ticket_status": "queue/status",
     "unity_editor_ping": "ping",
     "unity_execute_code": "editor/execute-code",
     "unity_build": "build/start",
@@ -35,85 +40,6 @@ ROUTE_TOOL_OVERRIDES: Dict[str, str] = {route: tool for tool, route in TOOL_ROUT
 
 UNSUPPORTED_TOOL_PREFIXES = ("unity_hub_",)
 
-KNOWN_TOOL_SPECS: Dict[str, Dict[str, str]] = {
-    "unity_editor_ping": {
-        "route": "ping",
-        "description": "Check whether the Unity bridge is reachable.",
-    },
-    "unity_editor_state": {
-        "route": "editor/state",
-        "description": "Get play mode, project, and editor status information.",
-    },
-    "unity_project_info": {
-        "route": "project/info",
-        "description": "Get project metadata and package/build details.",
-    },
-    "unity_scene_info": {
-        "route": "scene/info",
-        "description": "Get information about the active scene.",
-    },
-    "unity_scene_hierarchy": {
-        "route": "scene/hierarchy",
-        "description": "Fetch the current scene hierarchy tree.",
-    },
-    "unity_scene_stats": {
-        "route": "scene/stats",
-        "description": "Collect high-level object and component counts for the active scene.",
-    },
-    "unity_console_log": {
-        "route": "console/log",
-        "description": "Read recent Unity console entries.",
-    },
-    "unity_search_missing_references": {
-        "route": "search/missing-references",
-        "description": "Find missing scene references and null script components.",
-    },
-    "unity_script_read": {
-        "route": "script/read",
-        "description": "Read a C# script asset from the Unity project.",
-    },
-    "unity_script_update": {
-        "route": "script/update",
-        "description": "Replace the contents of a C# script asset.",
-    },
-    "unity_script_create": {
-        "route": "script/create",
-        "description": "Create a new C# script asset.",
-    },
-    "unity_execute_code": {
-        "route": "editor/execute-code",
-        "description": "Run arbitrary C# editor code through the bridge.",
-    },
-    "unity_play_mode": {
-        "route": "editor/play-mode",
-        "description": "Enter, pause, or stop Unity play mode.",
-    },
-    "unity_build": {
-        "route": "build/start",
-        "description": "Start a Unity build.",
-    },
-    "unity_component_set_reference": {
-        "route": "component/set-reference",
-        "description": "Assign or clear an ObjectReference field on a component.",
-    },
-    "unity_asset_create_prefab": {
-        "route": "asset/create-prefab",
-        "description": "Save a scene object as a prefab asset.",
-    },
-    "unity_asset_instantiate_prefab": {
-        "route": "asset/instantiate-prefab",
-        "description": "Instantiate a prefab asset into the current scene.",
-    },
-    "unity_undo": {
-        "route": "undo/perform",
-        "description": "Undo the last Unity editor action.",
-    },
-    "unity_redo": {
-        "route": "undo/redo",
-        "description": "Redo the last undone Unity editor action.",
-    },
-}
-
 
 def tool_name_to_route(tool_name: str) -> str:
     if not tool_name:
@@ -124,6 +50,9 @@ def tool_name_to_route(tool_name: str) -> str:
         )
     if tool_name in TOOL_ROUTE_OVERRIDES:
         return TOOL_ROUTE_OVERRIDES[tool_name]
+    upstream_tool = get_upstream_tool(tool_name)
+    if upstream_tool and upstream_tool.get("route"):
+        return str(upstream_tool["route"])
     if not tool_name.startswith("unity_"):
         raise RouteResolutionError(
             f"{tool_name} is not a valid Unity MCP tool name. Expected a name like unity_scene_info."
@@ -142,21 +71,33 @@ def tool_name_to_route(tool_name: str) -> str:
 def route_to_tool_name(route: str) -> str:
     if route in ROUTE_TOOL_OVERRIDES:
         return ROUTE_TOOL_OVERRIDES[route]
+    upstream_match = get_route_index().get(route)
+    if upstream_match:
+        return str(upstream_match["name"])
     return "unity_" + route.replace("/", "_").replace("-", "_")
 
 
-def iter_known_tools(category: str | None = None) -> List[Dict[str, str]]:
-    items: Iterable[tuple[str, Dict[str, str]]] = KNOWN_TOOL_SPECS.items()
+def iter_known_tools(
+    category: str | None = None,
+    tier: str | None = None,
+    search: str | None = None,
+    include_unsupported: bool = False,
+) -> List[Dict[str, str]]:
     result: List[Dict[str, str]] = []
-    for name, spec in sorted(items):
-        derived_category = spec["route"].split("/", 1)[0]
-        if category and derived_category != category.lower():
-            continue
+    for tool in iter_upstream_tools(
+        category=category,
+        tier=tier,
+        search=search,
+        include_unsupported=include_unsupported,
+    ):
         result.append(
             {
-                "name": name,
-                "route": spec["route"],
-                "description": spec["description"],
+                "name": str(tool["name"]),
+                "route": str(tool["route"]) if tool.get("route") else "",
+                "description": str(tool.get("description", "")),
+                "tier": str(tool.get("tier", "")),
+                "category": str(tool.get("category", "")),
+                "execution": str(tool.get("execution", "")),
             }
         )
     return result

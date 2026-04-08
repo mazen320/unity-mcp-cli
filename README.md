@@ -90,6 +90,7 @@ cli-anything-unity-mcp
 cli-anything-unity-mcp instances
 cli-anything-unity-mcp select <port>
 cli-anything-unity-mcp --json workflow inspect --port <port>
+cli-anything-unity-mcp --json workflow build-sample --name CodexArena --cleanup --port <port>
 cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port <port>
 cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port <port>
 ```
@@ -98,18 +99,26 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 
 - discover running Unity instances
 - inspect project, scene, editor, hierarchy, and assets
+- browse a 300+ tool snapshot from the upstream Unity MCP ecosystem
+- inspect tool descriptions, tiers, routes, and input schemas with `tool-info`
 - create and update scripts
 - create scene objects and attach components
 - wire serialized references between scene objects and assets
 - create prefabs and instantiate them back into the scene
+- build a complete sample gameplay slice that exercises scripts, transforms, references, prefabs, validation, and play mode
 - validate scenes for missing references and compile problems
 - control play mode with recovery when the bridge rebinds
 - run high-level smoke tests that clean up after themselves
+- emulate MCP-style meta-tools like `unity_list_advanced_tools` and `unity_advanced_tool`
 - fall back to raw `tool` and `route` calls when a dedicated command does not exist yet
 
 ## Main Commands
 
+- `tools`
+- `advanced-tools`
+- `tool-info`
 - `workflow inspect`
+- `workflow build-sample`
 - `workflow create-behaviour`
 - `workflow wire-reference`
 - `workflow create-prefab`
@@ -123,6 +132,27 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 
 More beginner-friendly docs live in `START_HERE.md`.
 
+## MCP Vocabulary Compatibility
+
+One of the goals of this CLI is to let Codex keep using the upstream Unity MCP naming style without paying the MCP transport cost.
+
+That means the CLI now understands important MCP meta-tools too:
+
+- `unity_list_advanced_tools`
+- `unity_advanced_tool`
+- `unity_list_instances`
+- `unity_select_instance`
+- `unity_get_project_context`
+
+Examples:
+
+```powershell
+cli-anything-unity-mcp --json advanced-tools --category terrain
+cli-anything-unity-mcp --json tool-info unity_scene_stats
+cli-anything-unity-mcp --json tool unity_list_advanced_tools --param category=terrain
+cli-anything-unity-mcp --json tool unity_advanced_tool --params '{"tool":"unity_scene_stats","params":{}}'
+```
+
 ## Current Status
 
 This project is already useful for real Unity authoring work. It has been live-tested against a real Unity project for:
@@ -131,6 +161,7 @@ This project is already useful for real Unity authoring work. It has been live-t
 - component attachment
 - serialized reference wiring
 - prefab creation and instantiation
+- complete sample-scaffold generation with cleanup-safe validation
 - scene validation
 - scene reset with explicit save or discard behavior
 - play-mode enter and stop

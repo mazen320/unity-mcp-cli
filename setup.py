@@ -20,6 +20,7 @@ setup(
         "Issues": "https://github.com/mazen320/unity-mcp-cli/issues",
     },
     packages=find_namespace_packages(include=["cli_anything.*"]),
+    package_data={"cli_anything.unity_mcp": ["data/*.json"]},
     include_package_data=True,
     install_requires=["click>=8.1"],
     python_requires=">=3.11",

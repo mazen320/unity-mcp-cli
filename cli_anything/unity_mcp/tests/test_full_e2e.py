@@ -53,7 +53,49 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         self.missing_references = []
 
     def _resolve_gameobject_name(self, payload: dict) -> str | None:
-        return payload.get("gameObjectPath") or payload.get("path") or payload.get("name")
+        raw_name = payload.get("gameObjectPath") or payload.get("path") or payload.get("name")
+        if raw_name in self.gameobjects:
+            return str(raw_name)
+        if isinstance(raw_name, str) and "/" in raw_name:
+            tail_name = raw_name.split("/")[-1]
+            if tail_name in self.gameobjects:
+                return tail_name
+        return raw_name
+
+    @staticmethod
+    def _vec3(value: dict | None = None, *, default: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> dict:
+        if not isinstance(value, dict):
+            return {"x": float(default[0]), "y": float(default[1]), "z": float(default[2])}
+        return {
+            "x": float(value.get("x", default[0])),
+            "y": float(value.get("y", default[1])),
+            "z": float(value.get("z", default[2])),
+        }
+
+    @staticmethod
+    def _deep_clone(value: dict | list | None) -> dict | list | None:
+        if value is None:
+            return None
+        return json.loads(json.dumps(value))
+
+    def _child_names(self, parent_name: str) -> list[str]:
+        return [name for name, go in self.gameobjects.items() if go.get("parent") == parent_name]
+
+    def _hierarchy_path(self, name: str) -> str:
+        go = self.gameobjects[name]
+        parent = go.get("parent")
+        if parent and parent in self.gameobjects:
+            return f"{self._hierarchy_path(parent)}/{name}"
+        return name
+
+    def _delete_gameobject_recursive(self, name: str) -> list[str]:
+        deleted: list[str] = []
+        for child_name in list(self._child_names(name)):
+            deleted.extend(self._delete_gameobject_recursive(child_name))
+        if name in self.gameobjects:
+            self.gameobjects.pop(name, None)
+            deleted.append(name)
+        return deleted
 
     def _component_properties(self, gameobject_name: str, component_type: str) -> list[dict]:
         component = self.gameobjects[gameobject_name]["component_data"].setdefault(
@@ -92,6 +134,11 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
 
     def _gameobject_info(self, name: str) -> dict:
         go = self.gameobjects[name]
+        children = self._child_names(name)
+        hierarchy_path = self._hierarchy_path(name)
+        position = self._vec3(go.get("position"))
+        rotation = self._vec3(go.get("rotation"))
+        scale = self._vec3(go.get("scale"), default=(1.0, 1.0, 1.0))
         return {
             "name": name,
             "instanceId": go["instanceId"],
@@ -101,20 +148,20 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             "tag": "Untagged",
             "layer": "Default",
             "layerIndex": 0,
-            "position": {"x": 0, "y": 0, "z": 0},
-            "localPosition": {"x": 0, "y": 0, "z": 0},
-            "rotation": {"x": 0, "y": 0, "z": 0},
-            "localRotation": {"x": 0, "y": 0, "z": 0},
-            "scale": {"x": 1, "y": 1, "z": 1},
-            "lossyScale": {"x": 1, "y": 1, "z": 1},
+            "position": dict(position),
+            "localPosition": dict(position),
+            "rotation": dict(rotation),
+            "localRotation": dict(rotation),
+            "scale": dict(scale),
+            "lossyScale": dict(scale),
             "components": [
                 {"type": component_type, "fullType": component_type, "enabled": True}
                 for component_type in go["components"]
             ],
-            "children": [],
-            "childCount": 0,
-            "parent": None,
-            "hierarchyPath": name,
+            "children": children,
+            "childCount": len(children),
+            "parent": go.get("parent"),
+            "hierarchyPath": hierarchy_path,
         }
 
     def route_result(self, route: str, payload: dict) -> dict:
@@ -134,6 +181,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 "sceneDirty": self.scene_dirty,
             }
         if route == "scene/info":
+            root_objects = [name for name, go in self.gameobjects.items() if not go.get("parent")]
             return {
                 "activeScene": self.active_scene_name,
                 "sceneCount": 1,
@@ -143,8 +191,8 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                         "path": self.active_scene_path,
                         "isDirty": self.scene_dirty,
                         "isLoaded": True,
-                        "rootObjectCount": len(self.gameobjects),
-                        "rootObjects": list(self.gameobjects),
+                        "rootObjectCount": len(root_objects),
+                        "rootObjects": root_objects,
                         "buildIndex": 0,
                     }
                 ],
@@ -163,7 +211,9 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                         "tag": "Untagged",
                         "layer": "Default",
                         "components": list(go["components"]),
-                        "position": {"x": 0, "y": 0, "z": 0},
+                        "position": self._vec3(go.get("position")),
+                        "parent": go.get("parent"),
+                        "hierarchyPath": self._hierarchy_path(name),
                     }
                 )
             return {
@@ -255,13 +305,27 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             return {"path": path, "content": content, "lines": len(content.splitlines()), "size": len(content)}
         if route == "gameobject/create":
             name = str(payload.get("name") or "New GameObject")
+            parent = payload.get("parent")
             self.gameobjects[name] = {
                 "instanceId": len(self.gameobjects) + 1,
                 "components": ["Transform"],
                 "component_data": {},
+                "position": self._vec3(payload.get("position")),
+                "rotation": self._vec3(payload.get("rotation")),
+                "scale": self._vec3(payload.get("scale"), default=(1.0, 1.0, 1.0)),
+                "parent": parent if parent in self.gameobjects else None,
+                "primitiveType": str(payload.get("primitiveType") or "Empty"),
             }
             self.scene_dirty = True
-            return {"success": True, "name": name, "instanceId": self.gameobjects[name]["instanceId"], "position": {"x": 0, "y": 0, "z": 0}}
+            return {
+                "success": True,
+                "name": name,
+                "instanceId": self.gameobjects[name]["instanceId"],
+                "parent": self.gameobjects[name]["parent"],
+                "position": dict(self.gameobjects[name]["position"]),
+                "rotation": dict(self.gameobjects[name]["rotation"]),
+                "scale": dict(self.gameobjects[name]["scale"]),
+            }
         if route == "gameobject/info":
             name = self._resolve_gameobject_name(payload)
             if name not in self.gameobjects:
@@ -271,9 +335,28 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             name = self._resolve_gameobject_name(payload)
             if name not in self.gameobjects:
                 return {"error": "GameObject not found"}
-            self.gameobjects.pop(name, None)
+            deleted_names = self._delete_gameobject_recursive(name)
             self.scene_dirty = True
-            return {"success": True, "deleted": name}
+            return {"success": True, "deleted": name, "deletedObjects": deleted_names}
+        if route == "gameobject/set-transform":
+            name = self._resolve_gameobject_name(payload)
+            if name not in self.gameobjects:
+                return {"error": "GameObject not found"}
+            go = self.gameobjects[name]
+            if "position" in payload:
+                go["position"] = self._vec3(payload.get("position"))
+            if "rotation" in payload:
+                go["rotation"] = self._vec3(payload.get("rotation"))
+            if "scale" in payload:
+                go["scale"] = self._vec3(payload.get("scale"), default=(1.0, 1.0, 1.0))
+            self.scene_dirty = True
+            return {
+                "success": True,
+                "name": name,
+                "position": dict(go["position"]),
+                "rotation": dict(go["rotation"]),
+                "scale": dict(go["scale"]),
+            }
         if route == "component/add":
             name = self._resolve_gameobject_name(payload)
             if name not in self.gameobjects:
@@ -346,7 +429,11 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             self.prefabs[save_path] = {
                 "name": source_name,
                 "components": list(self.gameobjects[source_name]["components"]),
-                "component_data": json.loads(json.dumps(self.gameobjects[source_name]["component_data"])),
+                "component_data": self._deep_clone(self.gameobjects[source_name]["component_data"]),
+                "position": self._vec3(self.gameobjects[source_name].get("position")),
+                "rotation": self._vec3(self.gameobjects[source_name].get("rotation")),
+                "scale": self._vec3(self.gameobjects[source_name].get("scale"), default=(1.0, 1.0, 1.0)),
+                "primitiveType": self.gameobjects[source_name].get("primitiveType", "Empty"),
             }
             return {"success": True, "path": save_path, "name": source_name}
         if route == "asset/instantiate-prefab":
@@ -358,10 +445,33 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             self.gameobjects[instance_name] = {
                 "instanceId": len(self.gameobjects) + 1,
                 "components": list(prefab["components"]),
-                "component_data": json.loads(json.dumps(prefab["component_data"])),
+                "component_data": self._deep_clone(prefab["component_data"]),
+                "position": self._vec3(payload.get("position"), default=(
+                    prefab["position"]["x"],
+                    prefab["position"]["y"],
+                    prefab["position"]["z"],
+                )),
+                "rotation": self._vec3(payload.get("rotation"), default=(
+                    prefab["rotation"]["x"],
+                    prefab["rotation"]["y"],
+                    prefab["rotation"]["z"],
+                )),
+                "scale": self._vec3(payload.get("scale"), default=(
+                    prefab["scale"]["x"],
+                    prefab["scale"]["y"],
+                    prefab["scale"]["z"],
+                )),
+                "parent": payload.get("parent") if payload.get("parent") in self.gameobjects else None,
+                "primitiveType": prefab.get("primitiveType", "Empty"),
             }
             self.scene_dirty = True
-            return {"success": True, "name": instance_name, "instanceId": self.gameobjects[instance_name]["instanceId"], "position": {"x": 0, "y": 0, "z": 0}}
+            return {
+                "success": True,
+                "name": instance_name,
+                "instanceId": self.gameobjects[instance_name]["instanceId"],
+                "parent": self.gameobjects[instance_name]["parent"],
+                "position": dict(self.gameobjects[instance_name]["position"]),
+            }
         if route == "search/missing-references":
             limit = int(payload.get("limit", 50))
             results = self.missing_references[:limit]
@@ -375,7 +485,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             if len(self.missing_references) > limit:
                 response["truncated"] = True
             return response
-        if route == "scene/stats":
+        if route in {"scene/stats", "search/scene-stats"}:
             total_components = sum(len(go["components"]) for go in self.gameobjects.values())
             component_counts: dict[str, int] = {}
             for go in self.gameobjects.values():
@@ -466,6 +576,7 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
                         "gameobject/create",
                         "gameobject/info",
                         "gameobject/delete",
+                        "gameobject/set-transform",
                         "component/add",
                         "component/get-properties",
                         "component/set-property",
@@ -478,7 +589,7 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
                         "editor/execute-code",
                         "undo/perform",
                     ],
-                    "totalRoutes": 24,
+                    "totalRoutes": 25,
                 },
             )
             return
@@ -669,6 +780,31 @@ class FullE2ETests(unittest.TestCase):
         self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
         self.assertFalse(payload["after"]["editorState"]["isPlaying"])
 
+    def test_workflow_build_sample_creates_and_cleans_up_demo_slice(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "build-sample",
+            "--name",
+            "ArenaProbe",
+            "--cleanup",
+            "--timeout",
+            "5",
+            "--interval",
+            "0.1",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["summary"]["sampleId"], "ArenaProbe")
+        self.assertEqual(payload["validation"]["stats"]["totalGameObjects"], 6)
+        self.assertEqual(payload["objects"]["beaconClone"]["name"], "ArenaProbe_BeaconClone")
+        self.assertEqual(payload["objects"]["beaconClone"]["position"]["x"], -4.0)
+        self.assertEqual(payload["wiring"]["observerTarget"]["referenceName"], "ArenaProbe_Player")
+        self.assertTrue(payload["playMode"]["enter"]["state"]["isPlaying"])
+        self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
+        self.assertEqual(len(payload["cleanup"]["assets"]), 4)
+        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
+
     def test_workflow_wire_reference_sets_scene_object_reference(self) -> None:
         self.run_cli("--json", "workflow", "create-behaviour", "ReferenceHolder", "--object-name", "Holder")
         self.run_cli(
@@ -749,3 +885,30 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(payload["summary"]["totalGameObjects"], 1)
         self.assertIn("stats", payload)
         self.assertIn("hierarchy", payload)
+
+    def test_tool_catalog_and_meta_tools_work(self) -> None:
+        self.server.gameobjects["TerrainRoot"] = {
+            "instanceId": 1,
+            "components": ["Transform"],
+            "component_data": {},
+        }
+
+        catalog_result = self.run_cli("--json", "advanced-tools", "--category", "terrain")
+        catalog_payload = json.loads(catalog_result.stdout.strip())
+        self.assertEqual(catalog_payload["category"], "terrain")
+        self.assertTrue(any(tool["name"] == "unity_terrain_list" for tool in catalog_payload["tools"]))
+
+        info_result = self.run_cli("--json", "tool-info", "unity_scene_stats")
+        info_payload = json.loads(info_result.stdout.strip())
+        self.assertEqual(info_payload["resolvedRoute"], "search/scene-stats")
+
+        advanced_tool_result = self.run_cli(
+            "--json",
+            "tool",
+            "unity_advanced_tool",
+            "--params",
+            "{\"tool\":\"unity_scene_stats\",\"params\":{}}",
+        )
+        advanced_payload = json.loads(advanced_tool_result.stdout.strip())
+        self.assertEqual(advanced_payload["sceneName"], "MainScene")
+        self.assertEqual(advanced_payload["totalGameObjects"], 1)

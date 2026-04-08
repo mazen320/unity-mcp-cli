@@ -86,6 +86,8 @@ cli-anything-unity-mcp
 The CLI already supports:
 - discovering running Unity instances
 - selecting the Unity instance to target
+- browsing a large upstream Unity MCP tool catalog locally
+- searching tools by name/category/tier and inspecting their input schema
 - collecting a combined high-level project snapshot with one command
 - creating a MonoBehaviour script and attaching it to a new scene object
 - wiring serialized object references between scene objects and assets
@@ -113,6 +115,15 @@ There are also two generic escape hatches:
 
 These are important because they keep the harness useful even if we have not added a dedicated top-level CLI command yet.
 
+There is also now a richer discovery layer:
+
+- `tools`
+  Browse the upstream-style tool catalog by category, tier, or search term
+- `advanced-tools`
+  Focus on the advanced part of the tool surface, like terrain, shadergraph, animation, or UI
+- `tool-info`
+  Inspect one tool's route, description, tier, and input schema
+
 ## What Was Live-Tested
 
 The live Unity project acceptance pass confirmed:
@@ -128,6 +139,7 @@ The live Unity project acceptance pass confirmed:
 - the scene was restored to a clean state afterward
 - play mode enter and stop were both confirmed through live state polling
 - the full high-level smoke test completed with play mode enabled and cleaned up after itself
+- the new sample-builder created a full demo slice with generated scripts, primitives, prefab cloning, reference wiring, validation, and cleanup in a real Unity project
 
 That means the CLI is already capable of real authoring work in your project.
 
@@ -184,6 +196,15 @@ Machine-readable mode:
 cli-anything-unity-mcp --json project-info --port 7893
 ```
 
+Catalog examples:
+
+```powershell
+cli-anything-unity-mcp --json tools --search terrain
+cli-anything-unity-mcp --json advanced-tools --category terrain
+cli-anything-unity-mcp --json tool-info unity_scene_stats
+cli-anything-unity-mcp --json tool unity_list_advanced_tools --param category=terrain
+```
+
 ## High-Level Workflows
 
 These are the best commands to start with if you want Codex to behave more like a teammate and less like a raw transport client.
@@ -234,6 +255,18 @@ Run a reversible end-to-end smoke test:
 
 ```powershell
 cli-anything-unity-mcp --json workflow smoke-test --port 7893
+```
+
+Build a complete sample slice for testing and clean it up after validation:
+
+```powershell
+cli-anything-unity-mcp --json workflow build-sample --name CodexArena --cleanup --port 7893
+```
+
+If you want to keep the generated sample in the scene to inspect or extend it, leave off `--cleanup`:
+
+```powershell
+cli-anything-unity-mcp --json workflow build-sample --name CodexArena --port 7893
 ```
 
 If your scene already has unsaved changes and you want the smoke test to save them first:

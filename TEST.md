@@ -11,6 +11,7 @@ End-to-end coverage:
 - Exercise `instances`, `select`, `scene-info`, `tool unity_execute_code`, and REPL-default behavior against a mock Unity bridge server.
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
+  - `workflow build-sample`
   - `workflow create-behaviour`
   - `workflow wire-reference`
   - `workflow create-prefab`

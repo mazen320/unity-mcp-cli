@@ -108,6 +108,66 @@ def build_behaviour_script(class_name: str, namespace: str | None = None) -> str
     return header + body
 
 
+def build_demo_spin_script(class_name: str) -> str:
+    return (
+        "using UnityEngine;\n\n"
+        f"public class {class_name} : MonoBehaviour\n"
+        "{\n"
+        "    public Vector3 Axis = new Vector3(0f, 1f, 0f);\n"
+        "    public float Speed = 90f;\n\n"
+        "    private void Update()\n"
+        "    {\n"
+        "        transform.Rotate(Axis, Speed * Time.deltaTime, Space.World);\n"
+        "    }\n"
+        "}\n"
+    )
+
+
+def build_demo_bob_script(class_name: str) -> str:
+    return (
+        "using UnityEngine;\n\n"
+        f"public class {class_name} : MonoBehaviour\n"
+        "{\n"
+        "    public float Height = 0.35f;\n"
+        "    public float Speed = 2f;\n\n"
+        "    private Vector3 _basePosition;\n\n"
+        "    private void Awake()\n"
+        "    {\n"
+        "        _basePosition = transform.position;\n"
+        "    }\n\n"
+        "    private void Update()\n"
+        "    {\n"
+        "        float offset = Mathf.Sin(Time.time * Speed) * Height;\n"
+        "        transform.position = _basePosition + new Vector3(0f, offset, 0f);\n"
+        "    }\n"
+        "}\n"
+    )
+
+
+def build_demo_follow_script(class_name: str) -> str:
+    return (
+        "using UnityEngine;\n\n"
+        f"public class {class_name} : MonoBehaviour\n"
+        "{\n"
+        "    public Transform Target;\n"
+        "    public Vector3 Offset = new Vector3(0f, 5f, -8f);\n\n"
+        "    private void LateUpdate()\n"
+        "    {\n"
+        "        if (Target == null)\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n\n"
+        "        transform.position = Target.position + Offset;\n"
+        "        transform.LookAt(Target.position);\n"
+        "    }\n"
+        "}\n"
+    )
+
+
+def vec3(x: float, y: float, z: float) -> Dict[str, float]:
+    return {"x": float(x), "y": float(y), "z": float(z)}
+
+
 def workflow_error_message(payload: Any) -> str | None:
     if isinstance(payload, dict):
         error = payload.get("error")

@@ -37,6 +37,16 @@ class RebindingClient(FakeClient):
         return {"success": True, "route": route, "port": port, "params": params or {}}
 
 
+class CatalogClient(FakeClient):
+    def __init__(self, pings: dict[int, dict]) -> None:
+        super().__init__(pings)
+        self.calls: list[tuple[str, int, dict]] = []
+
+    def call_route(self, port: int, route: str, params: dict | None = None) -> dict:
+        self.calls.append((route, port, params or {}))
+        return {"success": True, "route": route, "port": port, "params": params or {}}
+
+
 class RebindingBackend(UnityMCPBackend):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -65,8 +75,15 @@ class CoreTests(unittest.TestCase):
     def test_tool_route_overrides_and_round_trip(self) -> None:
         self.assertEqual(tool_name_to_route("unity_execute_code"), "editor/execute-code")
         self.assertEqual(tool_name_to_route("unity_scene_hierarchy"), "scene/hierarchy")
+        self.assertEqual(tool_name_to_route("unity_scene_stats"), "search/scene-stats")
+        self.assertEqual(
+            tool_name_to_route("unity_settings_set_quality_level"),
+            "settings/quality-level",
+        )
+        self.assertEqual(tool_name_to_route("unity_get_project_context"), "context")
         self.assertEqual(route_to_tool_name("editor/execute-code"), "unity_execute_code")
         self.assertEqual(route_to_tool_name("scene/hierarchy"), "unity_scene_hierarchy")
+        self.assertEqual(route_to_tool_name("search/scene-stats"), "unity_scene_stats")
 
     def test_session_store_persists_and_trims_history(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
@@ -220,5 +237,70 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(result["port"], 7891)
             self.assertEqual(client.route_calls, [7890, 7891])
             self.assertEqual(store.load().selected_port, 7891)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_advanced_tool_meta_dispatches_to_nested_tool(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            registry_path = tmpdir / "instances.json"
+            session_path = tmpdir / "session.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "port": 7890,
+                            "projectName": "Demo",
+                            "projectPath": "C:/Projects/Demo",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            client = CatalogClient(
+                {
+                    7890: {
+                        "status": "ok",
+                        "projectName": "Demo",
+                        "projectPath": "C:/Projects/Demo",
+                        "unityVersion": "6000.0.0f1",
+                    }
+                }
+            )
+            backend = UnityMCPBackend(
+                client=client,
+                session_store=SessionStore(session_path),
+                registry_path=registry_path,
+            )
+
+            result = backend.call_tool(
+                "unity_advanced_tool",
+                params={
+                    "tool": "unity_scene_stats",
+                    "params": {},
+                },
+            )
+
+            self.assertTrue(result["success"])
+            self.assertEqual(client.calls[0][0], "search/scene-stats")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_list_advanced_tools_meta_groups_by_category(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            backend = UnityMCPBackend(
+                client=FakeClient({}),
+                session_store=SessionStore(tmpdir / "session.json"),
+                registry_path=tmpdir / "instances.json",
+            )
+
+            result = backend.call_tool("unity_list_advanced_tools", params={"category": "terrain"})
+
+            self.assertEqual(result["category"], "terrain")
+            self.assertGreater(result["totalCount"], 0)
+            self.assertTrue(any(tool["name"] == "unity_terrain_list" for tool in result["tools"]))
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

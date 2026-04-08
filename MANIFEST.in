@@ -5,3 +5,4 @@ include START_HERE.md
 include TEST.md
 include UNITY_MCP.md
 include LICENSE
+recursive-include cli_anything/unity_mcp/data *.json
