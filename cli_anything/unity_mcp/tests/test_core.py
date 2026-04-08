@@ -9,6 +9,7 @@ from pathlib import Path
 from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConnectionError
 from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_route
 from cli_anything.unity_mcp.core.session import SessionStore
+from cli_anything.unity_mcp.core.workflows import build_demo_fps_controller_script
 from cli_anything.unity_mcp.utils.unity_mcp_backend import (
     BackendSelectionError,
     UnityMCPBackend,
@@ -72,6 +73,16 @@ class RebindingBackend(UnityMCPBackend):
 
 
 class CoreTests(unittest.TestCase):
+    def test_fps_controller_script_prefers_input_system_when_available(self) -> None:
+        script = build_demo_fps_controller_script("SampleFpsController")
+
+        self.assertIn("#if ENABLE_INPUT_SYSTEM", script)
+        self.assertIn("using UnityEngine.InputSystem;", script)
+        self.assertIn("Mouse.current", script)
+        self.assertIn("Keyboard.current", script)
+        self.assertIn("Gamepad.current", script)
+        self.assertIn("Input.GetAxisRaw(\"Horizontal\")", script)
+
     def test_tool_route_overrides_and_round_trip(self) -> None:
         self.assertEqual(tool_name_to_route("unity_execute_code"), "editor/execute-code")
         self.assertEqual(tool_name_to_route("unity_scene_hierarchy"), "scene/hierarchy")

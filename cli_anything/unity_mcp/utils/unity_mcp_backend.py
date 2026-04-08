@@ -288,6 +288,7 @@ class UnityMCPBackend:
         params: Optional[Dict[str, Any]] = None,
         port: Optional[int] = None,
         use_get: bool = False,
+        use_queue: Optional[bool] = None,
         record_history: bool = True,
         recovery_timeout: float = 15.0,
         recovery_interval: float = 0.5,
@@ -302,6 +303,7 @@ class UnityMCPBackend:
                     params=params,
                     port=port,
                     use_get=use_get,
+                    use_queue=use_queue,
                     record_history=record_history,
                 )
             except (BackendSelectionError, UnityMCPConnectionError) as exc:
@@ -325,6 +327,7 @@ class UnityMCPBackend:
         params: Optional[Dict[str, Any]] = None,
         port: Optional[int] = None,
         use_get: bool = False,
+        use_queue: Optional[bool] = None,
         record_history: bool = True,
     ) -> Any:
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
@@ -332,7 +335,10 @@ class UnityMCPBackend:
         if use_get:
             result = self.client.get_api(resolved_port, route, query=payload or None)
         else:
-            result = self.client.call_route(resolved_port, route, payload)
+            try:
+                result = self.client.call_route(resolved_port, route, payload, use_queue=use_queue)
+            except TypeError:
+                result = self.client.call_route(resolved_port, route, payload)
         if record_history and route not in self.NON_HISTORY_ROUTES:
             self.session_store.record_command(route, payload, resolved_port)
         return result
@@ -342,6 +348,7 @@ class UnityMCPBackend:
         tool_name: str,
         params: Optional[Dict[str, Any]] = None,
         port: Optional[int] = None,
+        use_queue: Optional[bool] = None,
     ) -> Any:
         payload = dict(params or {})
         alias_map = self.TOOL_PARAM_ALIASES.get(tool_name, {})
@@ -386,7 +393,7 @@ class UnityMCPBackend:
 
         route = tool_name_to_route(tool_name)
         use_get = route in {"context", "queue/status"}
-        return self.call_route(route, params=payload, port=port, use_get=use_get)
+        return self.call_route(route, params=payload, port=port, use_get=use_get, use_queue=use_queue)
 
     def known_tools(
         self,

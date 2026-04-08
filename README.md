@@ -25,6 +25,10 @@ To use this repo, you need:
 - a Unity project with the AnkleBreaker Unity MCP plugin installed
 - the Unity Editor running so the plugin can start its local bridge
 
+If the phrase "install the Unity plugin" is unclear, start here:
+
+- [PLUGIN_SETUP.md](PLUGIN_SETUP.md)
+
 Python dependency requirements are intentionally small:
 
 - `click>=8.1`
@@ -79,6 +83,40 @@ After installation, the command is:
 cli-anything-unity-mcp
 ```
 
+## Plugin Setup
+
+The CLI is not the Unity plugin.
+
+You still need to install the Unity-side plugin into the Unity project you want to control.
+
+A local source clone of the plugin repo is not enough by itself. The plugin has to be added to the Unity project.
+
+Fast path:
+
+1. Open your Unity project.
+2. In Unity, go to `Window > Package Manager`.
+3. Click `+`.
+4. Choose `Add package from git URL...`
+5. Paste:
+
+```text
+https://github.com/AnkleBreaker-Studio/unity-mcp-plugin.git
+```
+
+6. Click `Add`.
+7. Wait for Unity to compile.
+8. Look for a console message like:
+
+```text
+[AB-UMCP] Server started on port 7891
+```
+
+That means the Unity-side bridge is running.
+
+Full beginner-friendly setup:
+
+- [PLUGIN_SETUP.md](PLUGIN_SETUP.md)
+
 ## Quick Start
 
 1. Open your Unity project.
@@ -91,6 +129,7 @@ cli-anything-unity-mcp instances
 cli-anything-unity-mcp select <port>
 cli-anything-unity-mcp --json workflow inspect --port <port>
 cli-anything-unity-mcp --json workflow build-sample --name CodexArena --cleanup --port <port>
+cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase --replace --port <port>
 cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port <port>
 cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port <port>
 ```
@@ -106,6 +145,7 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - wire serialized references between scene objects and assets
 - create prefabs and instantiate them back into the scene
 - build a complete sample gameplay slice that exercises scripts, transforms, references, prefabs, validation, and play mode
+- build a fresh 3D FPS sample scene with authored materials, a first-person controller, captures, and play-mode validation
 - run a reusable advanced-tool audit across safe categories and sample-backed graphics/physics probes
 - validate scenes for missing references and compile problems
 - control play mode with recovery when the bridge rebinds
@@ -120,6 +160,7 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - `tool-info`
 - `workflow inspect`
 - `workflow build-sample`
+- `workflow build-fps-sample`
 - `workflow audit-advanced`
 - `workflow create-behaviour`
 - `workflow wire-reference`
@@ -129,6 +170,7 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - `workflow smoke-test`
 - `play play`
 - `play stop`
+- `console`
 - `tool`
 - `route`
 
@@ -198,6 +240,41 @@ The intended maintenance model for this repo is:
 - keep the CLI as the main project
 - stay compatible with upstream plugin releases where possible
 - keep plugin-side patches small and upstreamable
+
+### How should I debug a generated workflow when something feels broken?
+
+Start with the Unity console, not guesses.
+
+Useful commands:
+
+```powershell
+cli-anything-unity-mcp --json console --port <port>
+cli-anything-unity-mcp --json tool unity_console_clear --port <port>
+cli-anything-unity-mcp --json tool unity_get_compilation_errors --param count=50 --port <port>
+```
+
+The intended loop is:
+
+1. Run the workflow.
+2. Check `console` for runtime exceptions.
+3. Check `unity_get_compilation_errors` for script compile issues.
+4. Clear the console and replay the scene after a fix so you know the error is actually gone.
+
+### Does the FPS sample support the Input System package?
+
+Yes.
+
+`workflow build-fps-sample` now generates a controller that prefers `UnityEngine.InputSystem` when `ENABLE_INPUT_SYSTEM` is defined and falls back to legacy `UnityEngine.Input` otherwise.
+
+Practical notes:
+
+- click the Game view before testing movement so Unity gives it focus
+- keyboard: `WASD`
+- jump: `Space`
+- sprint: `Shift`
+- mouse look uses the active Input System mouse delta when available
+
+If you see an exception about `UnityEngine.Input` in a project that uses the Input System package, regenerate or update the FPS controller with the current CLI version.
 
 ### Should the plugin fork be public too?
 

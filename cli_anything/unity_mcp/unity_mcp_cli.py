@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import shlex
 import socket
@@ -14,9 +15,13 @@ from . import __version__
 from .core.client import UnityMCPClient, UnityMCPClientError
 from .core.session import SessionStore
 from .core.workflows import (
+    build_2d_sample_clone_repair_code,
+    build_2d_sample_layout_code,
+    build_3d_fps_sample_scene_code,
     build_asset_path,
     build_behaviour_script,
     build_demo_bob_script,
+    build_demo_fps_controller_script,
     build_demo_follow_script,
     build_demo_spin_script,
     get_active_scene_path,
@@ -1504,9 +1509,25 @@ def workflow_smoke_test_command(
 @click.option("--name", type=str, default="CodexSampleArena", show_default=True, help="Root name for the generated sample in the scene.")
 @click.option("--folder", type=str, default="Assets/CodexSamples", show_default=True, help="Asset folder for generated sample scripts.")
 @click.option("--prefab-folder", type=str, default=None, help="Optional prefab folder. Defaults to <folder>/Prefabs.")
+@click.option(
+    "--visual-mode",
+    type=click.Choice(["auto", "2d", "3d"], case_sensitive=False),
+    default="auto",
+    show_default=True,
+    help="Choose whether the sample should be laid out as a 2D or 3D scene slice. Auto detects obvious 2D scenes.",
+)
 @click.option("--replace", is_flag=True, help="Replace an existing sample with the same root name before building.")
 @click.option("--cleanup", is_flag=True, help="Remove the generated sample after validating it. Useful for repeatable testing.")
 @click.option("--play-check/--no-play-check", default=True, help="Enter and exit play mode after building the sample.")
+@click.option(
+    "--capture",
+    type=click.Choice(["none", "game", "scene", "both"], case_sensitive=False),
+    default="both",
+    show_default=True,
+    help="Capture post-build validation screenshots from the Game View and/or Scene View.",
+)
+@click.option("--capture-width", type=int, default=640, show_default=True, help="Width for validation captures.")
+@click.option("--capture-height", type=int, default=360, show_default=True, help="Height for validation captures.")
 @click.option("--save-if-dirty-start", is_flag=True, help="Save the active scene first if cleanup might need to restore a dirty starting point safely.")
 @click.option("--timeout", type=float, default=30.0, show_default=True, help="Seconds to wait for compilation and play mode transitions.")
 @click.option("--interval", type=float, default=0.5, show_default=True, help="Polling interval while waiting for Unity to settle.")
@@ -1517,9 +1538,13 @@ def workflow_build_sample_command(
     name: str,
     folder: str,
     prefab_folder: str | None,
+    visual_mode: str,
     replace: bool,
     cleanup: bool,
     play_check: bool,
+    capture: str,
+    capture_width: int,
+    capture_height: int,
     save_if_dirty_start: bool,
     timeout: float,
     interval: float,
@@ -1557,6 +1582,20 @@ def workflow_build_sample_command(
         scene_path = get_active_scene_path(scene_info)
         starting_dirty = bool(editor_state.get("sceneDirty"))
         saved_at_start = False
+        hierarchy_snapshot = ctx.obj.backend.call_route_with_recovery(
+            "scene/hierarchy",
+            params={"maxDepth": 2, "maxNodes": 40},
+            port=workflow_port,
+            recovery_timeout=10.0,
+        )
+        hierarchy_nodes = list((hierarchy_snapshot or {}).get("hierarchy") or [])
+        auto_2d_scene = any(
+            isinstance(node, dict) and "Light2D" in list(node.get("components") or [])
+            for node in hierarchy_nodes
+        )
+        resolved_visual_mode = visual_mode.lower()
+        if resolved_visual_mode == "auto":
+            resolved_visual_mode = "2d" if auto_2d_scene else "3d"
 
         if cleanup and starting_dirty and not save_if_dirty_start:
             raise ValueError(
@@ -1588,6 +1627,14 @@ def workflow_build_sample_command(
             "observer": f"{root_name}_Observer",
             "beaconClone": f"{root_name}_BeaconClone",
         }
+        object_paths = {
+            "root": root_name,
+            "floor": f"{root_name}/{object_names['floor']}",
+            "player": f"{root_name}/{object_names['player']}",
+            "beacon": f"{root_name}/{object_names['beacon']}",
+            "observer": f"{root_name}/{object_names['observer']}",
+            "beaconClone": f"{root_name}/{object_names['beaconClone']}",
+        }
         script_names = {
             "spin": f"{sample_id}Spin",
             "bob": f"{sample_id}Bob",
@@ -1611,25 +1658,31 @@ def workflow_build_sample_command(
                 "sampleName": root_name,
                 "sampleId": sample_id,
                 "scenePath": scene_path,
+                "visualMode": resolved_visual_mode,
                 "cleanupRequested": cleanup,
                 "playCheckRequested": play_check,
+                "captureMode": capture.lower(),
                 "savedAtStart": saved_at_start,
             },
             "before": {
                 "scene": scene_info,
                 "editorState": editor_state,
+                "hierarchy": hierarchy_snapshot,
             },
             "scripts": {},
             "objects": {},
             "components": {},
             "wiring": {},
+            "captures": {},
         }
+        capture_dir = Path(".cli-anything-unity-mcp") / "captures"
 
         def _call_route(
             route: str,
             action: str,
             params: dict[str, Any] | None = None,
             recover: bool = False,
+            use_queue: bool | None = None,
             record_history: bool = True,
         ) -> dict[str, Any]:
             result = (
@@ -1637,6 +1690,7 @@ def workflow_build_sample_command(
                     route,
                     params=params,
                     port=workflow_port,
+                    use_queue=use_queue,
                     record_history=record_history,
                     recovery_timeout=max(timeout, 10.0),
                     recovery_interval=max(0.25, interval),
@@ -1646,6 +1700,7 @@ def workflow_build_sample_command(
                     route,
                     params=params,
                     port=workflow_port,
+                    use_queue=use_queue,
                     record_history=record_history,
                 )
             )
@@ -1655,9 +1710,10 @@ def workflow_build_sample_command(
             tool_name: str,
             action: str,
             params: dict[str, Any] | None = None,
+            use_queue: bool | None = None,
         ) -> dict[str, Any]:
             return require_workflow_success(
-                ctx.obj.backend.call_tool(tool_name, params=params, port=workflow_port),
+                ctx.obj.backend.call_tool(tool_name, params=params, port=workflow_port, use_queue=use_queue),
                 action,
             )
 
@@ -1682,8 +1738,50 @@ def workflow_build_sample_command(
             )
             return require_workflow_success(result, "Read compilation status")
 
-        def _attach_component(game_object: str, component_type: str) -> dict[str, Any]:
+        def _wait_for_gameobject_visible(game_object: str) -> dict[str, Any]:
             return require_workflow_success(
+                wait_for_result(
+                    lambda: ctx.obj.backend.call_route(
+                        "gameobject/info",
+                        params={"gameObjectPath": game_object},
+                        port=workflow_port,
+                        use_queue=False,
+                        record_history=False,
+                    ),
+                    lambda result: workflow_error_message(result) is None,
+                    timeout=timeout,
+                    interval=interval,
+                ),
+                f"Confirm GameObject {game_object}",
+            )
+
+        def _wait_for_component_visible(game_object: str, component_type: str) -> dict[str, Any]:
+            return require_workflow_success(
+                wait_for_result(
+                    lambda: ctx.obj.backend.call_route(
+                        "gameobject/info",
+                        params={"gameObjectPath": game_object},
+                        port=workflow_port,
+                        use_queue=False,
+                        record_history=False,
+                    ),
+                    lambda result: workflow_error_message(result) is None and any(
+                        (
+                            component.get("type")
+                            if isinstance(component, dict)
+                            else str(component)
+                        )
+                        == component_type
+                        for component in (result or {}).get("components", [])
+                    ),
+                    timeout=timeout,
+                    interval=interval,
+                ),
+                f"Confirm component {component_type} on {game_object}",
+            )
+
+        def _attach_component(game_object: str, component_type: str) -> dict[str, Any]:
+            add_result = require_workflow_success(
                 wait_for_result(
                     lambda: ctx.obj.backend.call_tool(
                         "unity_component_add",
@@ -1692,6 +1790,7 @@ def workflow_build_sample_command(
                             "componentType": component_type,
                         },
                         port=workflow_port,
+                        use_queue=False,
                     ),
                     lambda result: workflow_error_message(result) is None,
                     timeout=timeout,
@@ -1699,6 +1798,8 @@ def workflow_build_sample_command(
                 ),
                 f"Attach component {component_type} to {game_object}",
             )
+            _wait_for_component_visible(game_object, component_type)
+            return add_result
 
         def _set_component_property(
             game_object: str,
@@ -1715,7 +1816,48 @@ def workflow_build_sample_command(
                     "propertyName": property_name,
                     "value": value,
                 },
+                use_queue=False,
             )
+
+        def _capture_view(kind: str) -> dict[str, Any]:
+            route = "graphics/game-capture" if kind == "game" else "graphics/scene-capture"
+            result = _call_route(
+                route,
+                f"Capture {kind} view",
+                {
+                    "width": capture_width,
+                    "height": capture_height,
+                },
+                recover=True,
+                record_history=False,
+            )
+            encoded = str(result.get("base64") or "")
+            if not encoded:
+                raise ValueError(f"{kind} capture did not return image data.")
+            capture_dir.mkdir(parents=True, exist_ok=True)
+            output_path = (capture_dir / f"{sample_id}-{kind}.png").resolve()
+            output_path.write_bytes(base64.b64decode(encoded))
+            return {
+                "path": str(output_path),
+                "width": int(result.get("width") or capture_width),
+                "height": int(result.get("height") or capture_height),
+                "cameraName": result.get("cameraName"),
+                "success": True,
+            }
+
+        def _record_captures() -> None:
+            capture_mode = capture.lower()
+            requested_kinds: list[str] = []
+            if capture_mode in {"game", "both"}:
+                requested_kinds.append("game")
+            if capture_mode in {"scene", "both"}:
+                requested_kinds.append("scene")
+            for kind in requested_kinds:
+                try:
+                    payload["captures"][kind] = _capture_view(kind)
+                except ValueError as exc:
+                    payload["captures"][kind] = {"success": False, "error": str(exc)}
+                    payload.setdefault("warnings", []).append(f"{kind} capture unavailable: {exc}")
 
         def _delete_asset_if_present(asset_path: str) -> dict[str, Any] | None:
             try:
@@ -1800,124 +1942,165 @@ def workflow_build_sample_command(
                 first_message = first_entry.get("message") or "Unity reported compilation errors."
                 raise ValueError(f"build-sample compilation failed: {first_message}")
 
-            payload["objects"]["root"] = _call_tool(
-                "unity_gameobject_create",
-                f"Create sample root {root_name}",
-                {
-                    "name": object_names["root"],
-                    "primitiveType": "Empty",
-                    "position": vec3(0, 0, 0),
-                },
-            )
-            payload["objects"]["floor"] = _call_tool(
-                "unity_gameobject_create",
-                f"Create sample floor {object_names['floor']}",
-                {
-                    "name": object_names["floor"],
-                    "primitiveType": "Plane",
-                    "parent": object_names["root"],
-                    "position": vec3(0, 0, 0),
-                    "scale": vec3(3.0, 1.0, 3.0),
-                },
-            )
-            payload["objects"]["player"] = _call_tool(
-                "unity_gameobject_create",
-                f"Create sample player {object_names['player']}",
-                {
-                    "name": object_names["player"],
-                    "primitiveType": "Capsule",
-                    "parent": object_names["root"],
-                    "position": vec3(0, 1, 0),
-                },
-            )
-            payload["objects"]["beacon"] = _call_tool(
-                "unity_gameobject_create",
-                f"Create sample beacon {object_names['beacon']}",
-                {
-                    "name": object_names["beacon"],
-                    "primitiveType": "Sphere",
-                    "parent": object_names["root"],
-                    "position": vec3(4, 1, 0),
-                    "scale": vec3(1.25, 1.25, 1.25),
-                },
-            )
-            payload["objects"]["observer"] = _call_tool(
-                "unity_gameobject_create",
-                f"Create sample observer {object_names['observer']}",
-                {
-                    "name": object_names["observer"],
-                    "primitiveType": "Empty",
-                    "parent": object_names["root"],
-                    "position": vec3(0, 4, -8),
-                },
-            )
-            payload["objects"]["observerTransform"] = _call_route(
-                "gameobject/set-transform",
-                f"Adjust sample observer transform for {object_names['observer']}",
-                {
-                    "path": object_names["observer"],
-                    "position": vec3(0, 5, -8),
-                },
-            )
+            if resolved_visual_mode == "2d":
+                payload["objects"]["layout"] = _call_route(
+                    "editor/execute-code",
+                    f"Create 2D sample layout for {root_name}",
+                    {"code": build_2d_sample_layout_code(root_name)},
+                    recover=True,
+                )
+                payload["objects"]["root"] = _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect sample root {root_name}",
+                    {"gameObjectPath": object_paths["root"]},
+                )
+                payload["objects"]["floor"] = _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect sample floor {object_names['floor']}",
+                    {"gameObjectPath": object_paths["floor"]},
+                )
+                payload["objects"]["player"] = _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect sample player {object_names['player']}",
+                    {"gameObjectPath": object_paths["player"]},
+                )
+                payload["objects"]["beacon"] = _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect sample beacon {object_names['beacon']}",
+                    {"gameObjectPath": object_paths["beacon"]},
+                )
+                payload["objects"]["observer"] = _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect sample observer {object_names['observer']}",
+                    {"gameObjectPath": object_paths["observer"]},
+                )
+            else:
+                payload["objects"]["root"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create sample root {root_name}",
+                    {
+                        "name": object_names["root"],
+                        "primitiveType": "Empty",
+                        "position": vec3(0, 0, 0),
+                    },
+                )
+                payload["objects"]["floor"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create sample floor {object_names['floor']}",
+                    {
+                        "name": object_names["floor"],
+                        "primitiveType": "Plane",
+                        "parent": object_names["root"],
+                        "position": vec3(0, 0, 0),
+                        "scale": vec3(3.0, 1.0, 3.0),
+                    },
+                )
+                payload["objects"]["player"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create sample player {object_names['player']}",
+                    {
+                        "name": object_names["player"],
+                        "primitiveType": "Capsule",
+                        "parent": object_names["root"],
+                        "position": vec3(0, 1, 0),
+                    },
+                )
+                payload["objects"]["beacon"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create sample beacon {object_names['beacon']}",
+                    {
+                        "name": object_names["beacon"],
+                        "primitiveType": "Sphere",
+                        "parent": object_names["root"],
+                        "position": vec3(4, 1, 0),
+                        "scale": vec3(1.25, 1.25, 1.25),
+                    },
+                )
+                payload["objects"]["observer"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create sample observer {object_names['observer']}",
+                    {
+                        "name": object_names["observer"],
+                        "primitiveType": "Empty",
+                        "parent": object_names["root"],
+                        "position": vec3(0, 4, -8),
+                    },
+                )
+                payload["objects"]["observerTransform"] = _call_route(
+                    "gameobject/set-transform",
+                    f"Adjust sample observer transform for {object_names['observer']}",
+                    {
+                        "path": object_names["observer"],
+                        "position": vec3(0, 5, -8),
+                    },
+                )
 
             payload["components"]["playerSpin"] = _attach_component(
-                object_names["player"],
+                object_paths["player"],
                 script_names["spin"],
             )
             payload["components"]["beaconBob"] = _attach_component(
-                object_names["beacon"],
+                object_paths["beacon"],
                 script_names["bob"],
             )
             payload["components"]["observerFollow"] = _attach_component(
-                object_names["observer"],
+                object_paths["observer"],
                 script_names["follow"],
             )
 
             payload["componentConfig"] = {
                 "playerSpeed": _set_component_property(
-                    object_names["player"],
+                    object_paths["player"],
                     script_names["spin"],
                     "Speed",
-                    120,
+                    36 if resolved_visual_mode == "2d" else 120,
+                ),
+                "playerAxis": _set_component_property(
+                    object_paths["player"],
+                    script_names["spin"],
+                    "Axis",
+                    vec3(0, 0, 1) if resolved_visual_mode == "2d" else vec3(0, 1, 0),
                 ),
                 "beaconHeight": _set_component_property(
-                    object_names["beacon"],
+                    object_paths["beacon"],
                     script_names["bob"],
                     "Height",
-                    0.45,
+                    0.22 if resolved_visual_mode == "2d" else 0.45,
                 ),
                 "beaconSpeed": _set_component_property(
-                    object_names["beacon"],
+                    object_paths["beacon"],
                     script_names["bob"],
                     "Speed",
-                    1.8,
+                    1.4 if resolved_visual_mode == "2d" else 1.8,
                 ),
                 "observerOffset": _set_component_property(
-                    object_names["observer"],
+                    object_paths["observer"],
                     script_names["follow"],
                     "Offset",
-                    vec3(0, 4.5, -8),
+                    vec3(0, 0, -10) if resolved_visual_mode == "2d" else vec3(0, 4.5, -8),
                 ),
             }
             payload["wiring"]["observerTarget"] = _call_route(
                 "component/set-reference",
                 f"Wire observer target to {object_names['player']}",
                 {
-                    "gameObjectPath": object_names["observer"],
+                    "gameObjectPath": object_paths["observer"],
                     "componentType": script_names["follow"],
                     "propertyName": "Target",
-                    "referenceGameObject": object_names["player"],
+                    "referenceGameObject": object_paths["player"],
                     "referenceComponentType": "Transform",
                 },
+                use_queue=False,
             )
 
             payload["prefab"] = _call_route(
                 "asset/create-prefab",
                 f"Create sample prefab {prefab_path}",
                 {
-                    "gameObjectPath": object_names["beacon"],
+                    "gameObjectPath": object_paths["beacon"],
                     "savePath": prefab_path,
                 },
+                use_queue=True,
             )
             created_assets.append(prefab_path)
             payload["objects"]["beaconClone"] = _call_route(
@@ -1926,12 +2109,21 @@ def workflow_build_sample_command(
                 {
                     "prefabPath": prefab_path,
                     "name": object_names["beaconClone"],
-                    "parent": object_names["root"],
-                    "position": vec3(-4, 1, 0),
+                    "parent": object_paths["root"],
+                    "position": vec3(-4.8, 0.8, 0) if resolved_visual_mode == "2d" else vec3(-4, 1, 0),
                 },
+                use_queue=True,
             )
+            _wait_for_gameobject_visible(object_paths["beaconClone"])
+            if resolved_visual_mode == "2d":
+                payload["objects"]["beaconCloneRepair"] = _call_route(
+                    "editor/execute-code",
+                    f"Restore 2D sprite visuals for {object_names['beaconClone']}",
+                    {"code": build_2d_sample_clone_repair_code(object_names["beaconClone"])},
+                    recover=True,
+                )
             payload["componentConfig"]["beaconCloneSpeed"] = _set_component_property(
-                object_names["beaconClone"],
+                object_paths["beaconClone"],
                 script_names["bob"],
                 "Speed",
                 2.2,
@@ -1978,6 +2170,7 @@ def workflow_build_sample_command(
                 "hierarchy": validation_hierarchy,
                 "stats": validation_stats,
             }
+            _record_captures()
 
             if play_check:
                 play_command_result = _call_route(
@@ -2105,6 +2298,552 @@ def workflow_build_sample_command(
 
         payload["summary"]["createdAssetCount"] = len(created_assets)
         payload["summary"]["cleanupPerformed"] = bool(payload.get("cleanup", {}).get("performed"))
+        payload["summary"]["finalSceneDirty"] = bool(
+            ((payload.get("after") or {}).get("editorState") or {}).get("sceneDirty")
+        )
+        return payload
+
+    _run_and_emit(ctx, _callback)
+
+
+@workflow_group.command("build-fps-sample")
+@click.option("--name", type=str, default="CodexFpsShowcase", show_default=True, help="Root name for the generated FPS sample.")
+@click.option(
+    "--scene-path",
+    type=str,
+    default="Assets/Scenes/CodexFpsShowcase.unity",
+    show_default=True,
+    help="Scene asset path for the generated FPS slice.",
+)
+@click.option(
+    "--folder",
+    type=str,
+    default="Assets/CodexSamples/FPS",
+    show_default=True,
+    help="Asset folder for generated FPS scripts and materials.",
+)
+@click.option("--replace", is_flag=True, help="Replace an existing generated scene and material assets with the same paths.")
+@click.option("--play-check/--no-play-check", default=True, help="Enter and exit play mode after building the FPS sample.")
+@click.option(
+    "--capture",
+    type=click.Choice(["none", "game", "scene", "both"], case_sensitive=False),
+    default="both",
+    show_default=True,
+    help="Capture validation screenshots from the Game View and/or Scene View.",
+)
+@click.option("--capture-width", type=int, default=960, show_default=True, help="Width for validation captures.")
+@click.option("--capture-height", type=int, default=540, show_default=True, help="Height for validation captures.")
+@click.option("--save-if-dirty-start", is_flag=True, help="Save the active scene first if the workflow needs to switch away from a dirty scene.")
+@click.option("--timeout", type=float, default=30.0, show_default=True, help="Seconds to wait for compilation and play mode transitions.")
+@click.option("--interval", type=float, default=0.5, show_default=True, help="Polling interval while waiting for Unity to settle.")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def workflow_build_fps_sample_command(
+    ctx: click.Context,
+    name: str,
+    scene_path: str,
+    folder: str,
+    replace: bool,
+    play_check: bool,
+    capture: str,
+    capture_width: int,
+    capture_height: int,
+    save_if_dirty_start: bool,
+    timeout: float,
+    interval: float,
+    port: int | None,
+) -> None:
+    """Build a fresh 3D FPS-ready sample scene with authored materials, lighting, captures, and play-mode validation."""
+
+    def _callback() -> dict[str, Any]:
+        workflow_port = port
+        if port is not None:
+            ctx.obj.backend.select_instance(port)
+            workflow_port = None
+
+        root_name = str(name or "").strip()
+        if not root_name:
+            raise ValueError("A non-empty FPS sample name is required.")
+
+        sample_id = sanitize_csharp_identifier(root_name)
+        normalized_folder = folder.replace("\\", "/").strip().rstrip("/")
+        if not normalized_folder:
+            normalized_folder = "Assets/CodexSamples/FPS"
+        if not normalized_folder.lower().startswith("assets"):
+            normalized_folder = f"Assets/{normalized_folder.lstrip('/')}"
+
+        normalized_scene_path = scene_path.replace("\\", "/").strip()
+        if not normalized_scene_path:
+            normalized_scene_path = f"Assets/Scenes/{sample_id}.unity"
+        if not normalized_scene_path.lower().startswith("assets/"):
+            normalized_scene_path = f"Assets/{normalized_scene_path.lstrip('/')}"
+        if not normalized_scene_path.lower().endswith(".unity"):
+            normalized_scene_path = f"{normalized_scene_path}.unity"
+
+        material_folder = f"{normalized_folder}/Materials"
+        controller_class = f"{sample_id}FpsController"
+        controller_script_path = build_asset_path(normalized_folder, controller_class)
+        material_paths = {
+            "floor": build_asset_path(material_folder, f"{sample_id}Floor", extension=".mat"),
+            "wall": build_asset_path(material_folder, f"{sample_id}Wall", extension=".mat"),
+            "trim": build_asset_path(material_folder, f"{sample_id}Trim", extension=".mat"),
+            "accent": build_asset_path(material_folder, f"{sample_id}Accent", extension=".mat"),
+            "sky": build_asset_path(material_folder, f"{sample_id}Sky", extension=".mat"),
+        }
+
+        scene_info = ctx.obj.backend.call_route_with_recovery(
+            "scene/info",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        )
+        editor_state = ctx.obj.backend.call_route_with_recovery(
+            "editor/state",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        )
+        try:
+            starting_scene_path = get_active_scene_path(scene_info)
+        except ValueError:
+            starting_scene_path = None
+        starting_dirty = bool(editor_state.get("sceneDirty"))
+        saved_at_start = False
+        if starting_dirty and not starting_scene_path:
+            raise ValueError(
+                "build-fps-sample started from an unsaved temporary scene. Open or save a real scene first, or discard the temporary scene and rerun."
+            )
+        if starting_dirty and not save_if_dirty_start:
+            raise ValueError(
+                "build-fps-sample needs a clean starting scene before switching scenes. Save manually or rerun with --save-if-dirty-start."
+            )
+        if starting_dirty and save_if_dirty_start and starting_scene_path:
+            require_workflow_success(
+                ctx.obj.backend.call_route_with_recovery(
+                    "scene/save",
+                    port=workflow_port,
+                    recovery_timeout=15.0,
+                ),
+                f"Save dirty scene {starting_scene_path}",
+            )
+            editor_state = ctx.obj.backend.call_route_with_recovery(
+                "editor/state",
+                port=workflow_port,
+                record_history=False,
+                recovery_timeout=10.0,
+            )
+            starting_dirty = bool(editor_state.get("sceneDirty"))
+            saved_at_start = True
+
+        payload: dict[str, Any] = {
+            "summary": {
+                "sampleName": root_name,
+                "sampleId": sample_id,
+                "scenePath": normalized_scene_path,
+                "assetFolder": normalized_folder,
+                "materialFolder": material_folder,
+                "replace": replace,
+                "playCheckRequested": play_check,
+                "captureMode": capture.lower(),
+                "savedAtStart": saved_at_start,
+            },
+            "before": {
+                "scene": scene_info,
+                "editorState": editor_state,
+            },
+            "materials": material_paths,
+            "captures": {},
+        }
+        capture_dir = Path(".cli-anything-unity-mcp") / "captures"
+        failure_message: str | None = None
+
+        player_path = f"{root_name}/{root_name}_Player"
+        camera_path = f"{player_path}/MainCamera"
+        floor_path = f"{root_name}/{root_name}_Environment/{root_name}_Floor"
+        hud_path = f"{root_name}/{root_name}_HUD"
+
+        def _call_route(
+            route: str,
+            action: str,
+            params: dict[str, Any] | None = None,
+            *,
+            recover: bool = False,
+            use_queue: bool | None = None,
+            record_history: bool = True,
+        ) -> dict[str, Any]:
+            result = (
+                ctx.obj.backend.call_route_with_recovery(
+                    route,
+                    params=params,
+                    port=workflow_port,
+                    use_queue=use_queue,
+                    record_history=record_history,
+                    recovery_timeout=max(timeout, 10.0),
+                    recovery_interval=max(0.25, interval),
+                )
+                if recover
+                else ctx.obj.backend.call_route(
+                    route,
+                    params=params,
+                    port=workflow_port,
+                    use_queue=use_queue,
+                    record_history=record_history,
+                )
+            )
+            return require_workflow_success(result, action)
+
+        def _call_tool(
+            tool_name: str,
+            action: str,
+            params: dict[str, Any] | None = None,
+            *,
+            use_queue: bool | None = None,
+        ) -> dict[str, Any]:
+            return require_workflow_success(
+                ctx.obj.backend.call_tool(tool_name, params=params, port=workflow_port, use_queue=use_queue),
+                action,
+            )
+
+        def _fetch_editor_state() -> dict[str, Any]:
+            return (
+                ctx.obj.backend.call_route_with_recovery(
+                    "editor/state",
+                    port=workflow_port,
+                    record_history=False,
+                    recovery_timeout=max(timeout, 10.0),
+                    recovery_interval=max(0.25, interval),
+                )
+                or {}
+            )
+
+        def _fetch_compilation() -> dict[str, Any]:
+            result = ctx.obj.backend.call_route_with_recovery(
+                "compilation/errors",
+                params={"count": 50},
+                port=workflow_port,
+                record_history=False,
+                recovery_timeout=max(timeout, 10.0),
+                recovery_interval=max(0.25, interval),
+            )
+            return require_workflow_success(result, "Read compilation status")
+
+        def _wait_for_component_visible(game_object: str, component_type: str) -> dict[str, Any]:
+            return require_workflow_success(
+                wait_for_result(
+                    lambda: ctx.obj.backend.call_route(
+                        "gameobject/info",
+                        params={"gameObjectPath": game_object},
+                        port=workflow_port,
+                        use_queue=False,
+                        record_history=False,
+                    ),
+                    lambda result: workflow_error_message(result) is None and any(
+                        (
+                            component.get("type")
+                            if isinstance(component, dict)
+                            else str(component)
+                        )
+                        == component_type
+                        for component in (result or {}).get("components", [])
+                    ),
+                    timeout=timeout,
+                    interval=interval,
+                ),
+                f"Confirm component {component_type} on {game_object}",
+            )
+
+        def _capture_view(kind: str) -> dict[str, Any]:
+            route = "graphics/game-capture" if kind == "game" else "graphics/scene-capture"
+            result = _call_route(
+                route,
+                f"Capture {kind} view",
+                {
+                    "width": capture_width,
+                    "height": capture_height,
+                },
+                recover=True,
+                record_history=False,
+            )
+            encoded = str(result.get("base64") or "")
+            if not encoded:
+                raise ValueError(f"{kind} capture did not return image data.")
+            capture_dir.mkdir(parents=True, exist_ok=True)
+            output_path = (capture_dir / f"{sample_id}-{kind}.png").resolve()
+            output_path.write_bytes(base64.b64decode(encoded))
+            return {
+                "path": str(output_path),
+                "width": int(result.get("width") or capture_width),
+                "height": int(result.get("height") or capture_height),
+                "cameraName": result.get("cameraName"),
+                "success": True,
+            }
+
+        def _record_captures() -> None:
+            capture_mode = capture.lower()
+            requested_kinds: list[str] = []
+            if capture_mode in {"game", "both"}:
+                requested_kinds.append("game")
+            if capture_mode in {"scene", "both"}:
+                requested_kinds.append("scene")
+            for kind in requested_kinds:
+                try:
+                    payload["captures"][kind] = _capture_view(kind)
+                except ValueError as exc:
+                    payload["captures"][kind] = {"success": False, "error": str(exc)}
+                    payload.setdefault("warnings", []).append(f"{kind} capture unavailable: {exc}")
+
+        try:
+            payload["script"] = _call_route(
+                "script/create",
+                f"Create FPS controller script {controller_script_path}",
+                {
+                    "path": controller_script_path,
+                    "content": build_demo_fps_controller_script(controller_class),
+                },
+            )
+
+            payload["compilation"] = wait_for_compilation(
+                _fetch_compilation,
+                timeout=timeout,
+                interval=interval,
+            )
+            if int((payload["compilation"] or {}).get("count") or 0) > 0:
+                entries = payload["compilation"].get("entries") or []
+                first_entry = entries[0] if entries and isinstance(entries[0], dict) else {}
+                first_message = first_entry.get("message") or "Unity reported compilation errors."
+                raise ValueError(f"build-fps-sample compilation failed: {first_message}")
+
+            payload["sceneBuild"] = _call_route(
+                "editor/execute-code",
+                f"Build FPS sample scene {normalized_scene_path}",
+                {
+                    "code": build_3d_fps_sample_scene_code(
+                        root_name,
+                        normalized_scene_path,
+                        replace_existing=replace,
+                        floor_material_path=material_paths["floor"],
+                        wall_material_path=material_paths["wall"],
+                        trim_material_path=material_paths["trim"],
+                        accent_material_path=material_paths["accent"],
+                        sky_material_path=material_paths["sky"],
+                    )
+                },
+                recover=True,
+                use_queue=True,
+            )
+
+            payload["objects"] = {
+                "root": _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect FPS sample root {root_name}",
+                    {"gameObjectPath": root_name},
+                ),
+                "player": _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect FPS sample player {player_path}",
+                    {"gameObjectPath": player_path},
+                ),
+                "camera": _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect FPS sample camera {camera_path}",
+                    {"gameObjectPath": camera_path},
+                ),
+                "hud": _call_tool(
+                    "unity_gameobject_info",
+                    f"Inspect FPS sample HUD {hud_path}",
+                    {"gameObjectPath": hud_path},
+                ),
+            }
+
+            payload["components"] = {
+                "controller": _call_tool(
+                    "unity_component_add",
+                    f"Attach FPS controller {controller_class}",
+                    {
+                        "gameObjectPath": player_path,
+                        "componentType": controller_class,
+                    },
+                ),
+            }
+            _wait_for_component_visible(player_path, controller_class)
+
+            payload["componentConfig"] = {
+                "moveSpeed": _call_tool(
+                    "unity_component_set_property",
+                    f"Set {controller_class}.MoveSpeed",
+                    {
+                        "gameObjectPath": player_path,
+                        "componentType": controller_class,
+                        "propertyName": "MoveSpeed",
+                        "value": 6.75,
+                    },
+                    use_queue=False,
+                ),
+                "sprintSpeed": _call_tool(
+                    "unity_component_set_property",
+                    f"Set {controller_class}.SprintSpeed",
+                    {
+                        "gameObjectPath": player_path,
+                        "componentType": controller_class,
+                        "propertyName": "SprintSpeed",
+                        "value": 9.5,
+                    },
+                    use_queue=False,
+                ),
+                "lookSensitivity": _call_tool(
+                    "unity_component_set_property",
+                    f"Set {controller_class}.LookSensitivity",
+                    {
+                        "gameObjectPath": player_path,
+                        "componentType": controller_class,
+                        "propertyName": "LookSensitivity",
+                        "value": 1.9,
+                    },
+                    use_queue=False,
+                ),
+                "jumpHeight": _call_tool(
+                    "unity_component_set_property",
+                    f"Set {controller_class}.JumpHeight",
+                    {
+                        "gameObjectPath": player_path,
+                        "componentType": controller_class,
+                        "propertyName": "JumpHeight",
+                        "value": 1.15,
+                    },
+                    use_queue=False,
+                ),
+            }
+
+            payload["sceneSave"] = _call_route(
+                "scene/save",
+                f"Save FPS sample scene {normalized_scene_path}",
+                recover=True,
+            )
+
+            payload["validation"] = {
+                "scene": _call_route(
+                    "scene/info",
+                    "Read FPS scene info",
+                    recover=True,
+                    record_history=False,
+                ),
+                "editorState": _call_route(
+                    "editor/state",
+                    "Read FPS editor state",
+                    recover=True,
+                    record_history=False,
+                ),
+                "hierarchy": _call_route(
+                    "scene/hierarchy",
+                    "Read FPS sample hierarchy",
+                    {"maxDepth": 4, "maxNodes": 80},
+                    recover=True,
+                    record_history=False,
+                ),
+                "stats": _call_tool(
+                    "unity_scene_stats",
+                    "Read FPS scene stats",
+                    {},
+                ),
+                "floorRenderer": _call_tool(
+                    "unity_graphics_renderer_info",
+                    "Inspect FPS floor renderer",
+                    {"objectPath": floor_path},
+                ),
+                "floorMaterial": _call_tool(
+                    "unity_graphics_material_info",
+                    "Inspect FPS floor material",
+                    {
+                        "assetPath": material_paths["floor"],
+                        "includePreview": False,
+                    },
+                ),
+                "accentMaterial": _call_tool(
+                    "unity_graphics_material_info",
+                    "Inspect FPS accent material",
+                    {
+                        "assetPath": material_paths["accent"],
+                        "includePreview": False,
+                    },
+                ),
+            }
+
+            _record_captures()
+
+            if play_check:
+                play_command_result = _call_route(
+                    "editor/play-mode",
+                    "Enter play mode",
+                    {"action": "play"},
+                    recover=True,
+                )
+                play_state = wait_for_result(
+                    _fetch_editor_state,
+                    lambda state: bool((state or {}).get("isPlaying")),
+                    timeout=timeout,
+                    interval=interval,
+                )
+                if not bool(play_state.get("isPlaying")):
+                    raise ValueError("build-fps-sample timed out waiting for Unity to enter play mode.")
+
+                stop_command_result = _call_route(
+                    "editor/play-mode",
+                    "Exit play mode",
+                    {"action": "stop"},
+                    recover=True,
+                )
+                stop_state = wait_for_result(
+                    _fetch_editor_state,
+                    lambda state: (not bool((state or {}).get("isPlaying")))
+                    and (not bool((state or {}).get("isPlayingOrWillChangePlaymode"))),
+                    timeout=timeout,
+                    interval=interval,
+                )
+                if bool(stop_state.get("isPlaying")) or bool(stop_state.get("isPlayingOrWillChangePlaymode")):
+                    raise ValueError("build-fps-sample timed out waiting for Unity to exit play mode.")
+
+                payload["playMode"] = {
+                    "enter": {"command": play_command_result, "state": play_state},
+                    "exit": {"command": stop_command_result, "state": stop_state},
+                }
+
+            payload["after"] = {
+                "editorState": _call_route(
+                    "editor/state",
+                    "Read editor state after FPS build",
+                    recover=True,
+                    record_history=False,
+                ),
+                "scene": _call_route(
+                    "scene/info",
+                    "Read scene info after FPS build",
+                    recover=True,
+                    record_history=False,
+                ),
+            }
+        except Exception as exc:
+            failure_message = str(exc)
+            can_restore = bool(starting_scene_path) and ((not starting_dirty) or saved_at_start)
+            if can_restore:
+                try:
+                    payload["recovery"] = {
+                        "sceneReset": _call_route(
+                            "scene/open",
+                            f"Restore starting scene {starting_scene_path}",
+                            {"path": starting_scene_path, "discardUnsaved": True},
+                            recover=True,
+                        )
+                    }
+                except (BackendSelectionError, UnityMCPClientError, ValueError) as recovery_exc:
+                    payload["recovery"] = {"error": str(recovery_exc)}
+
+        if failure_message:
+            recovery_error = ((payload.get("recovery") or {}).get("error") if isinstance(payload.get("recovery"), dict) else None)
+            if recovery_error:
+                failure_message += f" Recovery issue: {recovery_error}"
+            raise ValueError(failure_message)
+
+        payload["summary"]["sceneCreated"] = (
+            ((payload.get("after") or {}).get("scene") or {}).get("activeScene") == Path(normalized_scene_path).stem
+        )
         payload["summary"]["finalSceneDirty"] = bool(
             ((payload.get("after") or {}).get("editorState") or {}).get("sceneDirty")
         )

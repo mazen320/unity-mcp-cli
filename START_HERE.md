@@ -42,6 +42,10 @@ Before someone can use this setup, they need:
 - the AnkleBreaker Unity MCP plugin installed in their Unity project
 - the Unity Editor running with the bridge server started
 
+If they are not sure what that plugin is, or how to install it, send them here:
+
+- [PLUGIN_SETUP.md](PLUGIN_SETUP.md)
+
 Python package requirements are intentionally small:
 
 - `click>=8.1`
@@ -80,6 +84,34 @@ After installation, the command will be available as:
 ```powershell
 cli-anything-unity-mcp
 ```
+
+## The Plugin Part
+
+The CLI alone is not enough.
+
+The Unity project still needs the upstream Unity plugin installed, because that plugin is the thing inside Unity that actually performs editor actions.
+
+Shortest setup:
+
+1. Open the Unity project.
+2. Go to `Window > Package Manager`.
+3. Click `+`.
+4. Choose `Add package from git URL...`
+5. Paste:
+
+```text
+https://github.com/AnkleBreaker-Studio/unity-mcp-plugin.git
+```
+
+6. Click `Add`.
+7. Wait for Unity to compile.
+8. Check the Unity Console for a line like:
+
+```text
+[AB-UMCP] Server started on port 7891
+```
+
+That means the bridge is live.
 
 ## What It Can Do Right Now
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,8 @@ from pathlib import Path
 from socketserver import ThreadingMixIn, TCPServer
 from urllib.parse import parse_qs, urlparse
 import uuid
+
+PNG_1X1_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2p7QAAAABJRU5ErkJggg=="
 
 
 def get_cli_command() -> list[str]:
@@ -50,6 +53,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         self.gameobjects = {}
         self.scripts = {}
         self.prefabs = {}
+        self.materials = {}
         self.missing_references = []
 
     def _resolve_gameobject_name(self, payload: dict) -> str | None:
@@ -101,6 +105,283 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             self.gameobjects.pop(name, None)
             deleted.append(name)
         return deleted
+
+    def _register_gameobject(
+        self,
+        name: str,
+        *,
+        components: list[str] | None = None,
+        parent: str | None = None,
+        position: dict | None = None,
+        rotation: dict | None = None,
+        scale: dict | None = None,
+        primitive_type: str = "Empty",
+        component_data: dict | None = None,
+    ) -> None:
+        self.gameobjects[name] = {
+            "instanceId": len(self.gameobjects) + 1,
+            "components": list(components or ["Transform"]),
+            "component_data": self._deep_clone(component_data) or {},
+            "position": self._vec3(position),
+            "rotation": self._vec3(rotation),
+            "scale": self._vec3(scale, default=(1.0, 1.0, 1.0)),
+            "parent": parent if parent in self.gameobjects else None,
+            "primitiveType": primitive_type,
+        }
+
+    def _create_2d_sample_layout_from_code(self, code: str) -> dict | None:
+        if "_Backdrop" not in code or "_Player" not in code:
+            return None
+        match = re.search(r'var rootName = "([^"]+)";', code or "")
+        if not match:
+            return None
+
+        root_name = match.group(1)
+        self._delete_gameobject_recursive(root_name)
+
+        self._register_gameobject(root_name)
+        self._register_gameobject(
+            f"{root_name}_Backdrop",
+            parent=root_name,
+            components=["Transform", "SpriteRenderer"],
+            scale={"x": 13.0, "y": 8.0, "z": 1.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_Floor",
+            parent=root_name,
+            components=["Transform", "SpriteRenderer"],
+            position={"x": 0.0, "y": -2.25, "z": 0.0},
+            scale={"x": 12.0, "y": 1.2, "z": 1.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_Lane",
+            parent=root_name,
+            components=["Transform", "SpriteRenderer"],
+            position={"x": 0.0, "y": -1.1, "z": 0.0},
+            scale={"x": 9.0, "y": 0.18, "z": 1.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_Player",
+            parent=root_name,
+            components=["Transform", "SpriteRenderer"],
+            position={"x": -2.4, "y": -0.35, "z": 0.0},
+            scale={"x": 1.35, "y": 2.1, "z": 1.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_PlayerAccent",
+            parent=f"{root_name}_Player",
+            components=["Transform", "SpriteRenderer"],
+            position={"x": 0.0, "y": 0.25, "z": 0.0},
+            scale={"x": 0.65, "y": 0.55, "z": 1.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_Beacon",
+            parent=root_name,
+            components=["Transform", "SpriteRenderer"],
+            position={"x": 2.6, "y": 0.15, "z": 0.0},
+            rotation={"x": 0.0, "y": 0.0, "z": 45.0},
+            scale={"x": 1.35, "y": 1.35, "z": 1.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_BeaconGlow",
+            parent=root_name,
+            components=["Transform", "SpriteRenderer"],
+            position={"x": 2.6, "y": 0.15, "z": 0.0},
+            scale={"x": 2.3, "y": 2.3, "z": 1.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_Observer",
+            parent=root_name,
+            position={"x": 0.0, "y": 0.0, "z": -10.0},
+        )
+        self.scene_dirty = True
+        return {
+            "success": True,
+            "mode": "2d",
+            "created": [
+                root_name,
+                f"{root_name}_Backdrop",
+                f"{root_name}_Floor",
+                f"{root_name}_Lane",
+                f"{root_name}_Player",
+                f"{root_name}_Beacon",
+                f"{root_name}_Observer",
+            ],
+        }
+
+    def _create_3d_fps_scene_from_code(self, code: str) -> dict | None:
+        if "CLI_ANYTHING_FPS_SCENE" not in (code or ""):
+            return None
+
+        def _extract(name: str) -> str | None:
+            match = re.search(rf'var {name} = "([^"]+)";', code or "")
+            return match.group(1) if match else None
+
+        root_name = _extract("rootName")
+        scene_path = _extract("scenePath")
+        floor_material_path = _extract("floorMaterialPath")
+        wall_material_path = _extract("wallMaterialPath")
+        trim_material_path = _extract("trimMaterialPath")
+        accent_material_path = _extract("accentMaterialPath")
+        sky_material_path = _extract("skyMaterialPath")
+        if not root_name or not scene_path:
+            return None
+
+        self.active_scene_path = scene_path
+        self.active_scene_name = Path(scene_path).stem
+        self.gameobjects = {}
+        self.materials = {
+            path: {"path": path, "shader": "Standard"}
+            for path in [
+                floor_material_path,
+                wall_material_path,
+                trim_material_path,
+                accent_material_path,
+                sky_material_path,
+            ]
+            if path
+        }
+
+        environment_name = f"{root_name}_Environment"
+        player_name = f"{root_name}_Player"
+        camera_name = "MainCamera"
+        hud_name = f"{root_name}_HUD"
+
+        self._register_gameobject(root_name)
+        self._register_gameobject(environment_name, parent=root_name)
+        self._register_gameobject(
+            f"{root_name}_Floor",
+            parent=environment_name,
+            components=["Transform", "MeshFilter", "BoxCollider", "MeshRenderer"],
+            scale={"x": 28.0, "y": 1.0, "z": 28.0},
+        )
+        for wall_name, position, scale in [
+            (f"{root_name}_NorthWall", {"x": 0.0, "y": 2.2, "z": 14.0}, {"x": 28.0, "y": 4.4, "z": 1.0}),
+            (f"{root_name}_SouthWall", {"x": 0.0, "y": 2.2, "z": -14.0}, {"x": 28.0, "y": 4.4, "z": 1.0}),
+            (f"{root_name}_EastWall", {"x": 14.0, "y": 2.2, "z": 0.0}, {"x": 1.0, "y": 4.4, "z": 28.0}),
+            (f"{root_name}_WestWall", {"x": -14.0, "y": 2.2, "z": 0.0}, {"x": 1.0, "y": 4.4, "z": 28.0}),
+        ]:
+            self._register_gameobject(
+                wall_name,
+                parent=environment_name,
+                components=["Transform", "MeshFilter", "BoxCollider", "MeshRenderer"],
+                position=position,
+                scale=scale,
+            )
+        for prop_name in [
+            f"{root_name}_LaneStrip",
+            f"{root_name}_Platform",
+            f"{root_name}_CoverA",
+            f"{root_name}_CoverB",
+            f"{root_name}_CoverC",
+            f"{root_name}_ColumnNW",
+            f"{root_name}_ColumnNE",
+            f"{root_name}_ColumnSW",
+            f"{root_name}_ColumnSE",
+        ]:
+            self._register_gameobject(
+                prop_name,
+                parent=environment_name,
+                components=["Transform", "MeshFilter", "BoxCollider", "MeshRenderer"],
+            )
+        for beacon_name in [f"{root_name}_BeaconA", f"{root_name}_BeaconB"]:
+            self._register_gameobject(beacon_name, parent=environment_name)
+            self._register_gameobject(
+                f"{beacon_name}_Base",
+                parent=beacon_name,
+                components=["Transform", "MeshFilter", "CapsuleCollider", "MeshRenderer"],
+            )
+            self._register_gameobject(
+                f"{beacon_name}_Core",
+                parent=beacon_name,
+                components=["Transform", "MeshFilter", "SphereCollider", "MeshRenderer"],
+            )
+            self._register_gameobject(
+                f"{beacon_name}_Light",
+                parent=beacon_name,
+                components=["Transform", "Light"],
+            )
+
+        self._register_gameobject(
+            player_name,
+            parent=root_name,
+            components=["Transform", "CharacterController"],
+            position={"x": 0.0, "y": 1.05, "z": -10.5},
+        )
+        self._register_gameobject(
+            camera_name,
+            parent=player_name,
+            components=["Transform", "Camera", "AudioListener"],
+            position={"x": 0.0, "y": 0.72, "z": 0.0},
+        )
+        self._register_gameobject(f"{root_name}_Weapon", parent=camera_name)
+        self._register_gameobject(
+            f"{root_name}_WeaponBody",
+            parent=f"{root_name}_Weapon",
+            components=["Transform", "MeshFilter", "BoxCollider", "MeshRenderer"],
+        )
+        self._register_gameobject(
+            f"{root_name}_WeaponCore",
+            parent=f"{root_name}_Weapon",
+            components=["Transform", "MeshFilter", "CapsuleCollider", "MeshRenderer"],
+        )
+        self._register_gameobject(
+            f"{root_name}_Sun",
+            parent=root_name,
+            components=["Transform", "Light"],
+        )
+        self._register_gameobject(
+            hud_name,
+            parent=root_name,
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+        for ui_name in [
+            f"{root_name}_ObjectivePanel",
+            f"{root_name}_StatusPanel",
+            f"{root_name}_Reticle",
+        ]:
+            self._register_gameobject(
+                ui_name,
+                parent=hud_name,
+                components=["Transform", "RectTransform"],
+            )
+        for ui_name in [
+            f"{root_name}_ObjectiveHeader",
+            f"{root_name}_ObjectiveBody",
+            f"{root_name}_ObjectiveAccent",
+            f"{root_name}_HealthLabel",
+            f"{root_name}_AmmoLabel",
+            f"{root_name}_TipLabel",
+            f"{root_name}_ReticleTop",
+            f"{root_name}_ReticleBottom",
+            f"{root_name}_ReticleLeft",
+            f"{root_name}_ReticleRight",
+        ]:
+            parent_name = (
+                f"{root_name}_ObjectivePanel"
+                if "Objective" in ui_name
+                else f"{root_name}_StatusPanel"
+                if any(label in ui_name for label in ["Health", "Ammo", "Tip"])
+                else f"{root_name}_Reticle"
+            )
+            self._register_gameobject(
+                ui_name,
+                parent=parent_name,
+                components=["Transform", "RectTransform"],
+            )
+        self.scene_dirty = False
+
+        return {
+            "success": True,
+            "mode": "3d-fps",
+            "scenePath": scene_path,
+            "root": root_name,
+            "player": player_name,
+            "camera": camera_name,
+            "hud": hud_name,
+            "materials": [path for path in self.materials],
+            "created": [name for name in self.gameobjects],
+        }
 
     @staticmethod
     def _primitive_components(primitive_type: str) -> list[str]:
@@ -245,6 +526,12 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         if route == "scene/save":
             self.scene_dirty = False
             return {"success": True, "scene": self.active_scene_name, "path": self.active_scene_path}
+        if route == "scene/new":
+            self.active_scene_name = "Untitled"
+            self.active_scene_path = "Assets/Scenes/Untitled.unity"
+            self.scene_dirty = False
+            self.gameobjects = {}
+            return {"success": True, "name": self.active_scene_name, "path": self.active_scene_path}
         if route == "scene/open":
             path = payload.get("path") or self.active_scene_path
             discard_unsaved = bool(payload.get("discardUnsaved"))
@@ -432,7 +719,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 component_state[property_name] = reference
                 self.scene_dirty = True
                 return {"success": True, "gameObject": name, "component": component_type, "property": property_name, "referenceName": Path(asset_path).stem, "referenceType": "Asset"}
-            reference_name = str(payload.get("referenceGameObject") or "")
+            reference_name = self._resolve_gameobject_name({"gameObjectPath": payload.get("referenceGameObject")})
             if reference_name not in self.gameobjects:
                 return {"error": f"GameObject '{reference_name}' not found in scene"}
             reference = {"name": reference_name, "type": payload.get("referenceComponentType") or "GameObject", "path": reference_name}
@@ -462,6 +749,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 return {"error": f"Prefab not found at {prefab_path}"}
             instance_name = str(payload.get("name") or f"{self.prefabs[prefab_path]['name']}(Clone)")
             prefab = self.prefabs[prefab_path]
+            parent_name = self._resolve_gameobject_name({"gameObjectPath": payload.get("parent")})
             self.gameobjects[instance_name] = {
                 "instanceId": len(self.gameobjects) + 1,
                 "components": list(prefab["components"]),
@@ -481,7 +769,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                     prefab["scale"]["y"],
                     prefab["scale"]["z"],
                 )),
-                "parent": payload.get("parent") if payload.get("parent") in self.gameobjects else None,
+                "parent": parent_name if parent_name in self.gameobjects else None,
                 "primitiveType": prefab.get("primitiveType", "Empty"),
             }
             self.scene_dirty = True
@@ -577,6 +865,21 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 "fixedDeltaTime": 0.02,
                 "maximumDeltaTime": 0.3333333,
             }
+        if route == "graphics/game-capture":
+            return {
+                "success": True,
+                "base64": PNG_1X1_BASE64,
+                "width": int(payload.get("width") or 512),
+                "height": int(payload.get("height") or 512),
+                "cameraName": "Main Camera",
+            }
+        if route == "graphics/scene-capture":
+            return {
+                "success": True,
+                "base64": PNG_1X1_BASE64,
+                "width": int(payload.get("width") or 512),
+                "height": int(payload.get("height") or 512),
+            }
         if route == "profiler/stats":
             mesh_objects = sum(1 for go in self.gameobjects.values() if "MeshRenderer" in go["components"])
             return {
@@ -648,7 +951,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 return {
                     "assetPath": asset_path,
                     "materialName": Path(str(asset_path)).stem,
-                    "shaderName": "Standard",
+                    "shaderName": self.materials.get(str(asset_path), {}).get("shader", "Standard"),
                     "renderQueue": 2000,
                     "keywords": [],
                 }
@@ -676,6 +979,12 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         if route == "compilation/errors":
             return {"count": 0, "isCompiling": False, "entries": []}
         if route == "editor/execute-code":
+            generated_layout = self._create_2d_sample_layout_from_code(str(payload.get("code") or ""))
+            if generated_layout is not None:
+                return generated_layout
+            generated_fps_scene = self._create_3d_fps_scene_from_code(str(payload.get("code") or ""))
+            if generated_fps_scene is not None:
+                return generated_fps_scene
             return {
                 "success": True,
                 "echo": payload.get("code"),
@@ -729,6 +1038,7 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
                     "routes": [
                         "scene/info",
                         "project/info",
+                        "scene/new",
                         "scene/open",
                         "scene/save",
                         "scene/hierarchy",
@@ -766,7 +1076,7 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
                         "editor/execute-code",
                         "undo/perform",
                     ],
-                    "totalRoutes": 36,
+                    "totalRoutes": 37,
                 },
             )
             return
@@ -973,13 +1283,82 @@ class FullE2ETests(unittest.TestCase):
         payload = json.loads(result.stdout.strip())
 
         self.assertEqual(payload["summary"]["sampleId"], "ArenaProbe")
+        self.assertEqual(payload["summary"]["captureMode"], "both")
         self.assertEqual(payload["validation"]["stats"]["totalGameObjects"], 6)
         self.assertEqual(payload["objects"]["beaconClone"]["name"], "ArenaProbe_BeaconClone")
         self.assertEqual(payload["objects"]["beaconClone"]["position"]["x"], -4.0)
         self.assertEqual(payload["wiring"]["observerTarget"]["referenceName"], "ArenaProbe_Player")
+        self.assertTrue(payload["captures"]["game"]["success"])
+        self.assertTrue(payload["captures"]["scene"]["success"])
+        self.assertTrue(Path(payload["captures"]["game"]["path"]).exists())
+        self.assertTrue(Path(payload["captures"]["scene"]["path"]).exists())
         self.assertTrue(payload["playMode"]["enter"]["state"]["isPlaying"])
         self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
         self.assertEqual(len(payload["cleanup"]["assets"]), 4)
+        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
+
+    def test_workflow_build_sample_auto_detects_2d_scene_and_uses_hierarchy_paths(self) -> None:
+        self.server._register_gameobject(
+            "Global Light 2D",
+            components=["Transform", "Light2D"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "build-sample",
+            "--name",
+            "Arena2D",
+            "--cleanup",
+            "--no-play-check",
+            "--timeout",
+            "5",
+            "--interval",
+            "0.1",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["summary"]["visualMode"], "2d")
+        self.assertTrue(payload["captures"]["game"]["success"])
+        self.assertTrue(payload["captures"]["scene"]["success"])
+        self.assertEqual(payload["objects"]["floor"]["hierarchyPath"], "Arena2D/Arena2D_Floor")
+        self.assertEqual(payload["objects"]["beaconClone"]["position"]["x"], -4.8)
+        self.assertEqual(payload["wiring"]["observerTarget"]["referenceName"], "Arena2D_Player")
+        self.assertGreaterEqual(payload["validation"]["stats"]["totalGameObjects"], 10)
+        self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
+        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
+
+    def test_workflow_build_fps_sample_creates_new_scene_with_captures(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "build-fps-sample",
+            "--name",
+            "ArenaFps",
+            "--scene-path",
+            "Assets/Scenes/ArenaFps.unity",
+            "--capture-width",
+            "320",
+            "--capture-height",
+            "180",
+            "--timeout",
+            "5",
+            "--interval",
+            "0.1",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["summary"]["sampleId"], "ArenaFps")
+        self.assertEqual(payload["summary"]["scenePath"], "Assets/Scenes/ArenaFps.unity")
+        self.assertTrue(payload["summary"]["sceneCreated"])
+        self.assertEqual(payload["validation"]["scene"]["activeScene"], "ArenaFps")
+        self.assertEqual(payload["objects"]["player"]["hierarchyPath"], "ArenaFps/ArenaFps_Player")
+        self.assertEqual(payload["objects"]["camera"]["hierarchyPath"], "ArenaFps/ArenaFps_Player/MainCamera")
+        self.assertEqual(payload["objects"]["hud"]["hierarchyPath"], "ArenaFps/ArenaFps_HUD")
+        self.assertEqual(payload["validation"]["floorMaterial"]["materialName"], "ArenaFpsFloor")
+        self.assertTrue(payload["captures"]["game"]["success"])
+        self.assertTrue(payload["captures"]["scene"]["success"])
+        self.assertTrue(payload["playMode"]["enter"]["state"]["isPlaying"])
         self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
 
     def test_workflow_audit_advanced_reports_probe_results_and_cleans_up(self) -> None:
