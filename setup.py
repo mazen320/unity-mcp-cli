@@ -10,7 +10,7 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 setup(
     name="cli-anything-unity-mcp",
     version="0.1.0",
-    description="CLI-Anything harness for the AnkleBreaker Unity MCP HTTP bridge",
+    description="CLI client for Unity projects using the AnkleBreaker Unity MCP HTTP bridge",
     long_description=README,
     long_description_content_type="text/markdown",
     author="Mazen Shaar",

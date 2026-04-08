@@ -14,10 +14,10 @@ Think of the system like this:
 2. Old MCP server:
    This sits between the AI and the Unity plugin. It translates MCP tool calls into local HTTP requests to the plugin.
 
-3. New CLI:
+3. This CLI repo:
    This skips the MCP protocol layer and talks directly to the same Unity plugin over localhost.
 
-So the CLI is not a fake replacement. It uses the same Unity-side bridge that the MCP setup uses.
+So this is not a clean-room rewrite of the Unity backend. It is a separate CLI/client layer that uses the same Unity-side bridge the MCP setup uses.
 
 ## Why Use This
 
@@ -27,7 +27,7 @@ Benefits:
 - lower overhead than a full MCP tool session
 - easier to debug because every action is just a command
 - works well with Codex because Codex can call shell commands directly
-- keeps most of the same Unity power because the plugin backend is unchanged
+- keeps most of the same Unity power because the upstream plugin backend is unchanged
 
 Tradeoffs:
 - no native MCP tool registry inside the client
@@ -86,7 +86,7 @@ cli-anything-unity-mcp
 The CLI already supports:
 - discovering running Unity instances
 - selecting the Unity instance to target
-- browsing a large upstream Unity MCP tool catalog locally
+- browsing a large local compatibility catalog generated from the upstream Unity MCP tool surface
 - searching tools by name/category/tier and inspecting their input schema
 - collecting a combined high-level project snapshot with one command
 - creating a MonoBehaviour script and attaching it to a new scene object
@@ -144,6 +144,8 @@ The live Unity project acceptance pass confirmed:
 That means the CLI is already capable of real authoring work in your project.
 
 It also now has a higher-level workflow layer so Codex does not need to manually stitch every low-level route together for common tasks.
+
+It does not mean the upstream Unity backend disappeared. This CLI still depends on the Unity plugin being present in the target project.
 
 ## Known Rough Edges
 

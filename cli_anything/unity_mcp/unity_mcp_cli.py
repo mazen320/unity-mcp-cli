@@ -210,7 +210,7 @@ def cli(
     agent_id: str,
     legacy: bool,
 ) -> None:
-    """Direct CLI for the AnkleBreaker Unity MCP editor bridge."""
+    """Direct CLI client for Unity projects using the AnkleBreaker Unity MCP editor bridge."""
     client = UnityMCPClient(
         host=host,
         agent_id=agent_id,

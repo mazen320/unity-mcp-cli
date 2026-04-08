@@ -1,6 +1,6 @@
 # cli-anything-unity-mcp
 
-`cli-anything-unity-mcp` is a direct CLI wrapper for the AnkleBreaker Unity MCP plugin.
+`cli-anything-unity-mcp` is a direct CLI client for Unity projects that use the AnkleBreaker Unity MCP plugin.
 
 Instead of speaking MCP over stdio, it talks to the Unity package's local HTTP bridge on `127.0.0.1` and uses the shared instance registry to discover running editors.
 

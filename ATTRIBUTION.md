@@ -1,8 +1,8 @@
 # Attribution Notes
 
-This repository is the CLI layer only.
+This repository is the CLI/client layer only.
 
-It is MIT-licensed as a standalone Python project, but it is designed to work with the upstream AnkleBreaker Unity MCP ecosystem:
+It is MIT-licensed for the code in this repo, but it is designed to work with the upstream AnkleBreaker Unity MCP ecosystem:
 
 - `AnkleBreaker-Studio/unity-mcp-plugin`
 - `AnkleBreaker-Studio/unity-mcp-server`
@@ -12,6 +12,8 @@ It is MIT-licensed as a standalone Python project, but it is designed to work wi
 People looking at this repo may assume the upstream plugin and server are plain permissive open source. They are not.
 
 The upstream projects currently use the `AnkleBreaker Open License v1.0`, which includes attribution requirements and resale restrictions.
+
+This repo also includes compatibility-oriented metadata generated from the upstream server tool surface. That does not make the upstream backend part of this repo's MIT license.
 
 ## Practical Guidance
 
@@ -38,5 +40,5 @@ This file is not saying your own CLI code must use the upstream license.
 
 It is here to make the repo boundary clear:
 
-- this CLI repo: your standalone wrapper/client code
+- this CLI repo: your separate wrapper/client code
 - upstream plugin/server: separate software with their own license terms

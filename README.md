@@ -1,6 +1,6 @@
 # Unity MCP CLI
 
-`unity-mcp-cli` is a Codex-first CLI harness for the AnkleBreaker Unity MCP bridge.
+`unity-mcp-cli` is a Codex-first CLI client for Unity projects that use the AnkleBreaker Unity MCP bridge.
 
 Instead of exposing Unity through MCP tool registration, this project talks directly to the Unity plugin's local HTTP bridge and uses the shared instance registry to discover running editors.
 
@@ -8,14 +8,14 @@ The result is a lighter, easier-to-debug workflow that still uses the real Unity
 
 ## What This Repo Is
 
-This repository publishes the standalone CLI layer only.
+This repository publishes a separate CLI/client layer.
 
 It is meant for people who want:
 
 - a shell-friendly way to drive Unity
 - lower overhead than a full MCP session
 - a good fit for Codex and other command-driven agents
-- direct access to the same Unity backend the MCP stack uses
+- direct access to the same Unity backend the upstream MCP stack uses
 
 ## What You Need
 
@@ -53,10 +53,10 @@ Most users should:
 
 The system is split into two layers:
 
-- Unity plugin: the real backend that edits scenes, scripts, components, assets, and play mode
-- This CLI: a direct client for that backend over `127.0.0.1`
+- Upstream Unity plugin: the real backend that edits scenes, scripts, components, assets, and play mode
+- This CLI repo: a direct client for that backend over `127.0.0.1`
 
-That means this repo is not reimplementing Unity behavior. It is wrapping the existing Unity bridge in a CLI that is easier for Codex to drive.
+That means this repo is not a clean-room replacement for the Unity backend. It is a separate CLI layer built to drive the existing bridge more efficiently from Codex and the shell.
 
 ## Installation
 
@@ -99,7 +99,7 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 
 - discover running Unity instances
 - inspect project, scene, editor, hierarchy, and assets
-- browse a 300+ tool snapshot from the upstream Unity MCP ecosystem
+- browse a 300+ tool compatibility snapshot generated from the upstream Unity MCP ecosystem
 - inspect tool descriptions, tiers, routes, and input schemas with `tool-info`
 - create and update scripts
 - create scene objects and attach components
@@ -244,7 +244,7 @@ If you find a security problem, especially around local bridge exposure, unsafe 
 
 ## Upstream Attribution
 
-This CLI integrates with the upstream AnkleBreaker Unity MCP plugin and server ecosystem.
+This CLI is a separate project, but it integrates with the upstream AnkleBreaker Unity MCP plugin and server ecosystem and still depends on that Unity-side backend at runtime.
 
 If you distribute a product or tool that includes or depends on that upstream software, check the upstream license terms and attribution requirements. The upstream license explicitly asks for attribution such as:
 
@@ -277,15 +277,15 @@ agent-harness/
 
 ## Credits
 
-This project was inspired by CLI-Anything and built around the AnkleBreaker Unity MCP ecosystem:
+This project was inspired by CLI-Anything and built as a separate CLI layer for the AnkleBreaker Unity MCP ecosystem:
 
 - [AnkleBreaker-Studio/unity-mcp-server](https://github.com/AnkleBreaker-Studio/unity-mcp-server)
 - [AnkleBreaker-Studio/unity-mcp-plugin](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin)
 
-This repository publishes the CLI layer only.
+This repository publishes the CLI/client layer only. It does not claim ownership of the upstream Unity backend.
 
 ## License
 
-This repository is licensed under the MIT License. See [LICENSE](LICENSE).
+This repository is licensed under the MIT License for the code in this repo. See [LICENSE](LICENSE).
 
 Compatibility with the Unity plugin does not change the upstream license terms of the plugin itself. If you use or distribute the plugin, check the upstream plugin and server repositories for their own license terms.
