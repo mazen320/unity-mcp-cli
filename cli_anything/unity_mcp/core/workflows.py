@@ -637,19 +637,21 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "    }\n\n"
         "    private void OnGUI()\n"
         "    {\n"
-        "        EnsureGuiStyles();\n"
         "        float scale = Mathf.Clamp(Screen.height / 1080f, 0.85f, 1.15f);\n"
-        "        DrawHudPanel(new Rect(24f * scale, 24f * scale, 430f * scale, 118f * scale), new Color(0.04f, 0.06f, 0.09f, 0.82f));\n"
-        "        GUI.Label(new Rect(42f * scale, 38f * scale, 380f * scale, 28f * scale), \"CODEX RANGE // FPS STARTER\", _headerStyle);\n"
-        "        GUI.Label(new Rect(42f * scale, 72f * scale, 380f * scale, 52f * scale), _targetsHit >= _totalTargets ? \"Objective complete: both cyan beacons are down.\" : $\"Tag the cyan beacons. Targets {_targetsHit}/{Mathf.Max(1, _totalTargets)}.\", _bodyStyle);\n"
-        "        float panelHeight = 142f * scale;\n"
-        "        float panelTop = Screen.height - panelHeight - (24f * scale);\n"
-        "        DrawHudPanel(new Rect(24f * scale, panelTop, 370f * scale, panelHeight), new Color(0.05f, 0.06f, 0.08f, 0.80f));\n"
-        "        GUI.Label(new Rect(42f * scale, panelTop + (18f * scale), 300f * scale, 24f * scale), _isReloading ? $\"RELOAD   {_ammoInMagazine} / {ReserveAmmo}\" : $\"AMMO     {_ammoInMagazine} / {ReserveAmmo}\", _smallStyle);\n"
-        "        GUI.Label(new Rect(42f * scale, panelTop + (48f * scale), 300f * scale, 24f * scale), $\"SENS     {MouseSensitivity:0.000}  [ / ]\", _smallStyle);\n"
-        "        GUI.Label(new Rect(42f * scale, panelTop + (78f * scale), 300f * scale, 24f * scale), _statusMessage, _smallStyle);\n"
-        "        GUI.Label(new Rect(42f * scale, panelTop + (106f * scale), 312f * scale, 24f * scale), \"LMB fire  |  R reload  |  Shift sprint  |  Esc cursor\", _bodyStyle);\n"
-        "        DrawCrosshair(scale);\n"
+        "        if (_objectiveText == null || _ammoText == null || _sensitivityText == null)\n"
+        "        {\n"
+        "            EnsureGuiStyles();\n"
+        "            DrawHudPanel(new Rect(24f * scale, 24f * scale, 430f * scale, 118f * scale), new Color(0.04f, 0.06f, 0.09f, 0.82f));\n"
+        "            GUI.Label(new Rect(42f * scale, 38f * scale, 380f * scale, 28f * scale), \"CODEX RANGE // FPS STARTER\", _headerStyle);\n"
+        "            GUI.Label(new Rect(42f * scale, 72f * scale, 380f * scale, 52f * scale), _targetsHit >= _totalTargets ? \"Tag complete: both cyan beacons are down.\" : $\"Tag the cyan beacons. Targets {_targetsHit}/{Mathf.Max(1, _totalTargets)}.\", _bodyStyle);\n"
+        "            float panelHeight = 142f * scale;\n"
+        "            float panelTop = Screen.height - panelHeight - (24f * scale);\n"
+        "            DrawHudPanel(new Rect(24f * scale, panelTop, 370f * scale, panelHeight), new Color(0.05f, 0.06f, 0.08f, 0.80f));\n"
+        "            GUI.Label(new Rect(42f * scale, panelTop + (18f * scale), 300f * scale, 24f * scale), _isReloading ? $\"RELOAD   {_ammoInMagazine} / {ReserveAmmo}\" : $\"AMMO     {_ammoInMagazine} / {ReserveAmmo}\", _smallStyle);\n"
+        "            GUI.Label(new Rect(42f * scale, panelTop + (48f * scale), 300f * scale, 24f * scale), $\"SENS     {MouseSensitivity:0.000}  [ / ]\", _smallStyle);\n"
+        "            GUI.Label(new Rect(42f * scale, panelTop + (78f * scale), 300f * scale, 24f * scale), _statusMessage, _smallStyle);\n"
+        "            GUI.Label(new Rect(42f * scale, panelTop + (106f * scale), 312f * scale, 24f * scale), \"LMB fire  |  R reload  |  Shift sprint  |  Esc cursor\", _bodyStyle);\n"
+        "        }\n"
         "        if (Time.time < _hitMarkerUntil)\n"
         "        {\n"
         "            DrawHitMarker(scale);\n"
@@ -1450,6 +1452,7 @@ var reticleCenter = CreateUiNode(
     new UnityEngine.Vector2(4f, 4f)
 );
 reticleCenter.AddComponent<UnityEngine.UI.Image>().color = new UnityEngine.Color(0.22f, 0.86f, 1f, 1f);
+reticleRoot.SetActive(false);
 
 var sun = new UnityEngine.GameObject(rootName + "_Sun");
 sun.transform.SetParent(root.transform, false);
