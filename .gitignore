@@ -1,0 +1,14 @@
+.cli-anything-unity-mcp/
+.pip-tmp/
+.tmp-tests/
+cli_anything_unity_mcp.egg-info/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+tmp*/
+dist/
+build/
