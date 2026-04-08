@@ -12,3 +12,4 @@ htmlcov/
 tmp*/
 dist/
 build/
+.vs/
