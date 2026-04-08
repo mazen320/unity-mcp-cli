@@ -34,6 +34,41 @@ Tradeoffs:
 - Codex needs good prompting so it knows which CLI commands to run
 - some workflows may need extra wrappers to feel as smooth as native MCP tools
 
+## Requirements
+
+Before someone can use this setup, they need:
+
+- Python `3.11` or newer
+- the AnkleBreaker Unity MCP plugin installed in their Unity project
+- the Unity Editor running with the bridge server started
+
+Python package requirements are intentionally small:
+
+- `click>=8.1`
+
+That dependency is listed in both `requirements.txt` and `setup.py`.
+
+## Installation
+
+From the repository root:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+If they prefer the shortest path:
+
+```powershell
+python -m pip install -e .
+```
+
+After installation, the command will be available as:
+
+```powershell
+cli-anything-unity-mcp
+```
+
 ## What It Can Do Right Now
 
 The CLI already supports:
