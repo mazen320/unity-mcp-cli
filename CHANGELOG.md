@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - MCP-style meta-tool support for advanced-tool browsing and project-context access
 - optional thin MCP adapter entry point, `cli-anything-unity-mcp-mcp`
 - curated MCP tool registry that delegates into the existing CLI/core
+- live MCP pass runner script for repeatable checks against a real Unity editor
 - `workflow build-sample` for generating a complete demo slice with scripts, transforms, prefab cloning, reference wiring, validation, play-mode checks, and optional cleanup
 - `workflow audit-advanced` for repeatable validation of safe advanced-tool categories and disposable sample-backed graphics/physics probes
 
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - graphics advanced tools now normalize `objectPath` to `gameObjectPath` for plugin compatibility
 - mock bridge coverage for transforms, parenting, prefab instantiation, and recursive scene cleanup
 - MCP adapter coverage for initialize, tools/list, and real tools/call flows against the mock Unity bridge
+- curated MCP matrix coverage now exercises most of the high-level tool surface in one pass
 - docs and test plan coverage for the higher-level sample-building workflow
 - public contribution flow with a lightweight CLA policy, commit sign-off guidance, and PR checklist updates
 

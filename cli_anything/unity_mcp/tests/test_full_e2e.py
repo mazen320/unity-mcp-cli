@@ -1227,6 +1227,7 @@ class FullE2ETests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
         )
         self.addCleanup(self.stop_mcp_server, process)
 
@@ -1691,3 +1692,211 @@ class FullE2ETests(unittest.TestCase):
         self.assertFalse(tool_call_result["isError"])
         self.assertTrue(tool_call_result["structuredContent"]["success"])
         self.assertEqual(tool_call_result["structuredContent"]["echo"], "return 1;")
+
+    def test_mcp_server_curated_tool_matrix_covers_workflow_surface(self) -> None:
+        process = self.start_mcp_server()
+
+        select_result = self.call_mcp(
+            process,
+            10,
+            "tools/call",
+            {"name": "unity_select_instance", "arguments": {"port": self.port}},
+        )
+        self.assertFalse(select_result["isError"])
+        self.assertEqual(select_result["structuredContent"]["instance"]["port"], self.port)
+
+        console_result = self.call_mcp(
+            process,
+            11,
+            "tools/call",
+            {"name": "unity_console", "arguments": {"count": 5}},
+        )
+        self.assertFalse(console_result["isError"])
+        self.assertEqual(console_result["structuredContent"]["route"], "console/log")
+        self.assertEqual(console_result["structuredContent"]["params"]["count"], 5)
+
+        validate_result = self.call_mcp(
+            process,
+            12,
+            "tools/call",
+            {"name": "unity_validate_scene", "arguments": {"includeHierarchy": True}},
+        )
+        self.assertFalse(validate_result["isError"])
+        self.assertIn("summary", validate_result["structuredContent"])
+        self.assertIn("hierarchy", validate_result["structuredContent"])
+
+        create_holder_result = self.call_mcp(
+            process,
+            13,
+            "tools/call",
+            {
+                "name": "unity_create_behaviour",
+                "arguments": {
+                    "name": "ReferenceHolder",
+                    "objectName": "McpHolder",
+                    "folder": "Assets/McpPass",
+                },
+            },
+        )
+        self.assertFalse(create_holder_result["isError"])
+        self.assertEqual(create_holder_result["structuredContent"]["className"], "ReferenceHolder")
+
+        create_target_result = self.call_mcp(
+            process,
+            14,
+            "tools/call",
+            {
+                "name": "unity_tool_call",
+                "arguments": {
+                    "toolName": "unity_gameobject_create",
+                    "params": {"name": "McpTarget", "primitiveType": "Empty"},
+                },
+            },
+        )
+        self.assertFalse(create_target_result["isError"])
+        self.assertEqual(create_target_result["structuredContent"]["name"], "McpTarget")
+
+        wire_result = self.call_mcp(
+            process,
+            15,
+            "tools/call",
+            {
+                "name": "unity_wire_reference",
+                "arguments": {
+                    "targetObject": "McpHolder",
+                    "componentType": "ReferenceHolder",
+                    "propertyName": "TargetRef",
+                    "referenceObject": "McpTarget",
+                },
+            },
+        )
+        self.assertFalse(wire_result["isError"])
+        self.assertEqual(wire_result["structuredContent"]["result"]["referenceName"], "McpTarget")
+
+        prefab_result = self.call_mcp(
+            process,
+            16,
+            "tools/call",
+            {
+                "name": "unity_create_prefab",
+                "arguments": {
+                    "gameObject": "McpTarget",
+                    "instantiate": True,
+                    "instanceName": "McpClone",
+                },
+            },
+        )
+        self.assertFalse(prefab_result["isError"])
+        self.assertEqual(prefab_result["structuredContent"]["instance"]["name"], "McpClone")
+
+        advanced_tools_result = self.call_mcp(
+            process,
+            17,
+            "tools/call",
+            {"name": "unity_advanced_tools", "arguments": {"category": "terrain"}},
+        )
+        self.assertFalse(advanced_tools_result["isError"])
+        self.assertEqual(advanced_tools_result["structuredContent"]["category"], "terrain")
+
+        tool_info_result = self.call_mcp(
+            process,
+            18,
+            "tools/call",
+            {"name": "unity_tool_info", "arguments": {"toolName": "unity_scene_stats"}},
+        )
+        self.assertFalse(tool_info_result["isError"])
+        self.assertEqual(tool_info_result["structuredContent"]["resolvedRoute"], "search/scene-stats")
+
+        scene_stats_result = self.call_mcp(
+            process,
+            19,
+            "tools/call",
+            {
+                "name": "unity_tool_call",
+                "arguments": {
+                    "toolName": "unity_scene_stats",
+                    "params": {},
+                },
+            },
+        )
+        self.assertFalse(scene_stats_result["isError"])
+        self.assertEqual(scene_stats_result["structuredContent"]["sceneName"], "MainScene")
+
+        build_sample_result = self.call_mcp(
+            process,
+            20,
+            "tools/call",
+            {
+                "name": "unity_build_sample",
+                "arguments": {
+                    "name": "McpMatrixArena",
+                    "cleanup": True,
+                    "capture": "none",
+                    "playCheck": False,
+                    "saveIfDirtyStart": True,
+                },
+            },
+        )
+        self.assertFalse(build_sample_result["isError"])
+        self.assertEqual(build_sample_result["structuredContent"]["summary"]["sampleName"], "McpMatrixArena")
+
+        build_fps_result = self.call_mcp(
+            process,
+            21,
+            "tools/call",
+            {
+                "name": "unity_build_fps_sample",
+                "arguments": {
+                    "name": "McpFpsMatrix",
+                    "scenePath": "Assets/Scenes/McpFpsMatrix.unity",
+                    "folder": "Assets/McpPass/FPS",
+                    "replace": True,
+                    "verifyLevel": "quick",
+                    "playCheck": False,
+                    "capture": "none",
+                },
+            },
+        )
+        self.assertFalse(build_fps_result["isError"])
+        self.assertEqual(build_fps_result["structuredContent"]["summary"]["verifyLevel"], "quick")
+
+        audit_result = self.call_mcp(
+            process,
+            22,
+            "tools/call",
+            {
+                "name": "unity_audit_advanced",
+                "arguments": {
+                    "categories": ["graphics", "physics", "settings"],
+                },
+            },
+        )
+        self.assertFalse(audit_result["isError"])
+        self.assertEqual(audit_result["structuredContent"]["summary"]["failed"], 0)
+
+        play_result = self.call_mcp(
+            process,
+            23,
+            "tools/call",
+            {"name": "unity_play", "arguments": {"action": "play", "wait": True}},
+        )
+        self.assertFalse(play_result["isError"])
+        self.assertTrue(play_result["structuredContent"]["state"]["isPlaying"])
+
+        stop_result = self.call_mcp(
+            process,
+            24,
+            "tools/call",
+            {"name": "unity_play", "arguments": {"action": "stop", "wait": True}},
+        )
+        self.assertFalse(stop_result["isError"])
+        self.assertFalse(stop_result["structuredContent"]["state"]["isPlaying"])
+
+        reset_result = self.call_mcp(
+            process,
+            25,
+            "tools/call",
+            {"name": "unity_reset_scene", "arguments": {"discardUnsaved": True}},
+        )
+        self.assertFalse(reset_result["isError"])
+        self.assertTrue(reset_result["structuredContent"]["result"]["success"])
