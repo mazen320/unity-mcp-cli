@@ -1,5 +1,6 @@
 include README.md
 include ATTRIBUTION.md
+include CLA.md
 include CHANGELOG.md
 include START_HERE.md
 include TEST.md

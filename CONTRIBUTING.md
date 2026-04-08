@@ -61,6 +61,24 @@ Good PRs usually include:
 
 If your PR changes public command behavior, include before/after examples in the description.
 
+## Contributor Rights And Sign-Offs
+
+This repository uses a lightweight contributor rights policy so future project ownership, relicensing, or commercial arrangements stay clear.
+
+For outside contributors:
+
+- read [CLA.md](CLA.md) before opening a non-trivial pull request
+- sign off your commits with `git commit -s`
+- be ready to leave an explicit PR comment agreeing to the CLA policy if a maintainer asks
+
+Helpful command:
+
+```powershell
+git commit -s -m "Describe your change"
+```
+
+Maintainers may request a separate signed copy of the CLA before merge for larger contributions.
+
 ## Refreshing the Upstream Tool Catalog
 
 This repo carries a generated snapshot of the upstream Unity MCP tool catalog so the CLI can expose richer discovery and MCP-compatible tool names without depending on the MCP server at runtime.

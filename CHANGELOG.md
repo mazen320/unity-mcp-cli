@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - route resolution for plugin variants such as `unity_scene_stats`
 - mock bridge coverage for transforms, parenting, prefab instantiation, and recursive scene cleanup
 - docs and test plan coverage for the higher-level sample-building workflow
+- public contribution flow with a lightweight CLA policy, commit sign-off guidance, and PR checklist updates
 
 ## 0.1.0 - 2026-04-08
 

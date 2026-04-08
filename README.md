@@ -234,6 +234,7 @@ If a bug only exists because the Unity plugin behavior itself needs to change, t
 Contributions are welcome.
 
 For local setup, testing, repo boundaries, and PR expectations, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For outside contributions, see [CLA.md](CLA.md) too.
 
 If you are not sure whether a change belongs in this repo or the Unity plugin repo, open an issue first and describe the workflow you are trying to improve.
 

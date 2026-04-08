@@ -3,3 +3,6 @@ contact_links:
   - name: Security reports
     url: https://github.com/mazen320/unity-mcp-cli/security
     about: Please use private reporting for sensitive security issues when available.
+  - name: Contributor licensing questions
+    url: https://github.com/mazen320/unity-mcp-cli/blob/main/CLA.md
+    about: Read the contribution rights policy before opening a non-trivial pull request.

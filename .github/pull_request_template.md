@@ -15,3 +15,8 @@
 ## Scope Check
 
 - [ ] This belongs in the CLI repo and not only in the Unity plugin
+
+## Contribution Rights
+
+- [ ] My commits are signed off (`git commit -s`)
+- [ ] If I am not a repository owner, I have read and agree to `CLA.md`
