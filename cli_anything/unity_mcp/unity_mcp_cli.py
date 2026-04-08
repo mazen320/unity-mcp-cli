@@ -2113,6 +2113,340 @@ def workflow_build_sample_command(
     _run_and_emit(ctx, _callback)
 
 
+@workflow_group.command("audit-advanced")
+@click.option(
+    "--category",
+    "categories",
+    multiple=True,
+    help="Limit the audit to one or more advanced categories such as graphics, memory, physics, profiler, sceneview, settings, or testing.",
+)
+@click.option(
+    "--sample-backed/--no-sample-backed",
+    default=True,
+    help="Create a disposable scene sample so graphics and physics tools can be probed against real scene objects.",
+)
+@click.option("--prefix", type=str, default="CodexAdvancedAudit", show_default=True, help="Prefix used for any temporary sample objects.")
+@click.option("--save-if-dirty-start", is_flag=True, help="Save the active scene first if sample-backed probes need a clean rollback path.")
+@click.option("--timeout", type=float, default=20.0, show_default=True, help="Seconds to wait for scene recovery and cleanup steps.")
+@click.option("--interval", type=float, default=0.25, show_default=True, help="Polling interval while waiting for Unity to settle.")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def workflow_audit_advanced_command(
+    ctx: click.Context,
+    categories: tuple[str, ...],
+    sample_backed: bool,
+    prefix: str,
+    save_if_dirty_start: bool,
+    timeout: float,
+    interval: float,
+    port: int | None,
+) -> None:
+    """Run a curated validation pass across safe advanced tools and report pass/fail results."""
+
+    def _callback() -> dict[str, Any]:
+        workflow_port = port
+        if port is not None:
+            ctx.obj.backend.select_instance(port)
+            workflow_port = None
+
+        requested_categories = {item.strip().lower() for item in categories if item.strip()}
+        scene_info = ctx.obj.backend.call_route_with_recovery(
+            "scene/info",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        )
+        editor_state = ctx.obj.backend.call_route_with_recovery(
+            "editor/state",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        )
+        scene_path = get_active_scene_path(scene_info)
+        starting_dirty = bool(editor_state.get("sceneDirty"))
+        saved_at_start = False
+
+        if sample_backed and starting_dirty and not save_if_dirty_start:
+            raise ValueError(
+                "Sample-backed advanced audits require a clean starting scene. Save manually or rerun with --save-if-dirty-start."
+            )
+        if sample_backed and starting_dirty and save_if_dirty_start:
+            require_workflow_success(
+                ctx.obj.backend.call_route_with_recovery(
+                    "scene/save",
+                    port=workflow_port,
+                    recovery_timeout=15.0,
+                ),
+                f"Save dirty scene {scene_path}",
+            )
+            editor_state = ctx.obj.backend.call_route_with_recovery(
+                "editor/state",
+                port=workflow_port,
+                record_history=False,
+                recovery_timeout=10.0,
+            )
+            starting_dirty = bool(editor_state.get("sceneDirty"))
+            saved_at_start = True
+
+        sample_root = unique_probe_name(prefix)
+        sample_object_names = {
+            "root": sample_root,
+            "floor": f"{sample_root}_Floor",
+            "probe": f"{sample_root}_Probe",
+        }
+        created_sample = False
+        failure_message: str | None = None
+
+        payload: dict[str, Any] = {
+            "before": {
+                "scene": scene_info,
+                "editorState": editor_state,
+                "scenePath": scene_path,
+                "savedAtStart": saved_at_start,
+            },
+            "requestedCategories": sorted(requested_categories),
+            "sampleBacked": sample_backed,
+            "probes": [],
+            "sample": None,
+        }
+
+        def _category_allowed(name: str) -> bool:
+            return not requested_categories or name.lower() in requested_categories
+
+        def _call_tool(
+            tool_name: str,
+            action: str,
+            params: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            return require_workflow_success(
+                ctx.obj.backend.call_tool(tool_name, params=params, port=workflow_port),
+                action,
+            )
+
+        def _fetch_editor_state() -> dict[str, Any]:
+            result = ctx.obj.backend.call_route_with_recovery(
+                "editor/state",
+                port=workflow_port,
+                record_history=False,
+                recovery_timeout=max(timeout, 10.0),
+                recovery_interval=max(0.1, interval),
+            )
+            return result or {}
+
+        def _record_probe(
+            category: str,
+            tool_name: str,
+            description: str,
+            params: dict[str, Any] | None = None,
+            *,
+            skip_reason: str | None = None,
+        ) -> None:
+            entry: dict[str, Any] = {
+                "category": category,
+                "tool": tool_name,
+                "description": description,
+            }
+            if params:
+                entry["params"] = params
+            if skip_reason:
+                entry["status"] = "skipped"
+                entry["skipReason"] = skip_reason
+                payload["probes"].append(entry)
+                return
+            try:
+                result = _call_tool(tool_name, description, params or {})
+                entry["status"] = "passed"
+                entry["result"] = result
+            except (BackendSelectionError, UnityMCPClientError, ValueError) as exc:
+                entry["status"] = "failed"
+                entry["error"] = str(exc)
+            payload["probes"].append(entry)
+
+        read_only_probes = [
+            ("memory", "unity_memory_status", "Inspect memory profiler status", {}),
+            ("graphics", "unity_graphics_lighting_summary", "Summarize scene lighting", {}),
+            ("sceneview", "unity_sceneview_info", "Inspect scene view camera state", {}),
+            ("settings", "unity_settings_quality", "Inspect quality settings", {}),
+            ("settings", "unity_settings_time", "Inspect time settings", {}),
+            ("profiler", "unity_profiler_stats", "Inspect rendering profiler stats", {}),
+            (
+                "testing",
+                "unity_testing_list_tests",
+                "List available Unity tests",
+                {"mode": "EditMode", "maxResults": 20},
+            ),
+        ]
+
+        try:
+            for category, tool_name, description, params in read_only_probes:
+                if _category_allowed(category):
+                    _record_probe(category, tool_name, description, params)
+
+            if sample_backed:
+                sample_payload: dict[str, Any] = {"rootName": sample_root, "objects": {}}
+                sample_payload["objects"]["root"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create advanced-audit root {sample_root}",
+                    {
+                        "name": sample_object_names["root"],
+                        "primitiveType": "Empty",
+                        "position": vec3(0, 0, 0),
+                    },
+                )
+                sample_payload["objects"]["floor"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create advanced-audit floor {sample_object_names['floor']}",
+                    {
+                        "name": sample_object_names["floor"],
+                        "primitiveType": "Plane",
+                        "parent": sample_object_names["root"],
+                        "position": vec3(0, 0, 0),
+                        "scale": vec3(2.0, 1.0, 2.0),
+                    },
+                )
+                sample_payload["objects"]["probe"] = _call_tool(
+                    "unity_gameobject_create",
+                    f"Create advanced-audit probe {sample_object_names['probe']}",
+                    {
+                        "name": sample_object_names["probe"],
+                        "primitiveType": "Sphere",
+                        "parent": sample_object_names["root"],
+                        "position": vec3(0, 1, 0),
+                    },
+                )
+                created_sample = True
+                payload["sample"] = sample_payload
+
+                sample_probes = [
+                    (
+                        "graphics",
+                        "unity_graphics_renderer_info",
+                        "Inspect renderer info on the sample probe",
+                        {"objectPath": sample_object_names["probe"]},
+                    ),
+                    (
+                        "graphics",
+                        "unity_graphics_mesh_info",
+                        "Inspect mesh info on the sample probe",
+                        {"objectPath": sample_object_names["probe"]},
+                    ),
+                    (
+                        "graphics",
+                        "unity_graphics_material_info",
+                        "Inspect material info on the sample probe",
+                        {"objectPath": sample_object_names["probe"], "includePreview": False},
+                    ),
+                    (
+                        "physics",
+                        "unity_physics_raycast",
+                        "Raycast through the disposable sample",
+                        {
+                            "origin": vec3(0, 10, 0),
+                            "direction": vec3(0, -1, 0),
+                            "maxDistance": 30,
+                        },
+                    ),
+                ]
+                for category, tool_name, description, params in sample_probes:
+                    if _category_allowed(category):
+                        _record_probe(category, tool_name, description, params)
+            else:
+                for category in ("graphics", "physics"):
+                    if _category_allowed(category):
+                        _record_probe(
+                            category,
+                            f"sample-backed:{category}",
+                            f"Sample-backed {category} probes",
+                            skip_reason="Skipped because --no-sample-backed was used.",
+                        )
+        except Exception as exc:  # pragma: no cover - covered via cleanup path
+            failure_message = str(exc)
+        finally:
+            cleanup: dict[str, Any] = {"performed": created_sample}
+            if created_sample:
+                try:
+                    cleanup_state = _fetch_editor_state()
+                    if bool(cleanup_state.get("isPlaying")) or bool(cleanup_state.get("isPlayingOrWillChangePlaymode")):
+                        cleanup["forceStop"] = require_workflow_success(
+                            ctx.obj.backend.call_route_with_recovery(
+                                "editor/play-mode",
+                                params={"action": "stop"},
+                                port=workflow_port,
+                                recovery_timeout=max(timeout, 10.0),
+                                recovery_interval=max(0.1, interval),
+                            ),
+                            "Force stop play mode during advanced-audit cleanup",
+                        )
+                        cleanup["forceStopState"] = wait_for_result(
+                            _fetch_editor_state,
+                            lambda state: (not bool((state or {}).get("isPlaying")))
+                            and (not bool((state or {}).get("isPlayingOrWillChangePlaymode"))),
+                            timeout=timeout,
+                            interval=interval,
+                        )
+                except (BackendSelectionError, UnityMCPClientError, ValueError) as cleanup_exc:
+                    cleanup["forceStopError"] = str(cleanup_exc)
+
+                try:
+                    cleanup["sceneReset"] = require_workflow_success(
+                        ctx.obj.backend.call_route_with_recovery(
+                            "scene/open",
+                            params={"path": scene_path, "discardUnsaved": True},
+                            port=workflow_port,
+                            recovery_timeout=max(timeout, 10.0),
+                            recovery_interval=max(0.1, interval),
+                        ),
+                        f"Reload scene {scene_path} during advanced-audit cleanup",
+                    )
+                except (BackendSelectionError, UnityMCPClientError, ValueError) as cleanup_exc:
+                    cleanup["sceneResetError"] = str(cleanup_exc)
+
+            try:
+                payload["after"] = {
+                    "editorState": ctx.obj.backend.call_route_with_recovery(
+                        "editor/state",
+                        port=workflow_port,
+                        record_history=False,
+                        recovery_timeout=10.0,
+                    ),
+                    "scene": ctx.obj.backend.call_route_with_recovery(
+                        "scene/info",
+                        port=workflow_port,
+                        record_history=False,
+                        recovery_timeout=10.0,
+                    ),
+                }
+            except (BackendSelectionError, UnityMCPClientError, ValueError) as after_exc:
+                cleanup["afterStateError"] = str(after_exc)
+
+            payload["cleanup"] = cleanup
+
+        if failure_message:
+            cleanup_errors = [
+                cleanup_error
+                for key, cleanup_error in payload.get("cleanup", {}).items()
+                if key.endswith("Error")
+            ]
+            if cleanup_errors:
+                failure_message += " Cleanup issues: " + "; ".join(cleanup_errors)
+            raise ValueError(failure_message)
+
+        total = len(payload["probes"])
+        passed = sum(1 for probe in payload["probes"] if probe.get("status") == "passed")
+        failed = sum(1 for probe in payload["probes"] if probe.get("status") == "failed")
+        skipped = sum(1 for probe in payload["probes"] if probe.get("status") == "skipped")
+        payload["summary"] = {
+            "totalProbes": total,
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+            "requestedCategories": sorted(requested_categories),
+            "sampleBacked": sample_backed,
+            "finalSceneDirty": bool(((payload.get("after") or {}).get("editorState") or {}).get("sceneDirty")),
+        }
+        return payload
+
+    _run_and_emit(ctx, _callback)
+
+
 @workflow_group.command("wire-reference")
 @click.argument("target_object")
 @click.argument("component_type")

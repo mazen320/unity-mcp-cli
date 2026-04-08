@@ -106,6 +106,7 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - wire serialized references between scene objects and assets
 - create prefabs and instantiate them back into the scene
 - build a complete sample gameplay slice that exercises scripts, transforms, references, prefabs, validation, and play mode
+- run a reusable advanced-tool audit across safe categories and sample-backed graphics/physics probes
 - validate scenes for missing references and compile problems
 - control play mode with recovery when the bridge rebinds
 - run high-level smoke tests that clean up after themselves
@@ -119,6 +120,7 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - `tool-info`
 - `workflow inspect`
 - `workflow build-sample`
+- `workflow audit-advanced`
 - `workflow create-behaviour`
 - `workflow wire-reference`
 - `workflow create-prefab`
@@ -162,6 +164,7 @@ This project is already useful for real Unity authoring work. It has been live-t
 - serialized reference wiring
 - prefab creation and instantiation
 - complete sample-scaffold generation with cleanup-safe validation
+- reusable advanced-tool audits with disposable graphics/physics probes
 - scene validation
 - scene reset with explicit save or discard behavior
 - play-mode enter and stop

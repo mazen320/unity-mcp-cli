@@ -12,6 +12,7 @@ End-to-end coverage:
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
   - `workflow build-sample`
+  - `workflow audit-advanced`
   - `workflow create-behaviour`
   - `workflow wire-reference`
   - `workflow create-prefab`

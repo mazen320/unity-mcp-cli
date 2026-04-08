@@ -53,7 +53,12 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         self.missing_references = []
 
     def _resolve_gameobject_name(self, payload: dict) -> str | None:
-        raw_name = payload.get("gameObjectPath") or payload.get("path") or payload.get("name")
+        raw_name = (
+            payload.get("gameObjectPath")
+            or payload.get("objectPath")
+            or payload.get("path")
+            or payload.get("name")
+        )
         if raw_name in self.gameobjects:
             return str(raw_name)
         if isinstance(raw_name, str) and "/" in raw_name:
@@ -96,6 +101,20 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             self.gameobjects.pop(name, None)
             deleted.append(name)
         return deleted
+
+    @staticmethod
+    def _primitive_components(primitive_type: str) -> list[str]:
+        primitive = (primitive_type or "Empty").lower()
+        mapping = {
+            "empty": ["Transform"],
+            "plane": ["Transform", "MeshFilter", "MeshCollider", "MeshRenderer"],
+            "sphere": ["Transform", "MeshFilter", "SphereCollider", "MeshRenderer"],
+            "capsule": ["Transform", "MeshFilter", "CapsuleCollider", "MeshRenderer"],
+            "cube": ["Transform", "MeshFilter", "BoxCollider", "MeshRenderer"],
+            "cylinder": ["Transform", "MeshFilter", "CapsuleCollider", "MeshRenderer"],
+            "quad": ["Transform", "MeshFilter", "MeshRenderer"],
+        }
+        return list(mapping.get(primitive, ["Transform"]))
 
     def _component_properties(self, gameobject_name: str, component_type: str) -> list[dict]:
         component = self.gameobjects[gameobject_name]["component_data"].setdefault(
@@ -306,15 +325,16 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         if route == "gameobject/create":
             name = str(payload.get("name") or "New GameObject")
             parent = payload.get("parent")
+            primitive_type = str(payload.get("primitiveType") or "Empty")
             self.gameobjects[name] = {
                 "instanceId": len(self.gameobjects) + 1,
-                "components": ["Transform"],
+                "components": self._primitive_components(primitive_type),
                 "component_data": {},
                 "position": self._vec3(payload.get("position")),
                 "rotation": self._vec3(payload.get("rotation")),
                 "scale": self._vec3(payload.get("scale"), default=(1.0, 1.0, 1.0)),
                 "parent": parent if parent in self.gameobjects else None,
-                "primitiveType": str(payload.get("primitiveType") or "Empty"),
+                "primitiveType": primitive_type,
             }
             self.scene_dirty = True
             return {
@@ -507,6 +527,152 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                     for component, count in sorted(component_counts.items())
                 ],
             }
+        if route == "profiler/memory-status":
+            return {
+                "memoryProfilerPackageInstalled": False,
+                "availableCommands": [
+                    "profiler/memory-status",
+                    "profiler/memory-breakdown",
+                    "profiler/memory-top-assets",
+                ],
+                "quickSummary": {
+                    "totalAllocatedMB": 256.0,
+                    "totalReservedMB": 320.0,
+                    "gfxDriverMB": 32.0,
+                },
+            }
+        if route == "graphics/lighting-summary":
+            lights = [
+                {"name": name, "type": "Directional", "intensity": 1.0}
+                for name, go in self.gameobjects.items()
+                if "Light" in go["components"] or name.lower().startswith("light")
+            ]
+            return {"lightCount": len(lights), "lights": lights}
+        if route == "sceneview/info":
+            return {
+                "pivot": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "rotation": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "size": 10.0,
+                "orthographic": True,
+                "is2D": True,
+                "drawGizmos": True,
+            }
+        if route == "settings/quality":
+            return {
+                "currentLevel": 0,
+                "currentName": "Very Low",
+                "levels": [
+                    {"index": 0, "name": "Very Low", "isCurrent": True},
+                    {"index": 1, "name": "Low", "isCurrent": False},
+                ],
+                "pixelLightCount": 0,
+                "shadows": "Disable",
+                "antiAliasing": 0,
+                "vSyncCount": 0,
+                "lodBias": 0.3,
+            }
+        if route == "settings/time":
+            return {
+                "timeScale": 1.0,
+                "fixedDeltaTime": 0.02,
+                "maximumDeltaTime": 0.3333333,
+            }
+        if route == "profiler/stats":
+            mesh_objects = sum(1 for go in self.gameobjects.values() if "MeshRenderer" in go["components"])
+            return {
+                "drawCalls": mesh_objects,
+                "batches": mesh_objects,
+                "triangles": mesh_objects * 128,
+                "vertices": mesh_objects * 256,
+                "setPassCalls": mesh_objects,
+                "frameTimeMs": 16.6,
+            }
+        if route == "testing/list-tests":
+            mode = str(payload.get("mode") or "EditMode")
+            return {
+                "mode": mode,
+                "count": 1,
+                "tests": [
+                    {
+                        "name": f"Example{mode}Test",
+                        "fullName": f"Demo.Tests.Example{mode}Test",
+                        "category": mode,
+                    }
+                ],
+            }
+        if route == "graphics/renderer-info":
+            name = self._resolve_gameobject_name(payload)
+            if name not in self.gameobjects:
+                return {"error": "GameObject not found"}
+            if "MeshRenderer" not in self.gameobjects[name]["components"]:
+                return {"error": "Renderer not found"}
+            return {
+                "objectPath": self._hierarchy_path(name),
+                "rendererType": "MeshRenderer",
+                "materials": [{"name": "Default-Material", "shader": "Standard"}],
+                "mesh": {"name": f"{name}Mesh"},
+                "bounds": {"center": self._vec3(), "size": self._vec3(default=(1.0, 1.0, 1.0))},
+            }
+        if route == "graphics/mesh-info":
+            name = self._resolve_gameobject_name(payload)
+            if name and name in self.gameobjects:
+                return {
+                    "objectPath": self._hierarchy_path(name),
+                    "meshName": f"{name}Mesh",
+                    "vertexCount": 256,
+                    "triangleCount": 128,
+                    "subMeshCount": 1,
+                }
+            asset_path = payload.get("assetPath")
+            if asset_path:
+                return {
+                    "assetPath": asset_path,
+                    "meshName": Path(str(asset_path)).stem,
+                    "vertexCount": 256,
+                    "triangleCount": 128,
+                    "subMeshCount": 1,
+                }
+            return {"error": "objectPath or assetPath is required"}
+        if route == "graphics/material-info":
+            name = self._resolve_gameobject_name(payload)
+            if name and name in self.gameobjects:
+                return {
+                    "objectPath": self._hierarchy_path(name),
+                    "materialName": "Default-Material",
+                    "shaderName": "Standard",
+                    "renderQueue": 2000,
+                    "keywords": [],
+                }
+            asset_path = payload.get("assetPath")
+            if asset_path:
+                return {
+                    "assetPath": asset_path,
+                    "materialName": Path(str(asset_path)).stem,
+                    "shaderName": "Standard",
+                    "renderQueue": 2000,
+                    "keywords": [],
+                }
+            return {"error": "objectPath or assetPath is required"}
+        if route == "physics/raycast":
+            origin = self._vec3(payload.get("origin"))
+            direction = self._vec3(payload.get("direction"), default=(0.0, -1.0, 0.0))
+            hit_name = next(
+                (
+                    name
+                    for name, go in self.gameobjects.items()
+                    if "Collider" in " ".join(go["components"])
+                ),
+                None,
+            )
+            if hit_name is None:
+                return {"hit": False}
+            return {
+                "hit": True,
+                "objectName": hit_name,
+                "distance": 1.0,
+                "point": {"x": origin["x"], "y": origin["y"] - 1.0, "z": origin["z"]},
+                "normal": {"x": -direction["x"], "y": -direction["y"], "z": -direction["z"]},
+            }
         if route == "compilation/errors":
             return {"count": 0, "isCompiling": False, "entries": []}
         if route == "editor/execute-code":
@@ -583,13 +749,24 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
                         "component/set-reference",
                         "search/missing-references",
                         "scene/stats",
+                        "profiler/memory-status",
+                        "graphics/lighting-summary",
+                        "sceneview/info",
+                        "settings/quality",
+                        "settings/time",
+                        "profiler/stats",
+                        "testing/list-tests",
+                        "graphics/renderer-info",
+                        "graphics/mesh-info",
+                        "graphics/material-info",
+                        "physics/raycast",
                         "compilation/errors",
                         "editor/state",
                         "editor/play-mode",
                         "editor/execute-code",
                         "undo/perform",
                     ],
-                    "totalRoutes": 25,
+                    "totalRoutes": 36,
                 },
             )
             return
@@ -804,6 +981,26 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
         self.assertEqual(len(payload["cleanup"]["assets"]), 4)
         self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
+
+    def test_workflow_audit_advanced_reports_probe_results_and_cleans_up(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "audit-advanced",
+            "--timeout",
+            "5",
+            "--interval",
+            "0.1",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertGreaterEqual(payload["summary"]["totalProbes"], 7)
+        self.assertEqual(payload["summary"]["failed"], 0)
+        self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
+        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
+        self.assertTrue(any(probe["tool"] == "unity_memory_status" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_graphics_renderer_info" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_physics_raycast" for probe in payload["probes"]))
 
     def test_workflow_wire_reference_sets_scene_object_reference(self) -> None:
         self.run_cli("--json", "workflow", "create-behaviour", "ReferenceHolder", "--object-name", "Holder")

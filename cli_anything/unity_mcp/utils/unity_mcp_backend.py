@@ -28,6 +28,11 @@ class BackendSelectionError(RuntimeError):
 
 class UnityMCPBackend:
     NON_HISTORY_ROUTES = {"ping", "_meta/routes", "queue/info"}
+    TOOL_PARAM_ALIASES: Dict[str, Dict[str, str]] = {
+        "unity_graphics_renderer_info": {"objectPath": "gameObjectPath"},
+        "unity_graphics_mesh_info": {"objectPath": "gameObjectPath"},
+        "unity_graphics_material_info": {"objectPath": "gameObjectPath"},
+    }
 
     def __init__(
         self,
@@ -338,7 +343,11 @@ class UnityMCPBackend:
         params: Optional[Dict[str, Any]] = None,
         port: Optional[int] = None,
     ) -> Any:
-        payload = params or {}
+        payload = dict(params or {})
+        alias_map = self.TOOL_PARAM_ALIASES.get(tool_name, {})
+        for source_key, target_key in alias_map.items():
+            if source_key in payload and target_key not in payload:
+                payload[target_key] = payload[source_key]
 
         if tool_name == "unity_list_instances":
             return self.list_instances()

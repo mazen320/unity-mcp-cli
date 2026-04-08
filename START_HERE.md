@@ -140,6 +140,7 @@ The live Unity project acceptance pass confirmed:
 - play mode enter and stop were both confirmed through live state polling
 - the full high-level smoke test completed with play mode enabled and cleaned up after itself
 - the new sample-builder created a full demo slice with generated scripts, primitives, prefab cloning, reference wiring, validation, and cleanup in a real Unity project
+- the advanced-tool audit passed live across memory, graphics, sceneview, settings, profiler, testing, and sample-backed physics probes without leaving scene changes behind
 
 That means the CLI is already capable of real authoring work in your project.
 
@@ -257,6 +258,18 @@ Run a reversible end-to-end smoke test:
 
 ```powershell
 cli-anything-unity-mcp --json workflow smoke-test --port 7893
+```
+
+Run a reusable advanced-tool audit:
+
+```powershell
+cli-anything-unity-mcp --json workflow audit-advanced --port 7893
+```
+
+Focus on only the categories you care about:
+
+```powershell
+cli-anything-unity-mcp --json workflow audit-advanced --category graphics --category physics --port 7893
 ```
 
 Build a complete sample slice for testing and clean it up after validation:

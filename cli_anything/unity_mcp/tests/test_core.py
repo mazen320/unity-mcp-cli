@@ -287,6 +287,51 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_graphics_tool_aliases_object_path_to_gameobject_path(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            registry_path = tmpdir / "instances.json"
+            session_path = tmpdir / "session.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "port": 7890,
+                            "projectName": "Demo",
+                            "projectPath": "C:/Projects/Demo",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            client = CatalogClient(
+                {
+                    7890: {
+                        "status": "ok",
+                        "projectName": "Demo",
+                        "projectPath": "C:/Projects/Demo",
+                        "unityVersion": "6000.0.0f1",
+                    }
+                }
+            )
+            backend = UnityMCPBackend(
+                client=client,
+                session_store=SessionStore(session_path),
+                registry_path=registry_path,
+            )
+
+            backend.call_tool(
+                "unity_graphics_renderer_info",
+                params={"objectPath": "Probe"},
+            )
+
+            self.assertEqual(client.calls[0][0], "graphics/renderer-info")
+            self.assertEqual(client.calls[0][2]["objectPath"], "Probe")
+            self.assertEqual(client.calls[0][2]["gameObjectPath"], "Probe")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_list_advanced_tools_meta_groups_by_category(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         tmpdir.mkdir(parents=True, exist_ok=True)
