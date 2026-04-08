@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - MCP adapter coverage for initialize, tools/list, and real tools/call flows against the mock Unity bridge
 - curated MCP matrix coverage now exercises most of the high-level tool surface in one pass
 - the live MCP pass runner can now emit debug reports, capture failure console snapshots, and follow Unity editor port rebinds during play-mode transitions
+- `workflow audit-advanced` now probes UI, audio, lighting, animation, input, shadergraph, terrain, and navmesh in addition to the earlier core categories, with built-in asset cleanup
 - docs and test plan coverage for the higher-level sample-building workflow
 - public contribution flow with a lightweight CLA policy, commit sign-off guidance, and PR checklist updates
 

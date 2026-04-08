@@ -13,7 +13,7 @@ End-to-end coverage:
   - `workflow inspect`
   - `workflow build-sample`
   - `workflow build-fps-sample`
-  - `workflow audit-advanced`
+  - `workflow audit-advanced` across memory, graphics, physics, profiler, sceneview, settings, testing, ui, audio, lighting, animation, input, shadergraph, terrain, and navmesh
   - `workflow create-behaviour`
   - `workflow wire-reference`
   - `workflow create-prefab`
@@ -38,3 +38,4 @@ Live pass notes:
 - The live pass runner now follows Unity bridge rebinds across the configured scan range instead of assuming the editor stays on a single port.
 - `--debug` records per-step timings, raw MCP payloads, and Unity console snapshots for failed steps.
 - `--report-file` writes the full run report to disk for later inspection.
+- `workflow audit-advanced` now performs disposable scene and asset probes for broader advanced-category coverage, then resets the scene and deletes generated assets.

@@ -2969,7 +2969,7 @@ def workflow_build_fps_sample_command(
     "--category",
     "categories",
     multiple=True,
-    help="Limit the audit to one or more advanced categories such as graphics, memory, physics, profiler, sceneview, settings, or testing.",
+    help="Limit the audit to one or more advanced categories such as graphics, memory, physics, profiler, sceneview, settings, testing, ui, audio, lighting, animation, input, shadergraph, terrain, or navmesh.",
 )
 @click.option(
     "--sample-backed/--no-sample-backed",
@@ -3015,11 +3015,18 @@ def workflow_audit_advanced_command(
         starting_dirty = bool(editor_state.get("sceneDirty"))
         saved_at_start = False
 
-        if sample_backed and starting_dirty and not save_if_dirty_start:
+        def _category_allowed(name: str) -> bool:
+            return not requested_categories or name.lower() in requested_categories
+
+        scene_mutation_requested = sample_backed or any(
+            _category_allowed(category) for category in ("ui", "lighting", "terrain")
+        )
+
+        if scene_mutation_requested and starting_dirty and not save_if_dirty_start:
             raise ValueError(
-                "Sample-backed advanced audits require a clean starting scene. Save manually or rerun with --save-if-dirty-start."
+                "Advanced audits that create scene content require a clean starting scene. Save manually or rerun with --save-if-dirty-start."
             )
-        if sample_backed and starting_dirty and save_if_dirty_start:
+        if scene_mutation_requested and starting_dirty and save_if_dirty_start:
             require_workflow_success(
                 ctx.obj.backend.call_route_with_recovery(
                     "scene/save",
@@ -3044,6 +3051,8 @@ def workflow_audit_advanced_command(
             "probe": f"{sample_root}_Probe",
         }
         created_sample = False
+        scene_mutated = False
+        created_assets: list[str] = []
         failure_message: str | None = None
 
         payload: dict[str, Any] = {
@@ -3058,9 +3067,6 @@ def workflow_audit_advanced_command(
             "probes": [],
             "sample": None,
         }
-
-        def _category_allowed(name: str) -> bool:
-            return not requested_categories or name.lower() in requested_categories
 
         def _call_tool(
             tool_name: str,
@@ -3089,7 +3095,7 @@ def workflow_audit_advanced_command(
             params: dict[str, Any] | None = None,
             *,
             skip_reason: str | None = None,
-        ) -> None:
+        ) -> dict[str, Any]:
             entry: dict[str, Any] = {
                 "category": category,
                 "tool": tool_name,
@@ -3110,6 +3116,13 @@ def workflow_audit_advanced_command(
                 entry["status"] = "failed"
                 entry["error"] = str(exc)
             payload["probes"].append(entry)
+            return entry
+
+        def _note_asset(asset_path: str | None) -> None:
+            if not asset_path:
+                return
+            if asset_path not in created_assets:
+                created_assets.append(asset_path)
 
         read_only_probes = [
             ("memory", "unity_memory_status", "Inspect memory profiler status", {}),
@@ -3118,6 +3131,9 @@ def workflow_audit_advanced_command(
             ("settings", "unity_settings_quality", "Inspect quality settings", {}),
             ("settings", "unity_settings_time", "Inspect time settings", {}),
             ("profiler", "unity_profiler_stats", "Inspect rendering profiler stats", {}),
+            ("audio", "unity_audio_info", "Inspect scene audio sources and listeners", {}),
+            ("navmesh", "unity_navmesh_info", "Inspect NavMesh availability and agent types", {}),
+            ("shadergraph", "unity_shadergraph_status", "Inspect installed Shader Graph support", {}),
             (
                 "testing",
                 "unity_testing_list_tests",
@@ -3164,6 +3180,7 @@ def workflow_audit_advanced_command(
                     },
                 )
                 created_sample = True
+                scene_mutated = True
                 payload["sample"] = sample_payload
 
                 sample_probes = [
@@ -3210,9 +3227,174 @@ def workflow_audit_advanced_command(
                         )
         except Exception as exc:  # pragma: no cover - covered via cleanup path
             failure_message = str(exc)
+        try:
+            if _category_allowed("ui"):
+                canvas_entry = _record_probe(
+                    "ui",
+                    "unity_ui_create_canvas",
+                    "Create a disposable overlay canvas",
+                    {"name": f"{sample_root}_Canvas", "renderMode": "overlay"},
+                )
+                if canvas_entry.get("status") == "passed":
+                    scene_mutated = True
+                _record_probe(
+                    "ui",
+                    "unity_ui_info",
+                    "Inspect UI canvas and element counts",
+                    {},
+                )
+
+            if _category_allowed("lighting"):
+                light_entry = _record_probe(
+                    "lighting",
+                    "unity_lighting_create",
+                    "Create a disposable point light",
+                    {
+                        "name": f"{sample_root}_Light",
+                        "lightType": "Point",
+                        "intensity": 1.5,
+                        "position": vec3(0, 4, 0),
+                    },
+                )
+                if light_entry.get("status") == "passed":
+                    scene_mutated = True
+                _record_probe(
+                    "lighting",
+                    "unity_lighting_info",
+                    "Inspect scene lighting configuration",
+                    {},
+                )
+
+            if _category_allowed("animation"):
+                animation_root = f"Assets/{sample_root}/Animation"
+                controller_path = f"{animation_root}/{sample_root}.controller"
+                clip_path = f"{animation_root}/{sample_root}.anim"
+                controller_entry = _record_probe(
+                    "animation",
+                    "unity_animation_create_controller",
+                    "Create a disposable Animator Controller",
+                    {"path": controller_path},
+                )
+                if controller_entry.get("status") == "passed":
+                    _note_asset(controller_path)
+                clip_entry = _record_probe(
+                    "animation",
+                    "unity_animation_create_clip",
+                    "Create a disposable Animation Clip",
+                    {"path": clip_path, "loop": True, "frameRate": 30},
+                )
+                if clip_entry.get("status") == "passed":
+                    _note_asset(clip_path)
+                _record_probe(
+                    "animation",
+                    "unity_animation_set_clip_curve",
+                    "Author a simple transform curve on the disposable clip",
+                    {
+                        "clipPath": clip_path,
+                        "propertyName": "localPosition.x",
+                        "keyframes": [{"time": 0, "value": 0}, {"time": 0.5, "value": 1}],
+                        "type": "Transform",
+                    },
+                )
+                _record_probe(
+                    "animation",
+                    "unity_animation_add_layer",
+                    "Add a disposable animator layer",
+                    {"controllerPath": controller_path, "layerName": "UpperBody", "weight": 1},
+                )
+                _record_probe(
+                    "animation",
+                    "unity_animation_add_state",
+                    "Add a disposable animator state",
+                    {
+                        "controllerPath": controller_path,
+                        "stateName": "Idle",
+                        "layerIndex": 0,
+                        "clipPath": clip_path,
+                        "isDefault": True,
+                    },
+                )
+                _record_probe(
+                    "animation",
+                    "unity_animation_controller_info",
+                    "Inspect the disposable Animator Controller",
+                    {"path": controller_path},
+                )
+
+            if _category_allowed("input"):
+                input_root = f"Assets/{sample_root}/Input"
+                input_path = f"{input_root}/{sample_root}.inputactions"
+                input_entry = _record_probe(
+                    "input",
+                    "unity_input_create",
+                    "Create a disposable Input Actions asset",
+                    {"path": input_path, "name": sample_root, "maps": [{"name": "Gameplay"}]},
+                )
+                if input_entry.get("status") == "passed":
+                    _note_asset(input_path)
+                _record_probe(
+                    "input",
+                    "unity_input_info",
+                    "Inspect the disposable Input Actions asset",
+                    {"path": input_path},
+                )
+
+            if _category_allowed("shadergraph"):
+                shader_root = f"Assets/{sample_root}/Shaders"
+                shader_path = f"{shader_root}/{sample_root}.shadergraph"
+                shader_entry = _record_probe(
+                    "shadergraph",
+                    "unity_shadergraph_create",
+                    "Create a disposable Shader Graph asset",
+                    {"path": shader_path, "template": "urp_unlit"},
+                )
+                if shader_entry.get("status") == "passed":
+                    _note_asset(shader_path)
+                _record_probe(
+                    "shadergraph",
+                    "unity_shadergraph_list",
+                    "List shader graphs filtered to the disposable audit asset",
+                    {"filter": sample_root, "maxResults": 10},
+                )
+
+            if _category_allowed("terrain"):
+                terrain_root = f"Assets/{sample_root}/Terrain"
+                terrain_name = f"{sample_root}_Terrain"
+                terrain_data_path = f"{terrain_root}/{sample_root}_Data.asset"
+                terrain_entry = _record_probe(
+                    "terrain",
+                    "unity_terrain_create",
+                    "Create a disposable terrain",
+                    {
+                        "name": terrain_name,
+                        "width": 128,
+                        "length": 128,
+                        "height": 60,
+                        "heightmapResolution": 129,
+                        "position": vec3(48, 0, 48),
+                        "dataPath": terrain_data_path,
+                    },
+                )
+                if terrain_entry.get("status") == "passed":
+                    scene_mutated = True
+                    _note_asset(terrain_data_path)
+                _record_probe(
+                    "terrain",
+                    "unity_terrain_info",
+                    "Inspect the disposable terrain",
+                    {"name": terrain_name},
+                )
+                _record_probe(
+                    "terrain",
+                    "unity_terrain_get_height",
+                    "Sample the disposable terrain height at its origin",
+                    {"worldX": 48, "worldZ": 48, "name": terrain_name},
+                )
+        except Exception as exc:  # pragma: no cover - covered via cleanup path
+            failure_message = str(exc)
         finally:
-            cleanup: dict[str, Any] = {"performed": created_sample}
-            if created_sample:
+            cleanup: dict[str, Any] = {"performed": created_sample or scene_mutated or bool(created_assets)}
+            if scene_mutated:
                 try:
                     cleanup_state = _fetch_editor_state()
                     if bool(cleanup_state.get("isPlaying")) or bool(cleanup_state.get("isPlayingOrWillChangePlaymode")):
@@ -3249,6 +3431,24 @@ def workflow_audit_advanced_command(
                     )
                 except (BackendSelectionError, UnityMCPClientError, ValueError) as cleanup_exc:
                     cleanup["sceneResetError"] = str(cleanup_exc)
+
+            if created_assets:
+                cleanup["deletedAssets"] = []
+                for asset_path in created_assets:
+                    try:
+                        delete_result = require_workflow_success(
+                            ctx.obj.backend.call_tool(
+                                "unity_asset_delete",
+                                params={"path": asset_path},
+                                port=workflow_port,
+                            ),
+                            f"Delete audit asset {asset_path}",
+                        )
+                        cleanup["deletedAssets"].append({"path": asset_path, "result": delete_result})
+                    except (BackendSelectionError, UnityMCPClientError, ValueError) as cleanup_exc:
+                        cleanup.setdefault("assetDeleteErrors", []).append(
+                            {"path": asset_path, "error": str(cleanup_exc)}
+                        )
 
             try:
                 payload["after"] = {

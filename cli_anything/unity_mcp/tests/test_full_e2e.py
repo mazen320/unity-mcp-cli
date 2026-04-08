@@ -1522,13 +1522,19 @@ class FullE2ETests(unittest.TestCase):
         )
         payload = json.loads(result.stdout.strip())
 
-        self.assertGreaterEqual(payload["summary"]["totalProbes"], 7)
+        self.assertGreaterEqual(payload["summary"]["totalProbes"], 18)
         self.assertEqual(payload["summary"]["failed"], 0)
         self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
         self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
         self.assertTrue(any(probe["tool"] == "unity_memory_status" for probe in payload["probes"]))
         self.assertTrue(any(probe["tool"] == "unity_graphics_renderer_info" for probe in payload["probes"]))
         self.assertTrue(any(probe["tool"] == "unity_physics_raycast" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_ui_create_canvas" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_audio_info" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_animation_create_controller" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_shadergraph_create" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_terrain_create" for probe in payload["probes"]))
+        self.assertTrue(any(probe["tool"] == "unity_navmesh_info" for probe in payload["probes"]))
 
     def test_workflow_wire_reference_sets_scene_object_reference(self) -> None:
         self.run_cli("--json", "workflow", "create-behaviour", "ReferenceHolder", "--object-name", "Holder")

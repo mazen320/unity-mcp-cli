@@ -171,6 +171,12 @@ cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase 
 - emulate MCP-style meta-tools like `unity_list_advanced_tools` and `unity_advanced_tool`
 - fall back to raw `tool` and `route` calls when a dedicated command does not exist yet
 
+## Roadmap
+
+If you want the current execution plan for full tool coverage, live testing, and higher-end scene/workflow generation, see:
+
+- [TODO.md](TODO.md)
+
 ## Main Commands
 
 - `tools`
