@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a workflow, command, or contributor improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Workflow problem
+      description: What is hard, repetitive, or missing today?
+      placeholder: I want Codex to be able to...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like the CLI to do?
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Likely scope
+      options:
+        - CLI layer only
+        - Might require Unity plugin changes
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Examples, commands, screenshots, logs, or references.

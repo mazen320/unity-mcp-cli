@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a CLI bug, workflow failure, or bridge/client mismatch.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please focus on the CLI layer when possible and note if you think the root cause is actually in the Unity plugin.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: The workflow validate-scene command fails when...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What exact steps trigger the problem?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: cli_version
+    attributes:
+      label: CLI version or commit
+      placeholder: 0.1.0 or commit SHA
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: 3.11.9
+  - type: input
+    id: unity_version
+    attributes:
+      label: Unity version
+      placeholder: 2022.3.x
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or JSON output
+      render: shell

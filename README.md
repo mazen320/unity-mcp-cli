@@ -134,6 +134,39 @@ This project is already useful for real Unity authoring work. It has been live-t
 - If you want to publish Unity-side fixes, those belong in a separate plugin fork or plugin PR.
 - Some bridge routes can vary by plugin version, so the CLI includes fallbacks where possible.
 
+## Project Boundaries
+
+This repo is the CLI client only.
+
+Work that belongs here:
+
+- CLI commands
+- workflow ergonomics
+- session handling
+- JSON output
+- tests for bridge/client behavior
+- docs for Codex and shell-driven use
+
+Work that does not belong here:
+
+- Unity Editor backend command implementations
+- Unity-side scene or editor APIs
+- plugin packaging for Unity projects
+
+If a bug only exists because the Unity plugin behavior itself needs to change, that should usually go into a plugin fork or upstream plugin issue.
+
+## Contributing
+
+Contributions are welcome.
+
+For local setup, testing, repo boundaries, and PR expectations, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+If you are not sure whether a change belongs in this repo or the Unity plugin repo, open an issue first and describe the workflow you are trying to improve.
+
+## Security
+
+If you find a security problem, especially around local bridge exposure, unsafe code execution, or destructive editor actions, please follow [SECURITY.md](SECURITY.md) instead of opening a public issue first.
+
 ## Validation
 
 ```powershell
@@ -162,3 +195,9 @@ This project was inspired by CLI-Anything and built around the AnkleBreaker Unit
 - [AnkleBreaker-Studio/unity-mcp-plugin](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin)
 
 This repository publishes the CLI layer only.
+
+## License
+
+This repository is licensed under the MIT License. See [LICENSE](LICENSE).
+
+Compatibility with the Unity plugin does not change the upstream license terms of the plugin itself. If you use or distribute the plugin, check the upstream plugin and server repositories for their own license terms.
