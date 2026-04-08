@@ -81,6 +81,11 @@ class CoreTests(unittest.TestCase):
         self.assertIn("Mouse.current", script)
         self.assertIn("Keyboard.current", script)
         self.assertIn("Gamepad.current", script)
+        self.assertIn("public float MouseSensitivity = 0.085f;", script)
+        self.assertIn("public bool FireDebugShot()", script)
+        self.assertIn("private bool IsFirePressed()", script)
+        self.assertIn("DrawCrosshair(", script)
+        self.assertIn("WasSensitivityIncreasePressedThisFrame()", script)
         self.assertIn("Input.GetAxisRaw(\"Horizontal\")", script)
 
     def test_tool_route_overrides_and_round_trip(self) -> None:

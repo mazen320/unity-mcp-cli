@@ -179,15 +179,41 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "{\n"
         "    public float MoveSpeed = 6.5f;\n"
         "    public float SprintSpeed = 9.25f;\n"
-        "    public float LookSensitivity = 1.8f;\n"
-        "    public float GamepadLookSpeed = 180f;\n"
+        "    public float MouseSensitivity = 0.085f;\n"
+        "    public float MinMouseSensitivity = 0.04f;\n"
+        "    public float MaxMouseSensitivity = 0.20f;\n"
+        "    public float MouseSensitivityStep = 0.01f;\n"
+        "    public float GamepadLookSpeed = 160f;\n"
         "    public float Gravity = -24f;\n"
         "    public float JumpHeight = 1.1f;\n"
         "    public float MaxPitch = 82f;\n"
+        "    public float FireRate = 6.5f;\n"
+        "    public float ReloadDuration = 1.05f;\n"
+        "    public float ShotRange = 120f;\n"
+        "    public float ImpactForce = 18f;\n"
+        "    public int MagazineSize = 24;\n"
+        "    public int ReserveAmmo = 96;\n"
+        "    public float HitMarkerDuration = 0.12f;\n"
+        "    public LayerMask HitMask = Physics.DefaultRaycastLayers;\n"
         "    public Transform CameraRoot;\n\n"
         "    private CharacterController _controller;\n"
         "    private float _pitch;\n"
         "    private float _verticalVelocity;\n\n"
+        "    private int _ammoInMagazine;\n"
+        "    private int _targetsHit;\n"
+        "    private int _totalTargets;\n"
+        "    private float _nextShotTime;\n"
+        "    private float _reloadCompleteAt;\n"
+        "    private float _hitMarkerUntil;\n"
+        "    private bool _isReloading;\n"
+        "    private string _statusMessage = \"LMB fire  |  [ / ] sensitivity\";\n"
+        "    private GUIStyle _headerStyle;\n"
+        "    private GUIStyle _bodyStyle;\n"
+        "    private GUIStyle _smallStyle;\n"
+        "    private UnityEngine.UI.Text _objectiveText;\n"
+        "    private UnityEngine.UI.Text _ammoText;\n"
+        "    private UnityEngine.UI.Text _sensitivityText;\n"
+        "    private UnityEngine.UI.Text _tipText;\n\n"
         "    private void Awake()\n"
         "    {\n"
         "        _controller = GetComponent<CharacterController>();\n"
@@ -196,6 +222,10 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "            var cameraComponent = GetComponentInChildren<Camera>();\n"
         "            CameraRoot = cameraComponent != null ? cameraComponent.transform : null;\n"
         "        }\n"
+        "        _ammoInMagazine = Mathf.Max(1, MagazineSize);\n"
+        "        CacheHudReferences();\n"
+        "        _totalTargets = CountReactiveTargets();\n"
+        "        RefreshHud();\n"
         "        Cursor.lockState = CursorLockMode.Locked;\n"
         "        Cursor.visible = false;\n"
         "    }\n\n"
@@ -206,13 +236,17 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "    }\n\n"
         "    private void Update()\n"
         "    {\n"
+        "        FinishReloadIfReady();\n"
+        "        HandleCursorLock();\n"
+        "        HandleSensitivityInput();\n"
         "        Look(ReadLookInput());\n"
         "        Move();\n"
+        "        HandleFireInput();\n"
         "    }\n\n"
         "    private void Look(Vector2 lookInput)\n"
         "    {\n"
-        "        float mouseX = lookInput.x * LookSensitivity;\n"
-        "        float mouseY = lookInput.y * LookSensitivity;\n"
+        "        float mouseX = lookInput.x * MouseSensitivity;\n"
+        "        float mouseY = lookInput.y * MouseSensitivity;\n"
         "        transform.Rotate(Vector3.up * mouseX, Space.Self);\n"
         "        if (CameraRoot == null)\n"
         "        {\n"
@@ -238,6 +272,211 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "        Vector3 velocity = wishDirection * targetSpeed;\n"
         "        velocity.y = _verticalVelocity;\n"
         "        _controller.Move(velocity * Time.deltaTime);\n"
+        "    }\n\n"
+        "    private void HandleCursorLock()\n"
+        "    {\n"
+        "        if (WasUnlockPressedThisFrame())\n"
+        "        {\n"
+        "            Cursor.lockState = CursorLockMode.None;\n"
+        "            Cursor.visible = true;\n"
+        "            _statusMessage = \"Cursor released. Click the Game view to resume.\";\n"
+        "            RefreshHud();\n"
+        "            return;\n"
+        "        }\n"
+        "        if (Cursor.lockState != CursorLockMode.Locked && WasPrimaryPointerPressedThisFrame())\n"
+        "        {\n"
+        "            Cursor.lockState = CursorLockMode.Locked;\n"
+        "            Cursor.visible = false;\n"
+        "            _statusMessage = \"Tracking target lane.\";\n"
+        "            RefreshHud();\n"
+        "        }\n"
+        "    }\n\n"
+        "    private void HandleSensitivityInput()\n"
+        "    {\n"
+        "        float delta = 0f;\n"
+        "        if (WasSensitivityDecreasePressedThisFrame())\n"
+        "        {\n"
+        "            delta -= MouseSensitivityStep;\n"
+        "        }\n"
+        "        if (WasSensitivityIncreasePressedThisFrame())\n"
+        "        {\n"
+        "            delta += MouseSensitivityStep;\n"
+        "        }\n"
+        "        if (Mathf.Abs(delta) < 0.0001f)\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n"
+        "        MouseSensitivity = Mathf.Clamp(MouseSensitivity + delta, MinMouseSensitivity, MaxMouseSensitivity);\n"
+        "        _statusMessage = $\"Sensitivity {MouseSensitivity:0.000}\";\n"
+        "        RefreshHud();\n"
+        "    }\n\n"
+        "    private void HandleFireInput()\n"
+        "    {\n"
+        "        if (WasReloadPressedThisFrame())\n"
+        "        {\n"
+        "            StartReload();\n"
+        "        }\n"
+        "        if (IsFirePressed())\n"
+        "        {\n"
+        "            TryFireShot();\n"
+        "        }\n"
+        "    }\n\n"
+        "    public bool FireDebugShot()\n"
+        "    {\n"
+        "        return TryFireShot();\n"
+        "    }\n\n"
+        "    private bool TryFireShot()\n"
+        "    {\n"
+        "        if (_isReloading || Time.time < _nextShotTime)\n"
+        "        {\n"
+        "            return false;\n"
+        "        }\n"
+        "        if (_ammoInMagazine <= 0)\n"
+        "        {\n"
+        "            if (ReserveAmmo > 0)\n"
+        "            {\n"
+        "                StartReload();\n"
+        "            }\n"
+        "            else\n"
+        "            {\n"
+        "                _statusMessage = \"Out of ammo.\";\n"
+        "                RefreshHud();\n"
+        "            }\n"
+        "            return false;\n"
+        "        }\n"
+        "        _ammoInMagazine -= 1;\n"
+        "        _nextShotTime = Time.time + (1f / Mathf.Max(0.01f, FireRate));\n"
+        "        RefreshHud();\n"
+        "        Vector3 origin = CameraRoot != null ? CameraRoot.position : transform.position + new Vector3(0f, 1.4f, 0f);\n"
+        "        Vector3 direction = CameraRoot != null ? CameraRoot.forward : transform.forward;\n"
+        "        RaycastHit hit;\n"
+        "        if (Physics.Raycast(origin, direction, out hit, ShotRange, HitMask, QueryTriggerInteraction.Ignore))\n"
+        "        {\n"
+        "            HandleHit(hit, direction);\n"
+        "            return true;\n"
+        "        }\n"
+        "        _statusMessage = \"Miss.\";\n"
+        "        RefreshHud();\n"
+        "        return true;\n"
+        "    }\n\n"
+        "    private void HandleHit(RaycastHit hit, Vector3 shotDirection)\n"
+        "    {\n"
+        "        if (hit.rigidbody != null)\n"
+        "        {\n"
+        "            hit.rigidbody.AddForceAtPosition(shotDirection * ImpactForce, hit.point, ForceMode.Impulse);\n"
+        "        }\n"
+        "        _hitMarkerUntil = Time.time + HitMarkerDuration;\n"
+        "        var reactiveRoot = FindReactiveTargetRoot(hit.transform);\n"
+        "        if (reactiveRoot != null && reactiveRoot.gameObject.activeSelf)\n"
+        "        {\n"
+        "            reactiveRoot.gameObject.SetActive(false);\n"
+        "            _targetsHit += 1;\n"
+        "            _statusMessage = $\"Tagged beacon {_targetsHit}/{Mathf.Max(1, _totalTargets)}.\";\n"
+        "            RefreshHud();\n"
+        "            return;\n"
+        "        }\n"
+        "        _statusMessage = $\"Hit {hit.collider.name}.\";\n"
+        "        RefreshHud();\n"
+        "    }\n\n"
+        "    private void StartReload()\n"
+        "    {\n"
+        "        if (_isReloading || ReserveAmmo <= 0 || _ammoInMagazine >= MagazineSize)\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n"
+        "        _isReloading = true;\n"
+        "        _reloadCompleteAt = Time.time + Mathf.Max(0.15f, ReloadDuration);\n"
+        "        _statusMessage = \"Reloading...\";\n"
+        "        RefreshHud();\n"
+        "    }\n\n"
+        "    private void FinishReloadIfReady()\n"
+        "    {\n"
+        "        if (!_isReloading || Time.time < _reloadCompleteAt)\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n"
+        "        int missing = Mathf.Max(0, MagazineSize - _ammoInMagazine);\n"
+        "        int loaded = Mathf.Min(missing, ReserveAmmo);\n"
+        "        _ammoInMagazine += loaded;\n"
+        "        ReserveAmmo -= loaded;\n"
+        "        _isReloading = false;\n"
+        "        _statusMessage = loaded > 0 ? \"Reloaded.\" : \"No reserve ammo.\";\n"
+        "        RefreshHud();\n"
+        "    }\n\n"
+        "    private void CacheHudReferences()\n"
+        "    {\n"
+        "        var root = transform.root;\n"
+        "        _objectiveText = FindTextBySuffix(root, \"_ObjectiveBody\");\n"
+        "        _ammoText = FindTextBySuffix(root, \"_AmmoLabel\");\n"
+        "        _sensitivityText = FindTextBySuffix(root, \"_SensitivityLabel\");\n"
+        "        _tipText = FindTextBySuffix(root, \"_TipLabel\");\n"
+        "    }\n\n"
+        "    private UnityEngine.UI.Text FindTextBySuffix(Transform root, string suffix)\n"
+        "    {\n"
+        "        if (root == null)\n"
+        "        {\n"
+        "            return null;\n"
+        "        }\n"
+        "        foreach (var node in root.GetComponentsInChildren<Transform>(true))\n"
+        "        {\n"
+        "            if (node.name.EndsWith(suffix))\n"
+        "            {\n"
+        "                return node.GetComponent<UnityEngine.UI.Text>();\n"
+        "            }\n"
+        "        }\n"
+        "        return null;\n"
+        "    }\n\n"
+        "    private int CountReactiveTargets()\n"
+        "    {\n"
+        "        int count = 0;\n"
+        "        foreach (var node in transform.root.GetComponentsInChildren<Transform>(true))\n"
+        "        {\n"
+        "            if (node.name.Contains(\"_Beacon\") && (node.parent == null || !node.parent.name.Contains(\"_Beacon\")))\n"
+        "            {\n"
+        "                count += 1;\n"
+        "            }\n"
+        "        }\n"
+        "        return Mathf.Max(1, count);\n"
+        "    }\n\n"
+        "    private Transform FindReactiveTargetRoot(Transform current)\n"
+        "    {\n"
+        "        while (current != null)\n"
+        "        {\n"
+        "            if (current.name.Contains(\"_Beacon\"))\n"
+        "            {\n"
+        "                var top = current;\n"
+        "                while (top.parent != null && top.parent.name.Contains(\"_Beacon\"))\n"
+        "                {\n"
+        "                    top = top.parent;\n"
+        "                }\n"
+        "                return top;\n"
+        "            }\n"
+        "            current = current.parent;\n"
+        "        }\n"
+        "        return null;\n"
+        "    }\n\n"
+        "    private void RefreshHud()\n"
+        "    {\n"
+        "        if (_objectiveText != null)\n"
+        "        {\n"
+        "            _objectiveText.text = _targetsHit >= _totalTargets\n"
+        "                ? \"Objective complete: both cyan beacons are down.\"\n"
+        "                : $\"Objective: tag the cyan beacons. Targets {_targetsHit}/{Mathf.Max(1, _totalTargets)}.\";\n"
+        "        }\n"
+        "        if (_ammoText != null)\n"
+        "        {\n"
+        "            _ammoText.text = _isReloading\n"
+        "                ? $\"RELOAD   {_ammoInMagazine} / {ReserveAmmo}\"\n"
+        "                : $\"AMMO     {_ammoInMagazine} / {ReserveAmmo}\";\n"
+        "        }\n"
+        "        if (_sensitivityText != null)\n"
+        "        {\n"
+        "            _sensitivityText.text = $\"SENS     {MouseSensitivity:0.000}  [ / ]\";\n"
+        "        }\n"
+        "        if (_tipText != null)\n"
+        "        {\n"
+        "            _tipText.text = \"LMB fire  |  R reload  |  [ / ] sens  |  Shift sprint  |  Esc free cursor\";\n"
+        "        }\n"
         "    }\n\n"
         "    private Vector2 ReadMoveInput()\n"
         "    {\n"
@@ -281,8 +520,9 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "    {\n"
         "#if ENABLE_INPUT_SYSTEM\n"
         "        Vector2 input = Vector2.zero;\n"
+        "        bool cursorLocked = Cursor.lockState == CursorLockMode.Locked;\n"
         "        var mouse = Mouse.current;\n"
-        "        if (mouse != null)\n"
+        "        if (mouse != null && cursorLocked)\n"
         "        {\n"
         "            input += mouse.delta.ReadValue();\n"
         "        }\n"
@@ -293,6 +533,10 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "        }\n"
         "        return input;\n"
         "#else\n"
+        "        if (Cursor.lockState != CursorLockMode.Locked)\n"
+        "        {\n"
+        "            return Vector2.zero;\n"
+        "        }\n"
         "        return new Vector2(Input.GetAxisRaw(\"Mouse X\"), Input.GetAxisRaw(\"Mouse Y\"));\n"
         "#endif\n"
         "    }\n\n"
@@ -317,6 +561,142 @@ def build_demo_fps_controller_script(class_name: str) -> str:
         "#else\n"
         "        return Input.GetButtonDown(\"Jump\");\n"
         "#endif\n"
+        "    }\n\n"
+        "    private bool IsFirePressed()\n"
+        "    {\n"
+        "#if ENABLE_INPUT_SYSTEM\n"
+        "        bool mousePressed = Mouse.current != null && Mouse.current.leftButton.isPressed;\n"
+        "        bool gamepadPressed = Gamepad.current != null && Gamepad.current.rightTrigger.ReadValue() > 0.35f;\n"
+        "        return mousePressed || gamepadPressed;\n"
+        "#else\n"
+        "        return Input.GetMouseButton(0);\n"
+        "#endif\n"
+        "    }\n\n"
+        "    private bool WasReloadPressedThisFrame()\n"
+        "    {\n"
+        "#if ENABLE_INPUT_SYSTEM\n"
+        "        var keyboard = Keyboard.current;\n"
+        "        bool keyboardPressed = keyboard != null && keyboard.rKey.wasPressedThisFrame;\n"
+        "        bool gamepadPressed = Gamepad.current != null && Gamepad.current.buttonWest.wasPressedThisFrame;\n"
+        "        return keyboardPressed || gamepadPressed;\n"
+        "#else\n"
+        "        return Input.GetKeyDown(KeyCode.R);\n"
+        "#endif\n"
+        "    }\n\n"
+        "    private bool WasSensitivityDecreasePressedThisFrame()\n"
+        "    {\n"
+        "#if ENABLE_INPUT_SYSTEM\n"
+        "        var keyboard = Keyboard.current;\n"
+        "        return keyboard != null && (keyboard.leftBracketKey.wasPressedThisFrame || keyboard.minusKey.wasPressedThisFrame);\n"
+        "#else\n"
+        "        return Input.GetKeyDown(KeyCode.LeftBracket) || Input.GetKeyDown(KeyCode.Minus);\n"
+        "#endif\n"
+        "    }\n\n"
+        "    private bool WasSensitivityIncreasePressedThisFrame()\n"
+        "    {\n"
+        "#if ENABLE_INPUT_SYSTEM\n"
+        "        var keyboard = Keyboard.current;\n"
+        "        return keyboard != null && (keyboard.rightBracketKey.wasPressedThisFrame || keyboard.equalsKey.wasPressedThisFrame);\n"
+        "#else\n"
+        "        return Input.GetKeyDown(KeyCode.RightBracket) || Input.GetKeyDown(KeyCode.Equals);\n"
+        "#endif\n"
+        "    }\n\n"
+        "    private bool WasPrimaryPointerPressedThisFrame()\n"
+        "    {\n"
+        "#if ENABLE_INPUT_SYSTEM\n"
+        "        return Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;\n"
+        "#else\n"
+        "        return Input.GetMouseButtonDown(0);\n"
+        "#endif\n"
+        "    }\n\n"
+        "    private bool WasUnlockPressedThisFrame()\n"
+        "    {\n"
+        "#if ENABLE_INPUT_SYSTEM\n"
+        "        return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;\n"
+        "#else\n"
+        "        return Input.GetKeyDown(KeyCode.Escape);\n"
+        "#endif\n"
+        "    }\n\n"
+        "    private void EnsureGuiStyles()\n"
+        "    {\n"
+        "        if (_headerStyle != null && _bodyStyle != null && _smallStyle != null)\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n"
+        "        _headerStyle = new GUIStyle(GUI.skin.label);\n"
+        "        _headerStyle.fontSize = 20;\n"
+        "        _headerStyle.fontStyle = FontStyle.Bold;\n"
+        "        _headerStyle.normal.textColor = new Color(0.94f, 0.98f, 1f, 1f);\n"
+        "        _bodyStyle = new GUIStyle(GUI.skin.label);\n"
+        "        _bodyStyle.fontSize = 16;\n"
+        "        _bodyStyle.wordWrap = true;\n"
+        "        _bodyStyle.normal.textColor = new Color(0.76f, 0.84f, 0.92f, 1f);\n"
+        "        _smallStyle = new GUIStyle(GUI.skin.label);\n"
+        "        _smallStyle.fontSize = 15;\n"
+        "        _smallStyle.normal.textColor = new Color(0.92f, 0.95f, 1f, 1f);\n"
+        "    }\n\n"
+        "    private void OnGUI()\n"
+        "    {\n"
+        "        EnsureGuiStyles();\n"
+        "        float scale = Mathf.Clamp(Screen.height / 1080f, 0.85f, 1.15f);\n"
+        "        DrawHudPanel(new Rect(24f * scale, 24f * scale, 430f * scale, 118f * scale), new Color(0.04f, 0.06f, 0.09f, 0.82f));\n"
+        "        GUI.Label(new Rect(42f * scale, 38f * scale, 380f * scale, 28f * scale), \"CODEX RANGE // FPS STARTER\", _headerStyle);\n"
+        "        GUI.Label(new Rect(42f * scale, 72f * scale, 380f * scale, 52f * scale), _targetsHit >= _totalTargets ? \"Objective complete: both cyan beacons are down.\" : $\"Tag the cyan beacons. Targets {_targetsHit}/{Mathf.Max(1, _totalTargets)}.\", _bodyStyle);\n"
+        "        float panelHeight = 142f * scale;\n"
+        "        float panelTop = Screen.height - panelHeight - (24f * scale);\n"
+        "        DrawHudPanel(new Rect(24f * scale, panelTop, 370f * scale, panelHeight), new Color(0.05f, 0.06f, 0.08f, 0.80f));\n"
+        "        GUI.Label(new Rect(42f * scale, panelTop + (18f * scale), 300f * scale, 24f * scale), _isReloading ? $\"RELOAD   {_ammoInMagazine} / {ReserveAmmo}\" : $\"AMMO     {_ammoInMagazine} / {ReserveAmmo}\", _smallStyle);\n"
+        "        GUI.Label(new Rect(42f * scale, panelTop + (48f * scale), 300f * scale, 24f * scale), $\"SENS     {MouseSensitivity:0.000}  [ / ]\", _smallStyle);\n"
+        "        GUI.Label(new Rect(42f * scale, panelTop + (78f * scale), 300f * scale, 24f * scale), _statusMessage, _smallStyle);\n"
+        "        GUI.Label(new Rect(42f * scale, panelTop + (106f * scale), 312f * scale, 24f * scale), \"LMB fire  |  R reload  |  Shift sprint  |  Esc cursor\", _bodyStyle);\n"
+        "        DrawCrosshair(scale);\n"
+        "        if (Time.time < _hitMarkerUntil)\n"
+        "        {\n"
+        "            DrawHitMarker(scale);\n"
+        "        }\n"
+        "    }\n\n"
+        "    private void DrawHudPanel(Rect rect, Color color)\n"
+        "    {\n"
+        "        DrawSolidRect(rect, color);\n"
+        "        DrawSolidRect(new Rect(rect.x, rect.y, rect.width, 3f), new Color(0.20f, 0.86f, 1f, 0.88f));\n"
+        "    }\n\n"
+        "    private void DrawCrosshair(float scale)\n"
+        "    {\n"
+        "        float cx = Screen.width * 0.5f;\n"
+        "        float cy = Screen.height * 0.5f;\n"
+        "        float gap = 8f * scale;\n"
+        "        float arm = 12f * scale;\n"
+        "        float thickness = 3f * scale;\n"
+        "        DrawCrosshairArm(new Rect(cx - (thickness * 0.5f), cy - gap - arm, thickness, arm));\n"
+        "        DrawCrosshairArm(new Rect(cx - (thickness * 0.5f), cy + gap, thickness, arm));\n"
+        "        DrawCrosshairArm(new Rect(cx - gap - arm, cy - (thickness * 0.5f), arm, thickness));\n"
+        "        DrawCrosshairArm(new Rect(cx + gap, cy - (thickness * 0.5f), arm, thickness));\n"
+        "        DrawSolidRect(new Rect(cx - (4f * scale), cy - (4f * scale), 8f * scale, 8f * scale), new Color(0f, 0f, 0f, 0.78f));\n"
+        "        DrawSolidRect(new Rect(cx - (2f * scale), cy - (2f * scale), 4f * scale, 4f * scale), new Color(0.98f, 1f, 1f, 1f));\n"
+        "    }\n\n"
+        "    private void DrawCrosshairArm(Rect rect)\n"
+        "    {\n"
+        "        DrawSolidRect(new Rect(rect.x - 2f, rect.y - 2f, rect.width + 4f, rect.height + 4f), new Color(0f, 0f, 0f, 0.72f));\n"
+        "        DrawSolidRect(rect, new Color(0.92f, 0.98f, 1f, 1f));\n"
+        "        DrawSolidRect(new Rect(rect.x + 1f, rect.y + 1f, Mathf.Max(1f, rect.width - 2f), Mathf.Max(1f, rect.height - 2f)), new Color(0.22f, 0.86f, 1f, 0.96f));\n"
+        "    }\n\n"
+        "    private void DrawHitMarker(float scale)\n"
+        "    {\n"
+        "        float cx = Screen.width * 0.5f;\n"
+        "        float cy = Screen.height * 0.5f;\n"
+        "        float size = 18f * scale;\n"
+        "        float thickness = 3f * scale;\n"
+        "        DrawSolidRect(new Rect(cx - size, cy - size, thickness, size), new Color(1f, 1f, 1f, 0.95f));\n"
+        "        DrawSolidRect(new Rect(cx + size - thickness, cy - size, thickness, size), new Color(1f, 1f, 1f, 0.95f));\n"
+        "        DrawSolidRect(new Rect(cx - size, cy + size - thickness, thickness, size), new Color(1f, 1f, 1f, 0.95f));\n"
+        "        DrawSolidRect(new Rect(cx + size - thickness, cy + size - thickness, thickness, size), new Color(1f, 1f, 1f, 0.95f));\n"
+        "    }\n\n"
+        "    private void DrawSolidRect(Rect rect, Color color)\n"
+        "    {\n"
+        "        Color previous = GUI.color;\n"
+        "        GUI.color = color;\n"
+        "        GUI.DrawTexture(rect, Texture2D.whiteTexture);\n"
+        "        GUI.color = previous;\n"
         "    }\n"
         "}\n"
     )
@@ -837,6 +1217,43 @@ var weaponCore = CreatePrimitiveNode(
     accentMaterial
 );
 
+int ignoreRaycastLayer = UnityEngine.LayerMask.NameToLayer("Ignore Raycast");
+if (ignoreRaycastLayer < 0)
+{
+    ignoreRaycastLayer = 2;
+}
+
+var worldReticle = new UnityEngine.GameObject(rootName + "_WorldReticle");
+worldReticle.transform.SetParent(cameraGo.transform, false);
+worldReticle.transform.localPosition = new UnityEngine.Vector3(0f, 0f, 1.2f);
+worldReticle.layer = ignoreRaycastLayer;
+
+foreach (var worldReticlePart in new[]
+{
+    new { Name = "Top", Position = new UnityEngine.Vector3(0f, 0.06f, 0f), Scale = new UnityEngine.Vector3(0.012f, 0.08f, 0.012f) },
+    new { Name = "Bottom", Position = new UnityEngine.Vector3(0f, -0.06f, 0f), Scale = new UnityEngine.Vector3(0.012f, 0.08f, 0.012f) },
+    new { Name = "Left", Position = new UnityEngine.Vector3(-0.06f, 0f, 0f), Scale = new UnityEngine.Vector3(0.08f, 0.012f, 0.012f) },
+    new { Name = "Right", Position = new UnityEngine.Vector3(0.06f, 0f, 0f), Scale = new UnityEngine.Vector3(0.08f, 0.012f, 0.012f) },
+    new { Name = "Center", Position = UnityEngine.Vector3.zero, Scale = new UnityEngine.Vector3(0.018f, 0.018f, 0.012f) },
+})
+{
+    var part = CreatePrimitiveNode(
+        rootName + "_WorldReticle" + worldReticlePart.Name,
+        UnityEngine.PrimitiveType.Cube,
+        worldReticle.transform,
+        worldReticlePart.Position,
+        worldReticlePart.Scale,
+        UnityEngine.Vector3.zero,
+        accentMaterial
+    );
+    part.layer = ignoreRaycastLayer;
+    var partCollider = part.GetComponent<UnityEngine.Collider>();
+    if (partCollider != null)
+    {
+        UnityEngine.Object.DestroyImmediate(partCollider);
+    }
+}
+
 var font = GetBuiltinFont();
 var hudRoot = new UnityEngine.GameObject(rootName + "_HUD");
 hudRoot.transform.SetParent(root.transform, false);
@@ -908,7 +1325,7 @@ var statusPanel = CreateUiNode(
     new UnityEngine.Vector2(0f, 0f),
     new UnityEngine.Vector2(0f, 0f),
     new UnityEngine.Vector2(42f, 42f),
-    new UnityEngine.Vector2(320f, 120f)
+    new UnityEngine.Vector2(360f, 152f)
 );
 var statusPanelImage = statusPanel.AddComponent<UnityEngine.UI.Image>();
 statusPanelImage.color = new UnityEngine.Color(0.05f, 0.06f, 0.08f, 0.78f);
@@ -934,10 +1351,24 @@ CreateTextNode(
     new UnityEngine.Vector2(0f, 1f),
     new UnityEngine.Vector2(0f, 1f),
     new UnityEngine.Vector2(18f, -54f),
-    new UnityEngine.Vector2(280f, 30f),
+    new UnityEngine.Vector2(300f, 30f),
     "AMMO     24 / 96",
     22,
     new UnityEngine.Color(0.96f, 0.96f, 0.98f, 1f),
+    UnityEngine.TextAnchor.UpperLeft,
+    font
+);
+CreateTextNode(
+    rootName + "_SensitivityLabel",
+    statusPanel.transform,
+    new UnityEngine.Vector2(0f, 1f),
+    new UnityEngine.Vector2(0f, 1f),
+    new UnityEngine.Vector2(0f, 1f),
+    new UnityEngine.Vector2(18f, -90f),
+    new UnityEngine.Vector2(300f, 28f),
+    "SENS     0.085  [ / ]",
+    20,
+    new UnityEngine.Color(0.82f, 0.91f, 0.97f, 1f),
     UnityEngine.TextAnchor.UpperLeft,
     font
 );
@@ -947,10 +1378,10 @@ CreateTextNode(
     new UnityEngine.Vector2(0f, 0f),
     new UnityEngine.Vector2(1f, 0f),
     new UnityEngine.Vector2(0.5f, 0f),
-    new UnityEngine.Vector2(0f, 16f),
-    new UnityEngine.Vector2(-24f, 26f),
-    "WASD move  |  Mouse look  |  Shift sprint  |  Space jump",
-    16,
+    new UnityEngine.Vector2(0f, 14f),
+    new UnityEngine.Vector2(-24f, 30f),
+    "LMB fire  |  R reload  |  [ / ] sens  |  Shift sprint",
+    15,
     new UnityEngine.Color(0.58f, 0.74f, 0.86f, 1f),
     UnityEngine.TextAnchor.MiddleCenter,
     font
@@ -963,17 +1394,28 @@ var reticleRoot = CreateUiNode(
     new UnityEngine.Vector2(0.5f, 0.5f),
     new UnityEngine.Vector2(0.5f, 0.5f),
     UnityEngine.Vector2.zero,
-    new UnityEngine.Vector2(32f, 32f)
+    new UnityEngine.Vector2(52f, 52f)
 );
 
 foreach (var reticlePart in new[]
 {
-    new { Name = "Top", Position = new UnityEngine.Vector2(0f, 8f), Size = new UnityEngine.Vector2(3f, 10f) },
-    new { Name = "Bottom", Position = new UnityEngine.Vector2(0f, -8f), Size = new UnityEngine.Vector2(3f, 10f) },
-    new { Name = "Left", Position = new UnityEngine.Vector2(-8f, 0f), Size = new UnityEngine.Vector2(10f, 3f) },
-    new { Name = "Right", Position = new UnityEngine.Vector2(8f, 0f), Size = new UnityEngine.Vector2(10f, 3f) },
+    new { Name = "Top", Position = new UnityEngine.Vector2(0f, 11f), Size = new UnityEngine.Vector2(4f, 14f) },
+    new { Name = "Bottom", Position = new UnityEngine.Vector2(0f, -11f), Size = new UnityEngine.Vector2(4f, 14f) },
+    new { Name = "Left", Position = new UnityEngine.Vector2(-11f, 0f), Size = new UnityEngine.Vector2(14f, 4f) },
+    new { Name = "Right", Position = new UnityEngine.Vector2(11f, 0f), Size = new UnityEngine.Vector2(14f, 4f) },
 })
 {
+    var backdrop = CreateUiNode(
+        rootName + "_ReticleBackdrop" + reticlePart.Name,
+        reticleRoot.transform,
+        new UnityEngine.Vector2(0.5f, 0.5f),
+        new UnityEngine.Vector2(0.5f, 0.5f),
+        new UnityEngine.Vector2(0.5f, 0.5f),
+        reticlePart.Position,
+        reticlePart.Size + new UnityEngine.Vector2(4f, 4f)
+    );
+    var backdropImage = backdrop.AddComponent<UnityEngine.UI.Image>();
+    backdropImage.color = new UnityEngine.Color(0f, 0f, 0f, 0.74f);
     var segment = CreateUiNode(
         rootName + "_Reticle" + reticlePart.Name,
         reticleRoot.transform,
@@ -984,8 +1426,30 @@ foreach (var reticlePart in new[]
         reticlePart.Size
     );
     var segmentImage = segment.AddComponent<UnityEngine.UI.Image>();
-    segmentImage.color = new UnityEngine.Color(0.22f, 0.86f, 1f, 0.96f);
+    segmentImage.color = new UnityEngine.Color(0.96f, 0.99f, 1f, 1f);
 }
+
+var reticleCenterBackdrop = CreateUiNode(
+    rootName + "_ReticleCenterBackdrop",
+    reticleRoot.transform,
+    new UnityEngine.Vector2(0.5f, 0.5f),
+    new UnityEngine.Vector2(0.5f, 0.5f),
+    new UnityEngine.Vector2(0.5f, 0.5f),
+    UnityEngine.Vector2.zero,
+    new UnityEngine.Vector2(10f, 10f)
+);
+reticleCenterBackdrop.AddComponent<UnityEngine.UI.Image>().color = new UnityEngine.Color(0f, 0f, 0f, 0.78f);
+
+var reticleCenter = CreateUiNode(
+    rootName + "_ReticleCenter",
+    reticleRoot.transform,
+    new UnityEngine.Vector2(0.5f, 0.5f),
+    new UnityEngine.Vector2(0.5f, 0.5f),
+    new UnityEngine.Vector2(0.5f, 0.5f),
+    UnityEngine.Vector2.zero,
+    new UnityEngine.Vector2(4f, 4f)
+);
+reticleCenter.AddComponent<UnityEngine.UI.Image>().color = new UnityEngine.Color(0.22f, 0.86f, 1f, 1f);
 
 var sun = new UnityEngine.GameObject(rootName + "_Sun");
 sun.transform.SetParent(root.transform, false);

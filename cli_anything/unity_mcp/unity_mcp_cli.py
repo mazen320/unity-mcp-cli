@@ -2688,14 +2688,36 @@ def workflow_build_fps_sample_command(
                     },
                     use_queue=False,
                 ),
-                "lookSensitivity": _call_tool(
+                "mouseSensitivity": _call_tool(
                     "unity_component_set_property",
-                    f"Set {controller_class}.LookSensitivity",
+                    f"Set {controller_class}.MouseSensitivity",
                     {
                         "gameObjectPath": player_path,
                         "componentType": controller_class,
-                        "propertyName": "LookSensitivity",
-                        "value": 1.9,
+                        "propertyName": "MouseSensitivity",
+                        "value": 0.085,
+                    },
+                    use_queue=False,
+                ),
+                "mouseSensitivityStep": _call_tool(
+                    "unity_component_set_property",
+                    f"Set {controller_class}.MouseSensitivityStep",
+                    {
+                        "gameObjectPath": player_path,
+                        "componentType": controller_class,
+                        "propertyName": "MouseSensitivityStep",
+                        "value": 0.01,
+                    },
+                    use_queue=False,
+                ),
+                "fireRate": _call_tool(
+                    "unity_component_set_property",
+                    f"Set {controller_class}.FireRate",
+                    {
+                        "gameObjectPath": player_path,
+                        "componentType": controller_class,
+                        "propertyName": "FireRate",
+                        "value": 6.75,
                     },
                     use_queue=False,
                 ),
