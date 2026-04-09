@@ -13,6 +13,7 @@ from ..core.routes import iter_known_tools, route_to_tool_name, tool_name_to_rou
 from ..core.schema_templates import summarize_schema
 from ..core.session import SessionState, SessionStore
 from ..core.tool_catalog import get_upstream_tool, iter_upstream_tools
+from ..core.tool_coverage import build_tool_coverage_matrix
 
 
 def get_default_registry_path() -> Path:
@@ -125,6 +126,132 @@ class UnityMCPBackend:
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         payload = self.client.get_queue_info(resolved_port)
         self.session_store.record_command("queue/info", {}, resolved_port)
+        return payload
+
+    @staticmethod
+    def _summarize_console_entries(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        counts = {
+            "info": 0,
+            "warning": 0,
+            "error": 0,
+            "other": 0,
+        }
+        latest_messages: List[str] = []
+        stack_trace_count = 0
+        highest_severity = "none"
+        severity_order = {"none": 0, "info": 1, "warning": 2, "error": 3}
+        type_aliases = {
+            "log": "info",
+            "message": "info",
+            "warn": "warning",
+            "exception": "error",
+            "assert": "error",
+        }
+
+        for entry in entries:
+            entry_type = str(entry.get("type") or "other").lower()
+            entry_type = type_aliases.get(entry_type, entry_type)
+            normalized = entry_type if entry_type in counts else "other"
+            counts[normalized] += 1
+            if entry.get("stackTrace"):
+                stack_trace_count += 1
+            message = str(entry.get("message") or "").strip()
+            if message:
+                latest_messages.append(message)
+            if severity_order.get(normalized, 0) > severity_order.get(highest_severity, 0):
+                highest_severity = normalized
+
+        return {
+            "countsByType": counts,
+            "stackTraceCount": stack_trace_count,
+            "highestSeverity": highest_severity,
+            "latestMessages": latest_messages[:5],
+        }
+
+    def get_debug_snapshot(
+        self,
+        port: Optional[int] = None,
+        console_count: int = 50,
+        message_type: str | None = None,
+        issue_limit: int = 20,
+        include_hierarchy: bool = False,
+    ) -> Dict[str, Any]:
+        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
+        ping = self.ping(port=resolved_port)
+        editor_state = self.call_route_with_recovery(
+            "editor/state",
+            port=resolved_port,
+            recovery_timeout=10.0,
+        )
+        scene = self.call_route_with_recovery(
+            "scene/info",
+            port=resolved_port,
+            recovery_timeout=10.0,
+        )
+        project = self.call_route_with_recovery(
+            "project/info",
+            port=resolved_port,
+            recovery_timeout=10.0,
+        )
+        console_params = {"count": console_count}
+        if message_type:
+            console_params["type"] = message_type
+        console = self.call_route_with_recovery(
+            "console/log",
+            params=console_params,
+            port=resolved_port,
+            recovery_timeout=10.0,
+        )
+        compilation = self.call_route_with_recovery(
+            "compilation/errors",
+            params={"count": issue_limit},
+            port=resolved_port,
+            recovery_timeout=10.0,
+        )
+        missing_references = self.call_route_with_recovery(
+            "search/missing-references",
+            params={"limit": issue_limit},
+            port=resolved_port,
+            recovery_timeout=10.0,
+        )
+        queue = self.get_queue_info(port=resolved_port)
+
+        console_entries = list(console.get("entries") or [])
+        console_summary = self._summarize_console_entries(console_entries)
+        summary = {
+            "port": resolved_port,
+            "projectName": ping.get("projectName") or project.get("productName"),
+            "activeScene": editor_state.get("activeScene") or scene.get("activeScene"),
+            "sceneDirty": bool(editor_state.get("sceneDirty")),
+            "isPlaying": bool(editor_state.get("isPlaying")),
+            "isCompiling": bool(compilation.get("isCompiling")),
+            "consoleEntryCount": int(console.get("count") or len(console_entries)),
+            "consoleHighestSeverity": console_summary["highestSeverity"],
+            "compilationIssueCount": int(compilation.get("count") or 0),
+            "missingReferenceCount": int(missing_references.get("totalFound") or 0),
+            "queueActiveAgents": int(queue.get("activeAgents") or queue.get("executingCount") or 0),
+            "queueQueuedRequests": int(queue.get("totalQueued") or queue.get("queued") or 0),
+        }
+
+        payload: Dict[str, Any] = {
+            "summary": summary,
+            "ping": ping,
+            "project": project,
+            "editorState": editor_state,
+            "scene": scene,
+            "console": console,
+            "consoleSummary": console_summary,
+            "compilation": compilation,
+            "missingReferences": missing_references,
+            "queue": queue,
+        }
+        if include_hierarchy:
+            payload["hierarchy"] = self.call_route_with_recovery(
+                "scene/hierarchy",
+                params={"maxDepth": 2, "maxNodes": 40},
+                port=resolved_port,
+                recovery_timeout=10.0,
+            )
         return payload
 
     def get_tool_info(self, tool_name: str, port: Optional[int] = None) -> Dict[str, Any]:
@@ -281,6 +408,22 @@ class UnityMCPBackend:
             "dynamicTools": catalog["dynamicOnlyCount"],
             "categories": {key: sorted(value) for key, value in sorted(grouped.items())},
         }
+
+    def get_tool_coverage(
+        self,
+        category: str | None = None,
+        status: str | None = None,
+        search: str | None = None,
+        include_unsupported: bool = True,
+        summary_only: bool = False,
+    ) -> Dict[str, Any]:
+        return build_tool_coverage_matrix(
+            category=category,
+            status=status,
+            search=search,
+            include_unsupported=include_unsupported,
+            summary_only=summary_only,
+        )
 
     def call_route_with_recovery(
         self,

@@ -7,12 +7,17 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - local upstream tool-catalog snapshot and schema-aware discovery commands
+- generated tool coverage matrix JSON and a `tool-coverage` command for tracking live-tested, covered, unsupported, and deferred upstream tools
+- saved optional sidecar agent profiles plus CLI commands for `agent current`, `agent list`, `agent save`, `agent use`, `agent clear`, and `agent remove`
+- live agent inspection commands for `agent sessions`, `agent log`, and `agent queue`
 - MCP-style meta-tool support for advanced-tool browsing and project-context access
 - optional thin MCP adapter entry point, `cli-anything-unity-mcp-mcp`
 - curated MCP tool registry that delegates into the existing CLI/core
 - live MCP pass runner script for repeatable checks against a real Unity editor
+- named live-pass profiles for focused validation runs such as `ui`, `lighting`, `terrain`, `graphics`, `advanced`, and `heavy`
 - `workflow build-sample` for generating a complete demo slice with scripts, transforms, prefab cloning, reference wiring, validation, play-mode checks, and optional cleanup
 - `workflow audit-advanced` for repeatable validation of safe advanced-tool categories and disposable sample-backed graphics/physics probes
+- Unity debug snapshot/template commands for bundling console, compilation, scene, hierarchy, and queue state into a reusable CLI-first debug flow
 
 ### Improved
 
@@ -22,9 +27,12 @@ All notable changes to this project will be documented in this file.
 - MCP adapter coverage for initialize, tools/list, and real tools/call flows against the mock Unity bridge
 - curated MCP matrix coverage now exercises most of the high-level tool surface in one pass
 - the live MCP pass runner can now emit debug reports, capture failure console snapshots, and follow Unity editor port rebinds during play-mode transitions
+- the live MCP pass runner can now prepare a dirty scene explicitly with `--prepare-scene save|discard` before mutating validation steps
 - `workflow audit-advanced` now probes UI, audio, lighting, animation, input, shadergraph, terrain, and navmesh in addition to the earlier core categories, with built-in asset cleanup
 - docs and test plan coverage for the higher-level sample-building workflow
 - public contribution flow with a lightweight CLA policy, commit sign-off guidance, and PR checklist updates
+- tool coverage entries now include blocker labels so deferred tools are grouped as live-audit work, package-dependent work, environment-sensitive work, or true Hub integration gaps
+- Unity console summaries now normalize common plugin log types like `log` into useful snapshot severity output
 
 ## 0.1.0 - 2026-04-08
 

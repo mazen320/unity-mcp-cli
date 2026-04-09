@@ -6,12 +6,15 @@ import unittest
 import uuid
 from pathlib import Path
 
+from cli_anything.unity_mcp.core.agent_profiles import AgentProfileStore, derive_agent_profiles_path
 from cli_anything.unity_mcp.core.embedded_cli import EmbeddedCLIOptions, run_cli_json
 from cli_anything.unity_mcp.core.mcp_tools import get_mcp_tool, iter_mcp_tools
 from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConnectionError
 from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_route
 from cli_anything.unity_mcp.core.session import SessionStore
+from cli_anything.unity_mcp.core.tool_coverage import build_tool_coverage_matrix
 from cli_anything.unity_mcp.core.workflows import build_demo_fps_controller_script
+from scripts.run_live_mcp_pass import _build_profile_plan, _default_report_file
 from cli_anything.unity_mcp.utils.unity_mcp_backend import (
     BackendSelectionError,
     UnityMCPBackend,
@@ -75,12 +78,85 @@ class RebindingBackend(UnityMCPBackend):
 
 
 class CoreTests(unittest.TestCase):
+    def test_agent_profile_store_persists_selection_and_profiles(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            session_path = tmpdir / "session.json"
+            store = AgentProfileStore(derive_agent_profiles_path(session_path))
+            state = store.upsert_profile(
+                name="reviewer",
+                agent_id="cli-anything-unity-mcp-reviewer",
+                role="reviewer",
+                description="Optional sidecar reviewer",
+                legacy=False,
+                select=True,
+            )
+
+            self.assertEqual(state.selected_profile, "reviewer")
+            profile = store.get_profile("reviewer")
+            self.assertIsNotNone(profile)
+            assert profile is not None
+            self.assertEqual(profile.agent_id, "cli-anything-unity-mcp-reviewer")
+            self.assertEqual(profile.role, "reviewer")
+
+            state = store.select_profile("reviewer")
+            self.assertEqual(state.selected_profile, "reviewer")
+
+            state = store.remove_profile("reviewer")
+            self.assertEqual(state.selected_profile, None)
+            self.assertEqual(state.profiles, [])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_embedded_cli_runner_returns_json_payload(self) -> None:
         payload = run_cli_json(["tool-template", "unity_scene_stats"], EmbeddedCLIOptions())
 
         self.assertEqual(payload["name"], "unity_scene_stats")
         self.assertEqual(payload["route"], "search/scene-stats")
         self.assertIn("template", payload)
+
+    def test_tool_coverage_matrix_marks_live_tested_and_deferred_tools(self) -> None:
+        payload = build_tool_coverage_matrix(category="terrain")
+
+        tools = {tool["name"]: tool for tool in payload["tools"]}
+        self.assertEqual(tools["unity_terrain_create"]["coverageStatus"], "live-tested")
+        self.assertEqual(tools["unity_terrain_info"]["coverageStatus"], "live-tested")
+        self.assertEqual(tools["unity_terrain_create_grid"]["coverageStatus"], "deferred")
+        self.assertEqual(tools["unity_terrain_create_grid"]["coverageBlocker"], "stateful-live-audit")
+        self.assertIn("disposable fixtures", tools["unity_terrain_create_grid"]["coverageNote"])
+        self.assertGreaterEqual(payload["summary"]["countsByStatus"]["live-tested"], 1)
+
+    def test_tool_coverage_matrix_explains_hub_tools_as_unity_hub_integration_gap(self) -> None:
+        payload = build_tool_coverage_matrix(category="hub")
+
+        tools = {tool["name"]: tool for tool in payload["tools"]}
+        self.assertEqual(tools["unity_hub_list_editors"]["coverageStatus"], "unsupported")
+        self.assertEqual(tools["unity_hub_list_editors"]["coverageBlocker"], "unity-hub-integration")
+        self.assertIn("Unity Hub integration", tools["unity_hub_list_editors"]["coverageNote"])
+
+    def test_live_pass_profile_plan_supports_focused_profiles_and_heavy_overlay(self) -> None:
+        terrain_plan = _build_profile_plan("terrain")
+        self.assertEqual(terrain_plan["advancedCategory"], "terrain")
+        self.assertEqual(terrain_plan["toolInfoTool"], "unity_terrain_info")
+        self.assertEqual(terrain_plan["toolCallTool"], "unity_terrain_info")
+        self.assertEqual(terrain_plan["auditCategories"], ["terrain", "lighting", "navmesh"])
+        self.assertFalse(terrain_plan["includeFpsSample"])
+
+        ui_heavy_plan = _build_profile_plan("ui", include_heavy=True)
+        self.assertEqual(ui_heavy_plan["advancedCategory"], "ui")
+        self.assertTrue(ui_heavy_plan["includeFpsSample"])
+
+    def test_live_pass_default_report_file_uses_profile_name(self) -> None:
+        report_file = _default_report_file(
+            Path("C:/Temp/.cli-anything-unity-mcp"),
+            "lighting",
+            timestamp="20260409-120000",
+        )
+        self.assertEqual(
+            str(report_file).replace("\\", "/"),
+            "C:/Temp/.cli-anything-unity-mcp/live-pass-lighting-20260409-120000.json",
+        )
 
     def test_mcp_tool_registry_is_curated_and_has_fast_defaults(self) -> None:
         names = [tool["name"] for tool in iter_mcp_tools()]

@@ -13,10 +13,14 @@ It focuses on three outcomes:
 As of 2026-04-09:
 
 - thin MCP adapter is working
-- `27/27` automated tests are passing
+- upstream coverage matrix exists in code and JSON form
+- `37/37` automated tests are passing
 - heavy live MCP pass is passing `15/15`
 - live debug reports can be written with `scripts/run_live_mcp_pass.py --debug --report-file ...`
-- advanced-tool audit exists, but it does not yet prove every upstream tool/category
+- advanced-tool audit now reaches UI, audio, lighting, animation, input, shadergraph, terrain, and navmesh
+- tool coverage is measurable: `31` live-tested, `31` covered, `260` deferred, `6` unsupported
+- `unsupported` currently maps to the Unity Hub surface only
+- deferred tools now carry blocker labels like `stateful-live-audit`, `package-dependent-live-audit`, and `unity-hub-integration`
 
 That means the project is no longer blocked on basic transport.
 The next phase is coverage, reliability, and quality of generated Unity output.
@@ -36,15 +40,16 @@ We should consider the tool layer "done enough" when all of these are true:
 
 ### P0
 
-- Build a coverage matrix for the upstream tool catalog.
-- Mark each tool as one of:
+- Expand the coverage matrix so fewer tools remain in `deferred`.
+- Keep each tool tagged as one of:
   - `covered`
   - `live-tested`
   - `mock-only`
   - `unsupported`
   - `deferred`
-- Add a machine-readable coverage file in the repo so progress is measurable.
-- Expose a command that reports coverage status by category.
+- Keep blocker labels actionable so `deferred` never means "ignored forever."
+- Refresh the machine-readable coverage file whenever status changes.
+- Keep the `tool-coverage` command aligned with the checked-in matrix.
 
 ### P1
 
@@ -70,7 +75,7 @@ We should consider the tool layer "done enough" when all of these are true:
 ### P0
 
 - Keep `scripts/run_live_mcp_pass.py` as the source of truth for live validation.
-- Add named pass profiles:
+- Expand and tune the named pass profiles:
   - `core`
   - `advanced`
   - `heavy`
@@ -180,9 +185,9 @@ This is the part that makes the repo feel powerful, not just compatible.
 
 These are the next best moves right now:
 
-1. Create a tool coverage matrix from the upstream catalog snapshot.
-2. Add live-pass profiles for `ui`, `lighting`, and `terrain`.
-3. Improve `workflow build-fps-sample` visuals and shooting feedback.
+1. Reduce the `deferred` count in the checked-in tool coverage matrix, starting with `terrain`, `ui`, `lighting`, and `animation`.
+2. Add failure-focused live-pass summary output and port-hop reporting polish.
+3. Improve `workflow build-fps-sample` visuals, shooting feedback, and default sensitivity tuning.
 4. Add automatic Scene/Game capture review to heavy workflows.
 5. Turn the highest-value roadmap items into GitHub issues.
 

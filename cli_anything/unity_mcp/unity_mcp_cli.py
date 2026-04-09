@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import shlex
 import socket
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import click
+from click.core import ParameterSource
 
 from . import __version__
+from .core.agent_profiles import AgentProfile, AgentProfileStore, derive_agent_profiles_path
 from .core.client import UnityMCPClient, UnityMCPClientError
 from .core.session import SessionStore
 from .core.workflows import (
@@ -51,6 +54,11 @@ class CLIContext:
     json_output: bool
     base_args: tuple[str, ...]
     command_path: str
+    agent_profile_store: AgentProfileStore
+    agent_id: str
+    agent_profile: AgentProfile | None
+    agent_source: str
+    legacy_mode: bool
 
 
 def _emit(ctx: click.Context, value: Any) -> None:
@@ -73,13 +81,39 @@ def _is_workflow_missing_error(result: Any) -> bool:
     return "not found" in lowered or "file not found" in lowered
 
 
+def _build_agent_profile_store(
+    session_path: Path | None,
+    agent_profiles_path: Path | None,
+) -> AgentProfileStore:
+    if agent_profiles_path:
+        return AgentProfileStore(agent_profiles_path)
+    if session_path:
+        return AgentProfileStore(derive_agent_profiles_path(session_path))
+    return AgentProfileStore()
+
+
+def _slugify_agent_profile_name(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+    return slug or "sidecar"
+
+
+def _suggest_agent_id(profile_name: str) -> str:
+    return f"cli-anything-unity-mcp-{_slugify_agent_profile_name(profile_name)}-{socket.gethostname()}"
+
+
+def _serialize_agent_profile(profile: AgentProfile | None) -> dict[str, Any] | None:
+    return asdict(profile) if profile is not None else None
+
+
 def _build_base_args(
     host: str,
     default_port: int,
     registry_path: Path | None,
     session_path: Path | None,
+    agent_profiles_path: Path | None,
     json_output: bool,
-    agent_id: str,
+    agent_id: str | None,
+    agent_profile: str | None,
     legacy: bool,
     port_range_start: int,
     port_range_end: int,
@@ -89,19 +123,23 @@ def _build_base_args(
         host,
         "--default-port",
         str(default_port),
-        "--agent-id",
-        agent_id,
         "--port-range-start",
         str(port_range_start),
         "--port-range-end",
         str(port_range_end),
     ]
+    if agent_id:
+        parts.extend(["--agent-id", agent_id])
     if registry_path:
         parts.extend(["--registry-path", str(registry_path)])
     if session_path:
         parts.extend(["--session-path", str(session_path)])
+    if agent_profiles_path:
+        parts.extend(["--agent-profiles-path", str(agent_profiles_path)])
     if json_output:
         parts.append("--json")
+    if agent_profile:
+        parts.extend(["--agent-profile", agent_profile])
     if legacy:
         parts.append("--legacy")
     return tuple(parts)
@@ -180,6 +218,12 @@ def _run_repl(ctx: click.Context) -> None:
     help="Override the CLI session state path.",
 )
 @click.option(
+    "--agent-profiles-path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Override the saved agent profile store path.",
+)
+@click.option(
     "--port-range-start",
     type=int,
     default=lambda: int(os.environ.get("UNITY_PORT_RANGE_START", "7890")),
@@ -194,6 +238,11 @@ def _run_repl(ctx: click.Context) -> None:
     help="Last port to scan when discovering Unity instances.",
 )
 @click.option(
+    "--agent-profile",
+    default=None,
+    help="Use a saved optional agent profile by name.",
+)
+@click.option(
     "--json",
     "json_output",
     is_flag=True,
@@ -201,9 +250,8 @@ def _run_repl(ctx: click.Context) -> None:
 )
 @click.option(
     "--agent-id",
-    default=_default_agent_id,
-    show_default="hostname+pid based",
-    help="Agent identifier sent to the Unity queue headers.",
+    default=None,
+    help="Override the agent identifier sent to the Unity queue headers. If omitted, the CLI uses the selected agent profile or a hostname+pid based default.",
 )
 @click.option(
     "--legacy",
@@ -217,17 +265,45 @@ def cli(
     default_port: int,
     registry_path: Path | None,
     session_path: Path | None,
+    agent_profiles_path: Path | None,
     port_range_start: int,
     port_range_end: int,
+    agent_profile: str | None,
     json_output: bool,
-    agent_id: str,
+    agent_id: str | None,
     legacy: bool,
 ) -> None:
     """Direct CLI client for Unity projects using the AnkleBreaker Unity MCP editor bridge."""
+    profile_store = _build_agent_profile_store(session_path, agent_profiles_path)
+    requested_profile_name = agent_profile or profile_store.load().selected_profile
+    resolved_profile = profile_store.get_profile(requested_profile_name) if requested_profile_name else None
+    if requested_profile_name and resolved_profile is None:
+        raise click.ClickException(f"Agent profile `{requested_profile_name}` was not found.")
+
+    agent_id_source = ctx.get_parameter_source("agent_id")
+    legacy_source = ctx.get_parameter_source("legacy")
+
+    if agent_id_source != ParameterSource.DEFAULT and agent_id:
+        resolved_agent_id = agent_id
+        agent_source = "explicit"
+    elif resolved_profile is not None:
+        resolved_agent_id = resolved_profile.agent_id
+        agent_source = "profile"
+    else:
+        resolved_agent_id = _default_agent_id()
+        agent_source = "generated"
+
+    if legacy_source != ParameterSource.DEFAULT:
+        resolved_legacy = legacy
+    elif resolved_profile is not None:
+        resolved_legacy = resolved_profile.legacy
+    else:
+        resolved_legacy = False
+
     client = UnityMCPClient(
         host=host,
-        agent_id=agent_id,
-        use_queue=not legacy,
+        agent_id=resolved_agent_id,
+        use_queue=not resolved_legacy,
     )
     backend = UnityMCPBackend(
         client=client,
@@ -245,13 +321,20 @@ def cli(
             default_port=default_port,
             registry_path=registry_path,
             session_path=session_path,
+            agent_profiles_path=agent_profiles_path,
             json_output=json_output,
-            agent_id=agent_id,
-            legacy=legacy,
+            agent_id=resolved_agent_id if agent_source != "profile" else None,
+            agent_profile=resolved_profile.name if resolved_profile else None,
+            legacy=resolved_legacy,
             port_range_start=port_range_start,
             port_range_end=port_range_end,
         ),
         command_path=ctx.command_path or "cli-anything-unity-mcp",
+        agent_profile_store=profile_store,
+        agent_id=resolved_agent_id,
+        agent_profile=resolved_profile,
+        agent_source=agent_source,
+        legacy_mode=resolved_legacy,
     )
     if ctx.invoked_subcommand is None:
         _run_repl(ctx)
@@ -284,12 +367,292 @@ def status_command(ctx: click.Context, port: int | None) -> None:
             "selectedPort": session.selected_port,
             "selectedInstance": session.selected_instance,
             "historyCount": len(session.history),
+            "agent": {
+                "agentId": ctx.obj.agent_id,
+                "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+                "source": ctx.obj.agent_source,
+                "legacy": ctx.obj.legacy_mode,
+            },
         }
         try:
             payload["ping"] = ctx.obj.backend.ping(port=port)
         except (BackendSelectionError, UnityMCPClientError) as exc:
             payload["pingError"] = str(exc)
         return payload
+
+    _run_and_emit(ctx, _callback)
+
+
+@cli.group("agent")
+def agent_group() -> None:
+    """Manage optional sidecar agent profiles and inspect live queue sessions."""
+
+
+@agent_group.command("current")
+@click.pass_context
+def agent_current_command(ctx: click.Context) -> None:
+    """Show the resolved agent identity for this CLI invocation."""
+
+    def _callback() -> dict[str, Any]:
+        state = ctx.obj.agent_profile_store.list_profiles()
+        return {
+            "resolved": {
+                "agentId": ctx.obj.agent_id,
+                "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+                "source": ctx.obj.agent_source,
+                "legacy": ctx.obj.legacy_mode,
+            },
+            "selectedProfile": state.selected_profile,
+            "savedProfileCount": len(state.profiles),
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@agent_group.command("list")
+@click.pass_context
+def agent_list_command(ctx: click.Context) -> None:
+    """List saved optional agent profiles."""
+
+    def _callback() -> dict[str, Any]:
+        state = ctx.obj.agent_profile_store.list_profiles()
+        return {
+            "selectedProfile": state.selected_profile,
+            "profiles": [
+                {
+                    **asdict(profile),
+                    "isSelected": bool(state.selected_profile and state.selected_profile.lower() == profile.name.lower()),
+                }
+                for profile in state.profiles
+            ],
+            "count": len(state.profiles),
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@agent_group.command("save")
+@click.argument("name")
+@click.option("--agent-id", "profile_agent_id", default=None, help="Agent ID to persist for this profile.")
+@click.option(
+    "--role",
+    type=click.Choice(["builder", "reviewer", "tester", "researcher", "custom"], case_sensitive=False),
+    default="custom",
+    show_default=True,
+    help="Short role label for this optional sidecar agent.",
+)
+@click.option("--description", default="", help="Optional human-readable description.")
+@click.option("--legacy/--queue", "profile_legacy", default=False, show_default=True, help="Whether this profile should bypass queue mode.")
+@click.option("--select/--no-select", default=True, show_default=True, help="Select this profile for future CLI runs.")
+@click.pass_context
+def agent_save_command(
+    ctx: click.Context,
+    name: str,
+    profile_agent_id: str | None,
+    role: str,
+    description: str,
+    profile_legacy: bool,
+    select: bool,
+) -> None:
+    """Create or update a saved optional agent profile."""
+
+    def _callback() -> dict[str, Any]:
+        effective_agent_id = profile_agent_id or _suggest_agent_id(name)
+        state = ctx.obj.agent_profile_store.upsert_profile(
+            name=name,
+            agent_id=effective_agent_id,
+            role=role.lower(),
+            description=description,
+            legacy=profile_legacy,
+            select=select,
+        )
+        profile = ctx.obj.agent_profile_store.get_profile(name)
+        return {
+            "success": True,
+            "message": f"Saved agent profile `{name}`.",
+            "profile": _serialize_agent_profile(profile),
+            "selectedProfile": state.selected_profile,
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@agent_group.command("use")
+@click.argument("name")
+@click.pass_context
+def agent_use_command(ctx: click.Context, name: str) -> None:
+    """Select a saved agent profile for future CLI runs."""
+
+    def _callback() -> dict[str, Any]:
+        state = ctx.obj.agent_profile_store.select_profile(name)
+        profile = ctx.obj.agent_profile_store.get_profile(name)
+        return {
+            "success": True,
+            "message": f"Selected agent profile `{name}`.",
+            "selectedProfile": state.selected_profile,
+            "profile": _serialize_agent_profile(profile),
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@agent_group.command("clear")
+@click.pass_context
+def agent_clear_command(ctx: click.Context) -> None:
+    """Clear the selected saved agent profile."""
+
+    def _callback() -> dict[str, Any]:
+        state = ctx.obj.agent_profile_store.clear_selection()
+        return {
+            "success": True,
+            "message": "Cleared the selected agent profile.",
+            "selectedProfile": state.selected_profile,
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@agent_group.command("remove")
+@click.argument("name")
+@click.pass_context
+def agent_remove_command(ctx: click.Context, name: str) -> None:
+    """Delete a saved agent profile."""
+
+    def _callback() -> dict[str, Any]:
+        state = ctx.obj.agent_profile_store.remove_profile(name)
+        return {
+            "success": True,
+            "message": f"Removed agent profile `{name}`.",
+            "selectedProfile": state.selected_profile,
+            "count": len(state.profiles),
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@agent_group.command("sessions")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def agent_sessions_command(ctx: click.Context, port: int | None) -> None:
+    """List live Unity-side agent sessions if the bridge exposes them."""
+    _run_and_emit(ctx, lambda: ctx.obj.backend.call_tool("unity_agents_list", port=port))
+
+
+@agent_group.command("log")
+@click.argument("agent_id")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def agent_log_command(ctx: click.Context, agent_id: str, port: int | None) -> None:
+    """Read the Unity-side action log for a specific agent ID."""
+    _run_and_emit(
+        ctx,
+        lambda: ctx.obj.backend.call_tool("unity_agent_log", params={"agentId": agent_id}, port=port),
+    )
+
+
+@agent_group.command("queue")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def agent_queue_command(ctx: click.Context, port: int | None) -> None:
+    """Show current Unity queue status for multi-agent work."""
+    _run_and_emit(ctx, lambda: ctx.obj.backend.get_queue_info(port=port))
+
+
+@cli.group("debug")
+def debug_group() -> None:
+    """Collect richer Unity debugging snapshots and ready-made debug command templates."""
+
+
+@debug_group.command("snapshot")
+@click.option("--console-count", type=int, default=50, show_default=True, help="How many Unity console entries to fetch.")
+@click.option(
+    "--type",
+    "message_type",
+    type=click.Choice(["all", "info", "warning", "error"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="Console severity filter.",
+)
+@click.option("--issue-limit", type=int, default=20, show_default=True, help="How many compilation or missing-reference issues to include.")
+@click.option("--include-hierarchy", is_flag=True, help="Include a shallow hierarchy snapshot.")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def debug_snapshot_command(
+    ctx: click.Context,
+    console_count: int,
+    message_type: str,
+    issue_limit: int,
+    include_hierarchy: bool,
+    port: int | None,
+) -> None:
+    """Collect a high-signal Unity debug bundle with console, compilation, scene, and queue state."""
+
+    def _callback() -> dict[str, Any]:
+        payload = ctx.obj.backend.get_debug_snapshot(
+            port=port,
+            console_count=console_count,
+            message_type=message_type,
+            issue_limit=issue_limit,
+            include_hierarchy=include_hierarchy,
+        )
+        payload["agent"] = {
+            "agentId": ctx.obj.agent_id,
+            "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+            "source": ctx.obj.agent_source,
+            "legacy": ctx.obj.legacy_mode,
+        }
+        return payload
+
+    _run_and_emit(ctx, _callback)
+
+
+@debug_group.command("template")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def debug_template_command(ctx: click.Context, port: int | None) -> None:
+    """Show a reusable CLI-first debug checklist and command template."""
+
+    def _callback() -> dict[str, Any]:
+        selected_port = port
+        if selected_port is None:
+            session = ctx.obj.backend.session_store.load()
+            selected_port = session.selected_port
+        active_port = selected_port if selected_port is not None else "<port>"
+        return {
+            "title": "Unity CLI Debug Template",
+            "agent": {
+                "agentId": ctx.obj.agent_id,
+                "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+                "source": ctx.obj.agent_source,
+                "legacy": ctx.obj.legacy_mode,
+            },
+            "selectedPort": selected_port,
+            "recommendedCommands": [
+                f"cli-anything-unity-mcp --json status{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
+                f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
+                f"cli-anything-unity-mcp --json console --count 50 --type error{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
+                f"cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
+                f"cli-anything-unity-mcp --json agent queue{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
+            ],
+            "checklist": [
+                "Capture the current editor, scene, console, compilation, and queue state with `debug snapshot`.",
+                "Look at `consoleSummary.highestSeverity` first, then read the newest error messages and stack traces.",
+                "Check `compilation.count` before trusting any runtime behavior.",
+                "Check `missingReferences.totalFound` before debugging scene logic.",
+                "If multiple agents are active, inspect `agent queue` and `agent sessions` to rule out queue contention.",
+            ],
+            "reportTemplate": {
+                "issueSummary": "",
+                "reproSteps": [
+                    "1. ...",
+                    "2. ...",
+                    "3. ...",
+                ],
+                "expected": "",
+                "actual": "",
+                "snapshotCommand": f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
+            },
+        }
 
     _run_and_emit(ctx, _callback)
 
@@ -750,6 +1113,42 @@ def tool_info_command(
 ) -> None:
     """Describe a tool name, including route mapping, tier, and input schema when known."""
     _run_and_emit(ctx, lambda: ctx.obj.backend.get_tool_info(tool_name, port=port))
+
+
+@cli.command("tool-coverage")
+@click.option("--category", type=str, default=None, help="Optional category filter for the upstream catalog.")
+@click.option(
+    "--status",
+    type=click.Choice(
+        ["live-tested", "covered", "mock-only", "unsupported", "deferred"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help="Filter by coverage status.",
+)
+@click.option("--search", type=str, default=None, help="Filter by tool name or description text.")
+@click.option("--summary", "summary_only", is_flag=True, help="Return only summary counts.")
+@click.option("--exclude-unsupported", is_flag=True, help="Hide tools marked unsupported in the upstream catalog.")
+@click.pass_context
+def tool_coverage_command(
+    ctx: click.Context,
+    category: str | None,
+    status: str | None,
+    search: str | None,
+    summary_only: bool,
+    exclude_unsupported: bool,
+) -> None:
+    """Report upstream tool coverage status across live-tested, covered, mock-only, unsupported, and deferred buckets."""
+    _run_and_emit(
+        ctx,
+        lambda: ctx.obj.backend.get_tool_coverage(
+            category=category,
+            status=status,
+            search=search,
+            include_unsupported=not exclude_unsupported,
+            summary_only=summary_only,
+        ),
+    )
 
 
 @cli.command("tool-template")

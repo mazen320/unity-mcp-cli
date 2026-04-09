@@ -6,6 +6,27 @@ Instead of exposing Unity through MCP tool registration, this project talks dire
 
 The result is a lighter, easier-to-debug workflow that still uses the real Unity-side backend.
 
+Right now the checked-in coverage matrix tracks `328` upstream catalog tools:
+
+- `31` live-tested
+- `31` covered
+- `260` deferred
+- `6` unsupported
+
+Important nuance:
+
+- `unsupported` currently means the Unity Hub-only surface, not "we gave up on it"
+- `deferred` means "known upstream tool that still needs wrapper depth, disposable-fixture audits, or optional-package validation"
+- each tool now carries a `coverageBlocker` field so the CLI can distinguish real platform gaps from plain backlog work
+
+Use this to inspect current status:
+
+```powershell
+cli-anything-unity-mcp --json tool-coverage --summary
+cli-anything-unity-mcp --json tool-coverage --status unsupported
+cli-anything-unity-mcp --json tool-coverage --status deferred --category terrain
+```
+
 ## What This Repo Is
 
 This repository publishes a separate CLI/client layer.
@@ -142,12 +163,51 @@ cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port <port
 cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port <port>
 ```
 
+## Optional Sidecar Agent
+
+The CLI can also save named queue identities so you can run an optional sidecar agent alongside your main Codex flow.
+
+This is not a second built-in LLM inside the CLI. It is a cleaner way to use the Unity bridge's existing multi-agent queue tracking with stable agent IDs.
+
+Example:
+
+```powershell
+cli-anything-unity-mcp --json agent save reviewer --agent-id cli-anything-unity-mcp-reviewer --role reviewer --description "Optional sidecar reviewer"
+cli-anything-unity-mcp --json agent current
+cli-anything-unity-mcp --json agent sessions --port <port>
+cli-anything-unity-mcp --json agent log cli-anything-unity-mcp-reviewer --port <port>
+```
+
+Useful commands:
+
+- `agent current`
+- `agent list`
+- `agent save`
+- `agent use`
+- `agent clear`
+- `agent remove`
+- `agent sessions`
+- `agent log`
+- `agent queue`
+
+## Coverage Status Meanings
+
+- `live-tested`: exercised against a real Unity editor
+- `covered`: exercised by automated tests or higher-level workflows
+- `mock-only`: currently verified only through mock bridge coverage
+- `unsupported`: real gap today, currently only the Unity Hub surface
+- `deferred`: not ignored, but still waiting on deeper wrapper work, disposable fixture audits, or package-specific validation
+
+If you want to know why a tool is still deferred, inspect the `coverageBlocker` field from `tool-coverage`.
+
 ## What It Can Do
 
 - discover running Unity instances
 - inspect project, scene, editor, hierarchy, and assets
 - browse a 300+ tool compatibility snapshot generated from the upstream Unity MCP ecosystem
 - inspect tool descriptions, tiers, routes, and input schemas with `tool-info`
+- inspect tool coverage status with `tool-coverage`
+- inspect blocker reasons like `unity-hub-integration`, `stateful-live-audit`, and `package-dependent-live-audit`
 - create and update scripts
 - create scene objects and attach components
 - wire serialized references between scene objects and assets
@@ -157,6 +217,8 @@ cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port
 - run a reusable advanced-tool audit across safe categories and sample-backed graphics/physics probes
 - validate scenes for missing references and compile problems
 - control play mode with recovery when the bridge rebinds
+- save optional sidecar agent profiles with stable queue identities
+- inspect live Unity-side agent sessions, logs, and queue state
 - optionally expose a thin MCP server with curated tools when a client needs MCP transport
 
 For faster FPS iteration, use:
@@ -182,6 +244,14 @@ If you want the current execution plan for full tool coverage, live testing, and
 - `tools`
 - `advanced-tools`
 - `tool-info`
+- `tool-coverage`
+- `agent current`
+- `agent list`
+- `agent save`
+- `agent use`
+- `agent sessions`
+- `agent log`
+- `agent queue`
 - `workflow inspect`
 - `workflow build-sample`
 - `workflow build-fps-sample`
@@ -396,7 +466,10 @@ Project-specific guidance for this repo lives in [ATTRIBUTION.md](ATTRIBUTION.md
 ```powershell
 python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp.tests.test_full_e2e -v
 cli-anything-unity-mcp --help
+python .\scripts\run_live_mcp_pass.py --port 7891 --profile ui --prepare-scene discard --debug --report-file .\.cli-anything-unity-mcp\live-pass-ui-debug.json
 ```
+
+For contributor-focused live validation, `scripts/run_live_mcp_pass.py` now supports named profiles such as `core`, `advanced`, `graphics`, `ui`, `lighting`, `terrain`, and `heavy`.
 
 ## Repo Layout
 

@@ -9,6 +9,8 @@ Unit coverage:
 End-to-end coverage:
 - Run the installed `cli-anything-unity-mcp` entry point in subprocess mode.
 - Exercise `instances`, `select`, `scene-info`, `tool unity_execute_code`, and REPL-default behavior against a mock Unity bridge server.
+- Exercise `agent save`, `agent list`, `agent current`, `agent sessions`, and `agent log` against the CLI plus mock bridge routes.
+- Exercise `tool-coverage` summary and category filtering against the generated upstream coverage matrix.
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
   - `workflow build-sample`
@@ -30,12 +32,18 @@ Validation commands:
 python -m pip install -e .
 python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp.tests.test_full_e2e -v
 cli-anything-unity-mcp --help
+cli-anything-unity-mcp --json tool-coverage --summary
+cli-anything-unity-mcp --json tool-coverage --status unsupported
+cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port 7891
 python .\scripts\run_live_mcp_pass.py --port 7891
+python .\scripts\run_live_mcp_pass.py --port 7891 --profile ui --prepare-scene discard --debug --report-file .\.cli-anything-unity-mcp\live-pass-ui-debug.json
 python .\scripts\run_live_mcp_pass.py --port 7891 --include-heavy --debug --report-file .\.cli-anything-unity-mcp\live-pass-heavy-debug.json
 ```
 
 Live pass notes:
 - The live pass runner now follows Unity bridge rebinds across the configured scan range instead of assuming the editor stays on a single port.
+- The live pass runner now supports named profiles such as `core`, `advanced`, `graphics`, `ui`, `lighting`, `terrain`, and `heavy`.
+- `--prepare-scene save|discard` lets mutating validation steps start from a clean scene on purpose instead of failing halfway through a run.
 - `--debug` records per-step timings, raw MCP payloads, and Unity console snapshots for failed steps.
 - `--report-file` writes the full run report to disk for later inspection.
 - `workflow audit-advanced` now performs disposable scene and asset probes for broader advanced-category coverage, then resets the scene and deletes generated assets.

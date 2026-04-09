@@ -804,6 +804,36 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             if len(self.missing_references) > limit:
                 response["truncated"] = True
             return response
+        if route == "console/log":
+            requested_type = str(payload.get("type") or "all").lower()
+            limit = int(payload.get("count", 20))
+            entries = [
+                {
+                    "message": "Sample info log",
+                    "type": "info",
+                    "timestamp": "00:00:01.000",
+                    "stackTrace": "",
+                },
+                {
+                    "message": "Sample warning log",
+                    "type": "warning",
+                    "timestamp": "00:00:02.000",
+                    "stackTrace": "",
+                },
+                {
+                    "message": "Sample error log",
+                    "type": "error",
+                    "timestamp": "00:00:03.000",
+                    "stackTrace": "Example.StackTrace()",
+                },
+            ]
+            if requested_type != "all":
+                entries = [entry for entry in entries if entry["type"] == requested_type]
+            entries = entries[:limit]
+            return {
+                "count": len(entries),
+                "entries": entries,
+            }
         if route in {"scene/stats", "search/scene-stats"}:
             total_components = sum(len(go["components"]) for go in self.gameobjects.values())
             component_counts: dict[str, int] = {}
@@ -989,6 +1019,34 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             }
         if route == "compilation/errors":
             return {"count": 0, "isCompiling": False, "entries": []}
+        if route == "agents/list":
+            return {
+                "count": 2,
+                "agents": [
+                    {
+                        "agentId": "cli-anything-unity-mcp-builder",
+                        "currentAction": "idle",
+                        "queuedRequests": 0,
+                        "completedRequests": 4,
+                    },
+                    {
+                        "agentId": "cli-anything-unity-mcp-reviewer",
+                        "currentAction": "inspect",
+                        "queuedRequests": 1,
+                        "completedRequests": 2,
+                    },
+                ],
+            }
+        if route == "agents/log":
+            agent_id = str(payload.get("agentId") or "unknown-agent")
+            return {
+                "agentId": agent_id,
+                "count": 2,
+                "actions": [
+                    {"timestamp": "2026-04-09T00:00:00Z", "action": "inspect", "status": "completed"},
+                    {"timestamp": "2026-04-09T00:00:05Z", "action": "build-sample", "status": "completed"},
+                ],
+            }
         if route == "editor/execute-code":
             generated_layout = self._create_2d_sample_layout_from_code(str(payload.get("code") or ""))
             if generated_layout is not None:
@@ -1082,12 +1140,14 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
                         "graphics/material-info",
                         "physics/raycast",
                         "compilation/errors",
+                        "agents/list",
+                        "agents/log",
                         "editor/state",
                         "editor/play-mode",
                         "editor/execute-code",
                         "undo/perform",
                     ],
-                    "totalRoutes": 37,
+                    "totalRoutes": 39,
                 },
             )
             return
@@ -1307,6 +1367,51 @@ class FullE2ETests(unittest.TestCase):
         session = json.loads(self.session_path.read_text(encoding="utf-8"))
         self.assertEqual(session["selected_port"], self.port)
 
+    def test_agent_profile_commands_persist_and_expose_current_resolution(self) -> None:
+        save_result = self.run_cli(
+            "--json",
+            "agent",
+            "save",
+            "reviewer",
+            "--agent-id",
+            "cli-anything-unity-mcp-reviewer",
+            "--role",
+            "reviewer",
+            "--description",
+            "Optional sidecar reviewer",
+        )
+        save_payload = json.loads(save_result.stdout.strip())
+        self.assertTrue(save_payload["success"])
+        self.assertEqual(save_payload["profile"]["agent_id"], "cli-anything-unity-mcp-reviewer")
+        self.assertEqual(save_payload["selectedProfile"], "reviewer")
+
+        list_result = self.run_cli("--json", "agent", "list")
+        list_payload = json.loads(list_result.stdout.strip())
+        self.assertEqual(list_payload["count"], 1)
+        self.assertTrue(list_payload["profiles"][0]["isSelected"])
+
+        current_result = self.run_cli("--json", "agent", "current")
+        current_payload = json.loads(current_result.stdout.strip())
+        self.assertEqual(current_payload["resolved"]["agentId"], "cli-anything-unity-mcp-reviewer")
+        self.assertEqual(current_payload["resolved"]["profile"]["role"], "reviewer")
+        self.assertEqual(current_payload["resolved"]["source"], "profile")
+
+        status_result = self.run_cli("--json", "status")
+        status_payload = json.loads(status_result.stdout.strip())
+        self.assertEqual(status_payload["agent"]["agentId"], "cli-anything-unity-mcp-reviewer")
+        self.assertEqual(status_payload["agent"]["profile"]["name"], "reviewer")
+
+    def test_agent_sessions_and_logs_proxy_live_agent_routes(self) -> None:
+        sessions_result = self.run_cli("--json", "agent", "sessions")
+        sessions_payload = json.loads(sessions_result.stdout.strip())
+        self.assertEqual(sessions_payload["count"], 2)
+        self.assertEqual(sessions_payload["agents"][1]["agentId"], "cli-anything-unity-mcp-reviewer")
+
+        log_result = self.run_cli("--json", "agent", "log", "cli-anything-unity-mcp-reviewer")
+        log_payload = json.loads(log_result.stdout.strip())
+        self.assertEqual(log_payload["agentId"], "cli-anything-unity-mcp-reviewer")
+        self.assertEqual(log_payload["count"], 2)
+
     def test_tool_command_and_default_repl_work(self) -> None:
         tool_result = self.run_cli(
             "--json",
@@ -1322,6 +1427,35 @@ class FullE2ETests(unittest.TestCase):
         repl_result = self.run_cli("--json", input_text="scene-info\nquit\n")
         self.assertIn("Unity MCP CLI REPL", repl_result.stdout)
         self.assertIn("MainScene", repl_result.stdout)
+
+    def test_debug_snapshot_combines_console_compilation_scene_and_queue_state(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "snapshot",
+            "--console-count",
+            "10",
+            "--include-hierarchy",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["summary"]["projectName"], "Demo")
+        self.assertEqual(payload["summary"]["consoleEntryCount"], 3)
+        self.assertEqual(payload["summary"]["consoleHighestSeverity"], "error")
+        self.assertEqual(payload["summary"]["compilationIssueCount"], 0)
+        self.assertEqual(payload["queue"]["activeAgents"], 1)
+        self.assertEqual(payload["consoleSummary"]["countsByType"]["warning"], 1)
+        self.assertEqual(payload["console"]["entries"][2]["type"], "error")
+        self.assertIn("hierarchy", payload)
+
+    def test_debug_template_returns_recommended_commands(self) -> None:
+        result = self.run_cli("--json", "debug", "template")
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity CLI Debug Template")
+        self.assertGreaterEqual(len(payload["recommendedCommands"]), 4)
+        self.assertIn("debug snapshot", payload["recommendedCommands"][1])
+        self.assertIn("snapshotCommand", payload["reportTemplate"])
 
     def test_workflow_inspect_returns_combined_snapshot(self) -> None:
         self.server.scripts["Assets/Scripts/Existing.cs"] = "public class Existing {}"
@@ -1644,6 +1778,21 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(advanced_payload["sceneName"], "MainScene")
         self.assertEqual(advanced_payload["totalGameObjects"], 1)
 
+    def test_tool_coverage_command_reports_live_tested_summary(self) -> None:
+        summary_result = self.run_cli("--json", "tool-coverage", "--summary")
+        category_result = self.run_cli("--json", "tool-coverage", "--category", "terrain")
+
+        summary_payload = json.loads(summary_result.stdout.strip())
+        category_payload = json.loads(category_result.stdout.strip())
+
+        self.assertIn("summary", summary_payload)
+        self.assertGreater(summary_payload["summary"]["countsByStatus"]["live-tested"], 0)
+        self.assertTrue(any(tool["name"] == "unity_terrain_create" for tool in category_payload["tools"]))
+        terrain_create = next(
+            tool for tool in category_payload["tools"] if tool["name"] == "unity_terrain_create"
+        )
+        self.assertEqual(terrain_create["coverageStatus"], "live-tested")
+
     def test_mcp_server_lists_tools_and_executes_curated_calls(self) -> None:
         process = self.start_mcp_server()
 
@@ -1718,8 +1867,8 @@ class FullE2ETests(unittest.TestCase):
             {"name": "unity_console", "arguments": {"count": 5}},
         )
         self.assertFalse(console_result["isError"])
-        self.assertEqual(console_result["structuredContent"]["route"], "console/log")
-        self.assertEqual(console_result["structuredContent"]["params"]["count"], 5)
+        self.assertEqual(console_result["structuredContent"]["count"], 3)
+        self.assertEqual(console_result["structuredContent"]["entries"][0]["type"], "info")
 
         validate_result = self.call_mcp(
             process,

@@ -9,6 +9,99 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+FULL_ADVANCED_AUDIT_CATEGORIES = [
+    "memory",
+    "graphics",
+    "physics",
+    "profiler",
+    "sceneview",
+    "settings",
+    "testing",
+    "ui",
+    "audio",
+    "lighting",
+    "animation",
+    "input",
+    "shadergraph",
+    "terrain",
+    "navmesh",
+]
+
+
+PASS_PROFILES: dict[str, dict[str, Any]] = {
+    "core": {
+        "advancedCategory": "graphics",
+        "toolInfoTool": "unity_scene_stats",
+        "toolCallTool": "unity_scene_stats",
+        "toolCallParams": {},
+        "auditCategories": ["graphics", "physics", "sceneview", "settings"],
+        "includeFpsSample": False,
+    },
+    "advanced": {
+        "advancedCategory": "graphics",
+        "toolInfoTool": "unity_scene_stats",
+        "toolCallTool": "unity_scene_stats",
+        "toolCallParams": {},
+        "auditCategories": list(FULL_ADVANCED_AUDIT_CATEGORIES),
+        "includeFpsSample": False,
+    },
+    "graphics": {
+        "advancedCategory": "graphics",
+        "toolInfoTool": "unity_scene_stats",
+        "toolCallTool": "unity_scene_stats",
+        "toolCallParams": {},
+        "auditCategories": ["graphics", "lighting", "sceneview", "shadergraph", "profiler"],
+        "includeFpsSample": False,
+    },
+    "ui": {
+        "advancedCategory": "ui",
+        "toolInfoTool": "unity_ui_info",
+        "toolCallTool": "unity_ui_info",
+        "toolCallParams": {},
+        "auditCategories": ["ui", "input", "graphics"],
+        "includeFpsSample": False,
+    },
+    "lighting": {
+        "advancedCategory": "lighting",
+        "toolInfoTool": "unity_lighting_info",
+        "toolCallTool": "unity_lighting_info",
+        "toolCallParams": {},
+        "auditCategories": ["lighting", "graphics", "sceneview"],
+        "includeFpsSample": False,
+    },
+    "terrain": {
+        "advancedCategory": "terrain",
+        "toolInfoTool": "unity_terrain_info",
+        "toolCallTool": "unity_terrain_info",
+        "toolCallParams": {},
+        "auditCategories": ["terrain", "lighting", "navmesh"],
+        "includeFpsSample": False,
+    },
+    "heavy": {
+        "advancedCategory": "terrain",
+        "toolInfoTool": "unity_terrain_info",
+        "toolCallTool": "unity_terrain_info",
+        "toolCallParams": {},
+        "auditCategories": list(FULL_ADVANCED_AUDIT_CATEGORIES),
+        "includeFpsSample": True,
+    },
+}
+
+
+def _build_profile_plan(profile: str, include_heavy: bool = False) -> dict[str, Any]:
+    if profile not in PASS_PROFILES:
+        raise ValueError(f"Unknown profile: {profile}")
+    plan = dict(PASS_PROFILES[profile])
+    plan["name"] = profile
+    plan["includeFpsSample"] = bool(plan.get("includeFpsSample")) or include_heavy
+    return plan
+
+
+def _default_report_file(runtime_dir: Path, profile: str, timestamp: str | None = None) -> Path:
+    stamp = timestamp or time.strftime("%Y%m%d-%H%M%S")
+    return runtime_dir / f"live-pass-{profile}-{stamp}.json"
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run a repeatable live pass against the thin unity-mcp-cli MCP adapter.",
@@ -29,7 +122,23 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--registry-path", type=Path, default=None, help="Optional Unity instance registry path.")
     parser.add_argument("--session-path", type=Path, default=None, help="Optional session path for the pass.")
-    parser.add_argument("--include-heavy", action="store_true", help="Include the heavier FPS-scene generation pass.")
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PASS_PROFILES.keys()),
+        default="core",
+        help="Named pass profile to run. Use focused profiles like ui, lighting, or terrain for category-specific validation.",
+    )
+    parser.add_argument(
+        "--include-heavy",
+        action="store_true",
+        help="Backward-compatible alias to append the heavier FPS-scene generation pass.",
+    )
+    parser.add_argument(
+        "--prepare-scene",
+        choices=("strict", "save", "discard"),
+        default="strict",
+        help="How to handle a dirty scene before mutating validation steps. `strict` leaves the scene untouched, `save` saves and reloads it, and `discard` reloads without saving.",
+    )
     parser.add_argument("--debug", action="store_true", help="Include raw step payloads, timings, and failure console snapshots.")
     parser.add_argument("--fail-fast", action="store_true", help="Stop at the first failing step.")
     parser.add_argument("--console-snapshot-count", type=int, default=20, help="How many Unity console entries to fetch when a step fails.")
@@ -98,6 +207,7 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
     runtime_dir = repo_root / ".cli-anything-unity-mcp"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     session_path = args.session_path or (runtime_dir / "live-pass-session.json")
+    profile_plan = _build_profile_plan(args.profile, args.include_heavy)
     command = [
         sys.executable,
         "-m",
@@ -206,20 +316,40 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
         record("unity_console", lambda: client.tool_call("unity_console", adaptive_tool_args(count=10)))
         record("unity_validate_scene", lambda: client.tool_call("unity_validate_scene", adaptive_tool_args()))
         record(
-            "unity_advanced_tools",
-            lambda: client.tool_call("unity_advanced_tools", adaptive_tool_args(category="graphics")),
-        )
-        record(
-            "unity_tool_info",
-            lambda: client.tool_call("unity_tool_info", adaptive_tool_args(toolName="unity_scene_stats")),
-        )
-        record(
-            "unity_tool_call",
+            f"unity_advanced_tools({profile_plan['advancedCategory']})",
             lambda: client.tool_call(
-                "unity_tool_call",
-                adaptive_tool_args(toolName="unity_scene_stats", params={}),
+                "unity_advanced_tools",
+                adaptive_tool_args(category=profile_plan["advancedCategory"]),
             ),
         )
+        record(
+            f"unity_tool_info({profile_plan['toolInfoTool']})",
+            lambda: client.tool_call(
+                "unity_tool_info",
+                adaptive_tool_args(toolName=profile_plan["toolInfoTool"]),
+            ),
+        )
+        record(
+            f"unity_tool_call({profile_plan['toolCallTool']})",
+            lambda: client.tool_call(
+                "unity_tool_call",
+                adaptive_tool_args(
+                    toolName=profile_plan["toolCallTool"],
+                    params=profile_plan["toolCallParams"],
+                ),
+            ),
+        )
+        if args.prepare_scene != "strict":
+            record(
+                f"prepare_scene({args.prepare_scene})",
+                lambda: client.tool_call(
+                    "unity_reset_scene",
+                    adaptive_tool_args(
+                        saveIfDirty=args.prepare_scene == "save",
+                        discardUnsaved=args.prepare_scene == "discard",
+                    ),
+                ),
+            )
         record(
             "unity_build_sample",
             lambda: client.tool_call(
@@ -233,10 +363,10 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
             ),
         )
         record(
-            "unity_audit_advanced",
+            f"unity_audit_advanced({profile_plan['name']})",
             lambda: client.tool_call(
                 "unity_audit_advanced",
-                adaptive_tool_args(categories=["graphics", "physics", "sceneview", "settings"]),
+                adaptive_tool_args(categories=profile_plan["auditCategories"]),
             ),
         )
         record(
@@ -252,7 +382,7 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
             lambda: client.tool_call("unity_reset_scene", adaptive_tool_args(discardUnsaved=True)),
         )
 
-        if args.include_heavy:
+        if profile_plan["includeFpsSample"]:
             record(
                 "unity_build_fps_sample",
                 lambda: client.tool_call(
@@ -282,7 +412,9 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
                 "sessionPath": str(session_path),
                 "passed": passed,
                 "failed": failed,
-                "includeHeavy": bool(args.include_heavy),
+                "profile": profile_plan["name"],
+                "includeHeavy": bool(profile_plan["includeFpsSample"]),
+                "prepareScene": args.prepare_scene,
                 "debug": bool(args.debug),
             },
         }
@@ -292,10 +424,13 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> int:
     args = _parse_args()
+    runtime_dir = Path(__file__).resolve().parents[1] / ".cli-anything-unity-mcp"
+    report_file = args.report_file or (_default_report_file(runtime_dir, args.profile) if args.debug else None)
     result = _run_pass(args)
-    if args.report_file:
-        args.report_file.parent.mkdir(parents=True, exist_ok=True)
-        args.report_file.write_text(json.dumps(result, indent=2, ensure_ascii=True), encoding="utf-8")
+    if report_file:
+        report_file.parent.mkdir(parents=True, exist_ok=True)
+        report_file.write_text(json.dumps(result, indent=2, ensure_ascii=True), encoding="utf-8")
+        result["summary"]["reportFile"] = str(report_file)
     if args.json:
         print(json.dumps(result, separators=(",", ":"), ensure_ascii=True))
     else:
