@@ -1412,6 +1412,31 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(log_payload["agentId"], "cli-anything-unity-mcp-reviewer")
         self.assertEqual(log_payload["count"], 2)
 
+    def test_agent_watch_samples_queue_sessions_logs_and_snapshot_summary(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "agent",
+            "watch",
+            "--iterations",
+            "2",
+            "--interval",
+            "0",
+            "--console-count",
+            "10",
+            "--watch-agent-id",
+            "cli-anything-unity-mcp-reviewer",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity Agent Watch")
+        self.assertEqual(payload["watch"]["iterations"], 2)
+        self.assertEqual(payload["watch"]["watchedAgentId"], "cli-anything-unity-mcp-reviewer")
+        self.assertEqual(len(payload["samples"]), 2)
+        self.assertEqual(payload["latest"]["queue"]["activeAgents"], 1)
+        self.assertEqual(payload["latest"]["sessions"]["count"], 2)
+        self.assertEqual(payload["latest"]["agentLog"]["count"], 2)
+        self.assertEqual(payload["latest"]["summary"]["consoleEntryCount"], 3)
+
     def test_tool_command_and_default_repl_work(self) -> None:
         tool_result = self.run_cli(
             "--json",

@@ -192,6 +192,7 @@ cli-anything-unity-mcp --json agent save reviewer --agent-id cli-anything-unity-
 cli-anything-unity-mcp --json agent current
 cli-anything-unity-mcp --json agent sessions --port <port>
 cli-anything-unity-mcp --json agent log cli-anything-unity-mcp-reviewer --port <port>
+cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port <port>
 ```
 
 Useful commands:
@@ -205,6 +206,7 @@ Useful commands:
 - `agent sessions`
 - `agent log`
 - `agent queue`
+- `agent watch`
 
 ## Coverage Status Meanings
 
@@ -235,6 +237,7 @@ If you want to know why a tool is still deferred, inspect the `coverageBlocker` 
 - control play mode with recovery when the bridge rebinds
 - save optional sidecar agent profiles with stable queue identities
 - inspect live Unity-side agent sessions, logs, and queue state
+- watch multi-agent activity over time with repeated queue/session/log/debug samples
 - optionally expose a thin MCP server with curated tools when a client needs MCP transport
 
 For faster FPS iteration, use:
@@ -268,6 +271,7 @@ If you want the current execution plan for full tool coverage, live testing, and
 - `agent sessions`
 - `agent log`
 - `agent queue`
+- `agent watch`
 - `workflow inspect`
 - `workflow scaffold-test-project`
 - `workflow build-sample`

@@ -7,6 +7,7 @@ import shlex
 import socket
 import time
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -562,6 +563,103 @@ def agent_queue_command(ctx: click.Context, port: int | None) -> None:
     _run_and_emit(ctx, lambda: ctx.obj.backend.get_queue_info(port=port))
 
 
+@agent_group.command("watch")
+@click.option("--iterations", type=int, default=3, show_default=True, help="How many samples to capture.")
+@click.option("--interval", type=float, default=1.0, show_default=True, help="Seconds to wait between samples.")
+@click.option("--console-count", type=int, default=20, show_default=True, help="How many Unity console entries to include per sample.")
+@click.option("--include-hierarchy", is_flag=True, help="Include a shallow hierarchy snapshot in each sampled debug bundle.")
+@click.option(
+    "--watch-agent-id",
+    type=str,
+    default=None,
+    help="Optional Unity-side agent ID to fetch log entries for. Defaults to the current CLI agent ID.",
+)
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def agent_watch_command(
+    ctx: click.Context,
+    iterations: int,
+    interval: float,
+    console_count: int,
+    include_hierarchy: bool,
+    watch_agent_id: str | None,
+    port: int | None,
+) -> None:
+    """Sample queue, sessions, logs, and debug snapshots over time so multi-agent work is visible."""
+
+    def _callback() -> dict[str, Any]:
+        if iterations < 1:
+            raise ValueError("--iterations must be at least 1.")
+        if interval < 0:
+            raise ValueError("--interval cannot be negative.")
+
+        selected_watch_agent_id = watch_agent_id or ctx.obj.agent_id
+
+        def _safe_fetch(fetcher: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+            try:
+                return fetcher()
+            except (BackendSelectionError, UnityMCPClientError, ValueError) as exc:
+                return {"error": str(exc)}
+
+        samples: list[dict[str, Any]] = []
+        for index in range(iterations):
+            snapshot = ctx.obj.backend.get_debug_snapshot(
+                port=port,
+                console_count=console_count,
+                message_type="all",
+                issue_limit=20,
+                include_hierarchy=include_hierarchy,
+            )
+            sessions = _safe_fetch(lambda: ctx.obj.backend.call_tool("unity_agents_list", port=port))
+            agent_log = _safe_fetch(
+                lambda: ctx.obj.backend.call_tool(
+                    "unity_agent_log",
+                    params={"agentId": selected_watch_agent_id},
+                    port=port,
+                )
+            )
+
+            sample = {
+                "index": index + 1,
+                "capturedAt": datetime.now(UTC).isoformat(),
+                "summary": snapshot.get("summary"),
+                "consoleSummary": snapshot.get("consoleSummary"),
+                "queue": snapshot.get("queue"),
+                "sessions": sessions,
+                "watchedAgentId": selected_watch_agent_id,
+                "agentLog": agent_log,
+            }
+            if include_hierarchy and "hierarchy" in snapshot:
+                sample["hierarchy"] = snapshot["hierarchy"]
+            samples.append(sample)
+
+            if index + 1 < iterations and interval > 0:
+                time.sleep(interval)
+
+        latest = samples[-1] if samples else {}
+        return {
+            "title": "Unity Agent Watch",
+            "agent": {
+                "agentId": ctx.obj.agent_id,
+                "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+                "source": ctx.obj.agent_source,
+                "legacy": ctx.obj.legacy_mode,
+            },
+            "watch": {
+                "iterations": iterations,
+                "intervalSeconds": interval,
+                "consoleCount": console_count,
+                "includeHierarchy": include_hierarchy,
+                "watchedAgentId": selected_watch_agent_id,
+                "port": ((latest.get("summary") or {}).get("port")),
+            },
+            "latest": latest,
+            "samples": samples,
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
 @cli.group("debug")
 def debug_group() -> None:
     """Collect richer Unity debugging snapshots and ready-made debug command templates."""
@@ -656,6 +754,90 @@ def debug_template_command(ctx: click.Context, port: int | None) -> None:
                 "actual": "",
                 "snapshotCommand": f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
             },
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@debug_group.command("watch")
+@click.option("--iterations", type=int, default=3, show_default=True, help="How many samples to capture.")
+@click.option("--interval", type=float, default=1.0, show_default=True, help="Seconds to wait between samples.")
+@click.option("--console-count", type=int, default=20, show_default=True, help="How many Unity console entries to include per sample.")
+@click.option(
+    "--type",
+    "message_type",
+    type=click.Choice(["all", "info", "warning", "error"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="Console severity filter.",
+)
+@click.option("--issue-limit", type=int, default=20, show_default=True, help="How many compilation or missing-reference issues to include.")
+@click.option("--include-hierarchy", is_flag=True, help="Include a shallow hierarchy snapshot in each sampled debug bundle.")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def debug_watch_command(
+    ctx: click.Context,
+    iterations: int,
+    interval: float,
+    console_count: int,
+    message_type: str,
+    issue_limit: int,
+    include_hierarchy: bool,
+    port: int | None,
+) -> None:
+    """Sample Unity debug state over time so console and editor changes are easy to see."""
+
+    def _callback() -> dict[str, Any]:
+        if iterations < 1:
+            raise ValueError("--iterations must be at least 1.")
+        if interval < 0:
+            raise ValueError("--interval cannot be negative.")
+
+        samples: list[dict[str, Any]] = []
+        for index in range(iterations):
+            snapshot = ctx.obj.backend.get_debug_snapshot(
+                port=port,
+                console_count=console_count,
+                message_type=message_type,
+                issue_limit=issue_limit,
+                include_hierarchy=include_hierarchy,
+            )
+            sample = {
+                "index": index + 1,
+                "capturedAt": datetime.now(UTC).isoformat(),
+                "summary": snapshot.get("summary"),
+                "consoleSummary": snapshot.get("consoleSummary"),
+                "compilation": snapshot.get("compilation"),
+                "missingReferences": snapshot.get("missingReferences"),
+                "queue": snapshot.get("queue"),
+            }
+            if include_hierarchy and "hierarchy" in snapshot:
+                sample["hierarchy"] = snapshot["hierarchy"]
+            samples.append(sample)
+
+            if index + 1 < iterations and interval > 0:
+                time.sleep(interval)
+
+        latest = samples[-1] if samples else {}
+        return {
+            "title": "Unity Debug Watch",
+            "agent": {
+                "agentId": ctx.obj.agent_id,
+                "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+                "source": ctx.obj.agent_source,
+                "legacy": ctx.obj.legacy_mode,
+            },
+            "watch": {
+                "iterations": iterations,
+                "intervalSeconds": interval,
+                "consoleCount": console_count,
+                "messageType": message_type,
+                "issueLimit": issue_limit,
+                "includeHierarchy": include_hierarchy,
+                "port": ((latest.get("summary") or {}).get("port")),
+            },
+            "latest": latest,
+            "samples": samples,
         }
 
     _run_and_emit(ctx, _callback)
