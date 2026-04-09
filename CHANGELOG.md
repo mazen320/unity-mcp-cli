@@ -15,12 +15,11 @@ All notable changes to this project will be documented in this file.
 - curated MCP tool registry that delegates into the existing CLI/core
 - live MCP pass runner script for repeatable checks against a real Unity editor
 - named live-pass profiles for focused validation runs such as `ui`, `lighting`, `terrain`, `graphics`, `advanced`, and `heavy`
-- `workflow build-sample` for generating a complete demo slice with scripts, transforms, prefab cloning, reference wiring, validation, play-mode checks, and optional cleanup
-- `workflow audit-advanced` for repeatable validation of safe advanced-tool categories and disposable sample-backed graphics/physics probes
+- `workflow audit-advanced` for repeatable validation of safe advanced-tool categories and disposable probe-backed graphics/physics checks
 - Unity debug snapshot/template commands for bundling console, compilation, scene, hierarchy, and queue state into a reusable CLI-first debug flow
-- `workflow scaffold-test-project` for creating a disposable Unity smoke project wired to the local plugin clone or upstream git package
 - `debug watch` for repeatedly sampling Unity console/editor/queue state over time without rerunning snapshot by hand
 - `agent watch` for sampling queue, sessions, logs, and debug snapshot summaries over time
+- explicit CLI progress trace entries so multi-step workflows can write substeps into both `debug trace` and the Unity Console
 
 ### Improved
 
@@ -32,10 +31,15 @@ All notable changes to this project will be documented in this file.
 - the live MCP pass runner can now emit debug reports, capture failure console snapshots, and follow Unity editor port rebinds during play-mode transitions
 - the live MCP pass runner can now prepare a dirty scene explicitly with `--prepare-scene save|discard` before mutating validation steps
 - `workflow audit-advanced` now probes UI, audio, lighting, animation, input, shadergraph, terrain, and navmesh in addition to the earlier core categories, with built-in asset cleanup
-- docs and test plan coverage for the higher-level sample-building workflow
+- docs and test plan coverage for CLI-first validation, debugging, and advanced-tool auditing
 - public contribution flow with a lightweight CLA policy, commit sign-off guidance, and PR checklist updates
 - tool coverage entries now include blocker labels so deferred tools are grouped as live-audit work, package-dependent work, environment-sensitive work, or true Hub integration gaps
 - Unity console summaries now normalize common plugin log types like `log` into useful snapshot severity output
+- automatic Unity breadcrumbs now use more specific workflow wording, including substeps like `Checking project info`, `Checking editor state`, and `Listing assets in Assets/...`
+
+### Changed
+
+- removed deprecated sample/scaffold workflows from the public CLI and MCP surface so the repo stays focused on the CLI/debugging/tooling layer
 
 ## 0.1.0 - 2026-04-08
 
@@ -47,7 +51,7 @@ Initial public-ready release of the CLI harness.
 - REPL-first command flow with `--json` output
 - instance discovery, selection, history, and session persistence
 - route and tool passthrough commands for bridge coverage
-- high-level workflows for inspect, behavior creation, scene reset, smoke testing, reference wiring, prefab creation, and scene validation
+- high-level workflows for inspect, behavior creation, scene reset, reference wiring, prefab creation, and scene validation
 - play-mode recovery support for temporary bridge rebinds
 - beginner-friendly docs and contributor docs
 - issue templates, PR template, security policy, and repository hygiene files

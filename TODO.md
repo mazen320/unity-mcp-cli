@@ -4,9 +4,9 @@ This file is the working roadmap for taking `unity-mcp-cli` from "good CLI wrapp
 
 It focuses on three outcomes:
 
-- full practical MCP-tool coverage
+- full practical tool coverage and parity
 - proof through repeatable live testing
-- higher-end Unity building workflows that feel good enough for real project work
+- a CLI-first Unity assistant that is easier to debug, trust, and extend than the current alternatives
 
 ## Current Baseline
 
@@ -23,7 +23,7 @@ As of 2026-04-09:
 - deferred tools now carry blocker labels like `stateful-live-audit`, `package-dependent-live-audit`, and `unity-hub-integration`
 
 That means the project is no longer blocked on basic transport.
-The next phase is coverage, reliability, and quality of generated Unity output.
+The next phase is coverage, reliability, observability, and eventually owning more of the backend.
 
 ## Definition Of Done
 
@@ -32,8 +32,7 @@ We should consider the tool layer "done enough" when all of these are true:
 - every curated MCP tool has automated coverage
 - every important upstream advanced-tool category has at least one live validation path
 - failure cases produce useful debug output instead of silent breakage
-- scene-building workflows produce acceptable visuals by default
-- generated gameplay samples are input-safe, reload-safe, and play-mode-safe
+- the CLI can explain likely Unity failures in one pass instead of forcing manual detective work
 - contributors can see what is implemented, what is partially supported, and what is intentionally deferred
 
 ## Track 1: MCP And Tool Coverage
@@ -106,42 +105,48 @@ We should consider the tool layer "done enough" when all of these are true:
 - Add CI jobs for unit tests plus a report-only dry run of live-pass formatting logic.
 - Add a "known flaky" section if any Unity-side plugin behaviors remain inconsistent.
 
-## Track 3: High-End Unity Workflows
-
-This is the part that makes the repo feel powerful, not just compatible.
+## Track 3: Unity Assistant Quality
 
 ### P0
 
-- Improve `workflow build-fps-sample` so it feels like a believable starter scene, not a debug blockout.
-- Add better default composition:
-  - stronger lighting contrast
-  - better materials
-  - more readable targets
-  - clearer HUD
-  - sane mouse sensitivity defaults
-- Add a proper shooting validation step:
-  - target hit feedback
-  - ammo updates
-  - visible hit markers or impact effect
+- Keep improving `debug snapshot`, `debug doctor`, `debug watch`, and `debug capture` so the CLI feels like an actual Unity assistant.
+- Include the most recent CLI command history in failure triage.
+- Explain likely causes for:
+  - compilation failures
+  - missing scripts or references
+  - queue contention
+  - bridge restarts or timeouts
+  - play-mode state leaks
+- Prefer commands that recommend the next useful CLI action instead of dumping raw state only.
 
 ### P1
 
-- Add `workflow build-third-person-sample`.
-- Add `workflow build-2d-platformer-sample`.
-- Add `workflow build-topdown-sample`.
-- Add `workflow build-ui-showcase`.
-- Add `workflow build-advanced-scene` for a more presentation-ready environment.
+- Add better route-level timeouts, bridge recovery hints, and queue diagnostics.
+- Expand issue-specific helper commands for common Unity failures.
+- Make tool errors more actionable by surfacing route, category, likely blocker, and suggested retry path.
 
 ### P2
 
-- Add reusable "quality presets" for samples:
-  - `prototype`
-  - `gameplay`
-  - `presentation`
-- Add optional post-processing, fog, and audio dressing where supported.
-- Add generated materials and scene dressing that fit URP/2D defaults better.
+- Start separating "CLI layer" work from "future custom Unity backend" work so backend independence becomes a real track, not just an idea.
 
-## Track 4: Visual Verification
+## Track 4: Validation Probes
+
+### P0
+
+- Keep validation centered on temporary probe creation, scene checks, and screenshot review instead of demo/sample content.
+- Make probe-driven validation stable enough to test:
+  - script sync
+  - play-mode transitions
+  - screenshot capture
+  - material/visibility sanity
+  - advanced-category route safety
+
+### P1
+
+- Add a lightweight capture review command that summarizes obvious visual problems from the last run.
+- Store capture metadata in the debug report so visual regressions can be tracked over time.
+
+## Track 5: Visual Verification
 
 ### P0
 
@@ -156,10 +161,10 @@ This is the part that makes the repo feel powerful, not just compatible.
 
 ### P1
 
-- Add a lightweight capture review command that summarizes obvious visual problems from the last run.
-- Store capture metadata in the debug report so visual regressions can be tracked over time.
+- Add comparison support so two validation runs can be reviewed side by side.
+- Flag when the Game view is clearly blocked by first-person meshes or bad camera placement.
 
-## Track 5: Contributor Clarity
+## Track 6: Contributor Clarity
 
 ### P0
 
@@ -186,8 +191,8 @@ This is the part that makes the repo feel powerful, not just compatible.
 These are the next best moves right now:
 
 1. Reduce the `deferred` count in the checked-in tool coverage matrix, starting with `terrain`, `ui`, `lighting`, and `animation`.
-2. Add failure-focused live-pass summary output and port-hop reporting polish.
-3. Improve `workflow build-fps-sample` visuals, shooting feedback, and default sensitivity tuning.
+2. Keep improving CLI-first debugging so the harness can explain Unity failures clearly.
+3. Add failure-focused live-pass summary output and port-hop reporting polish.
 4. Add automatic Scene/Game capture review to heavy workflows.
 5. Turn the highest-value roadmap items into GitHub issues.
 

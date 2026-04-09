@@ -84,16 +84,42 @@ class SessionStore:
         command: str,
         args: Optional[Dict[str, Any]] = None,
         port: Optional[int] = None,
+        status: str = "ok",
+        duration_ms: float | None = None,
+        error: str | None = None,
+        transport: str | None = None,
+        note: str | None = None,
+        agent_id: str | None = None,
+        agent_profile: str | None = None,
+        command_path: str | None = None,
+        activity: str | None = None,
     ) -> SessionState:
+        entry: Dict[str, Any] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "command": command,
+            "args": args or {},
+            "port": port,
+            "status": status,
+        }
+        if duration_ms is not None:
+            entry["durationMs"] = round(float(duration_ms), 3)
+        if error:
+            entry["error"] = error
+        if transport:
+            entry["transport"] = transport
+        if note:
+            entry["note"] = note
+        if agent_id:
+            entry["agentId"] = agent_id
+        if agent_profile:
+            entry["agentProfile"] = agent_profile
+        if command_path:
+            entry["commandPath"] = command_path
+        if activity:
+            entry["activity"] = activity
+
         state = self.load()
-        state.history.append(
-            {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "command": command,
-                "args": args or {},
-                "port": port,
-            }
-        )
+        state.history.append(entry)
         state.history = state.history[-self.max_history :]
         return self.save(state)
 

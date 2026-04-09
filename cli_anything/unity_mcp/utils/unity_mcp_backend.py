@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections import deque
 import json
 import os
 import socket
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +23,15 @@ def get_default_registry_path() -> Path:
         root = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
         return root / "UnityMCP" / "instances.json"
     return Path.home() / ".local" / "share" / "UnityMCP" / "instances.json"
+
+
+def get_default_editor_log_path() -> Path:
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return root / "Unity" / "Editor" / "Editor.log"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Logs" / "Unity" / "Editor.log"
+    return Path.home() / ".config" / "unity3d" / "Editor.log"
 
 
 class BackendSelectionError(RuntimeError):
@@ -50,6 +61,97 @@ class UnityMCPBackend:
         self.default_port = default_port
         self.port_range_start = port_range_start
         self.port_range_end = port_range_end
+        self.runtime_agent_id: str | None = None
+        self.runtime_agent_profile: str | None = None
+        self.runtime_command_path: str | None = None
+        self.runtime_activity: str | None = None
+
+    def set_runtime_context(
+        self,
+        *,
+        agent_id: str | None = None,
+        agent_profile: str | None = None,
+        command_path: str | None = None,
+        activity: str | None = None,
+    ) -> None:
+        self.runtime_agent_id = agent_id
+        self.runtime_agent_profile = agent_profile
+        self.runtime_command_path = command_path
+        self.runtime_activity = activity
+
+    def _record_history(
+        self,
+        command: str,
+        args: Optional[Dict[str, Any]],
+        port: Optional[int],
+        *,
+        status: str = "ok",
+        duration_ms: float | None = None,
+        error: str | None = None,
+        transport: str | None = None,
+        note: str | None = None,
+    ) -> None:
+        self.session_store.record_command(
+            command,
+            args,
+            port,
+            status=status,
+            duration_ms=duration_ms,
+            error=error,
+            transport=transport,
+            note=note,
+            agent_id=self.runtime_agent_id,
+            agent_profile=self.runtime_agent_profile,
+            command_path=self.runtime_command_path,
+            activity=self.runtime_activity,
+        )
+
+    def record_progress(
+        self,
+        message: str,
+        port: Optional[int] = None,
+        *,
+        phase: str | None = None,
+        level: str = "info",
+        emit_breadcrumb: bool = True,
+        breadcrumb_message: str | None = None,
+    ) -> Dict[str, Any]:
+        resolved_port: int | None = None
+        if port is not None:
+            resolved_port = port
+        else:
+            try:
+                resolved_port = self.resolve_port(explicit_port=None, allow_default=False)
+            except BackendSelectionError:
+                resolved_port = None
+
+        if emit_breadcrumb and resolved_port is not None:
+            self.emit_unity_breadcrumb(
+                message=breadcrumb_message or message,
+                port=resolved_port,
+                level=level,
+                record_history=False,
+            )
+
+        payload = {
+            "message": message,
+            "level": str(level or "info").lower(),
+        }
+        if phase:
+            payload["phase"] = phase
+
+        self._record_history(
+            "cli/progress",
+            payload,
+            resolved_port,
+            transport="local",
+            note="CLI progress",
+        )
+        return payload
+
+    @staticmethod
+    def _elapsed_ms(started_at: float) -> float:
+        return (time.monotonic() - started_at) * 1000.0
 
     def list_instances(self) -> Dict[str, Any]:
         state = self.session_store.load()
@@ -109,8 +211,27 @@ class UnityMCPBackend:
 
     def get_routes(self, port: Optional[int] = None) -> Dict[str, Any]:
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
-        routes = self.client.get_api(resolved_port, "_meta/routes")
-        self.session_store.record_command("_meta/routes", {}, resolved_port)
+        started_at = time.monotonic()
+        try:
+            routes = self.client.get_api(resolved_port, "_meta/routes")
+        except Exception as exc:
+            self._record_history(
+                "_meta/routes",
+                {},
+                resolved_port,
+                status="error",
+                duration_ms=self._elapsed_ms(started_at),
+                error=str(exc),
+                transport="get",
+            )
+            raise
+        self._record_history(
+            "_meta/routes",
+            {},
+            resolved_port,
+            duration_ms=self._elapsed_ms(started_at),
+            transport="get",
+        )
         return routes
 
     def get_context(self, category: str | None = None, port: Optional[int] = None) -> Dict[str, Any]:
@@ -118,14 +239,52 @@ class UnityMCPBackend:
         api_path = "context"
         if category:
             api_path = f"context/{quote(category)}"
-        payload = self.client.get_api(resolved_port, api_path)
-        self.session_store.record_command(api_path, {}, resolved_port)
+        started_at = time.monotonic()
+        try:
+            payload = self.client.get_api(resolved_port, api_path)
+        except Exception as exc:
+            self._record_history(
+                api_path,
+                {},
+                resolved_port,
+                status="error",
+                duration_ms=self._elapsed_ms(started_at),
+                error=str(exc),
+                transport="get",
+            )
+            raise
+        self._record_history(
+            api_path,
+            {},
+            resolved_port,
+            duration_ms=self._elapsed_ms(started_at),
+            transport="get",
+        )
         return payload
 
     def get_queue_info(self, port: Optional[int] = None) -> Dict[str, Any]:
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
-        payload = self.client.get_queue_info(resolved_port)
-        self.session_store.record_command("queue/info", {}, resolved_port)
+        started_at = time.monotonic()
+        try:
+            payload = self.client.get_queue_info(resolved_port)
+        except Exception as exc:
+            self._record_history(
+                "queue/info",
+                {},
+                resolved_port,
+                status="error",
+                duration_ms=self._elapsed_ms(started_at),
+                error=str(exc),
+                transport="get",
+            )
+            raise
+        self._record_history(
+            "queue/info",
+            {},
+            resolved_port,
+            duration_ms=self._elapsed_ms(started_at),
+            transport="get",
+        )
         return payload
 
     @staticmethod
@@ -245,6 +404,12 @@ class UnityMCPBackend:
             "missingReferences": missing_references,
             "queue": queue,
         }
+        try:
+            payload["cameraDiagnostics"] = self.get_camera_diagnostics(port=resolved_port)
+        except Exception as exc:
+            payload["cameraDiagnostics"] = {
+                "error": str(exc),
+            }
         if include_hierarchy:
             payload["hierarchy"] = self.call_route_with_recovery(
                 "scene/hierarchy",
@@ -253,6 +418,478 @@ class UnityMCPBackend:
                 recovery_timeout=10.0,
             )
         return payload
+
+    def get_camera_diagnostics(
+        self,
+        port: Optional[int] = None,
+        camera_name: str = "MainCamera",
+    ) -> Dict[str, Any]:
+        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
+        escaped_camera_name = json.dumps(camera_name)
+        result = self.call_route_with_recovery(
+            tool_name_to_route("unity_execute_code"),
+            params={
+                "code": (
+                    f"var cam = UnityEngine.GameObject.Find({escaped_camera_name});"
+                    " if (cam == null) return new { found = false, cameraName = \"MainCamera\" };"
+                    " var camera = cam.GetComponent<UnityEngine.Camera>();"
+                    " var cameraDataType = System.Type.GetType("
+                    "\"UnityEngine.Rendering.Universal.UniversalAdditionalCameraData, Unity.RenderPipelines.Universal.Runtime\""
+                    ");"
+                    " object cameraData = cameraDataType != null ? cam.GetComponent(cameraDataType) : null;"
+                    " string rendererName = \"none\";"
+                    " if (cameraData != null) {"
+                    "   var rendererProp = cameraDataType.GetProperty(\"scriptableRenderer\");"
+                    "   var renderer = rendererProp != null ? rendererProp.GetValue(cameraData) : null;"
+                    "   if (renderer != null) rendererName = renderer.ToString();"
+                    " }"
+                    " var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;"
+                    " return new {"
+                    "   found = true,"
+                    "   cameraName = cam.name,"
+                    "   clearFlags = camera != null ? camera.clearFlags.ToString() : \"none\","
+                    "   orthographic = camera != null && camera.orthographic,"
+                    "   backgroundColor = camera != null ? camera.backgroundColor.ToString() : \"none\","
+                    "   rendererName = rendererName,"
+                    "   pipeline = pipeline != null ? pipeline.name : \"builtin\""
+                    " };"
+                )
+            },
+            port=resolved_port,
+            recovery_timeout=10.0,
+        )
+        if isinstance(result, dict):
+            nested = result.get("result")
+            if isinstance(nested, dict):
+                return nested
+            return result
+        return {"result": result}
+
+    def get_editor_log(
+        self,
+        path: Path | None = None,
+        tail: int = 120,
+        contains: str | None = None,
+        ab_umcp_only: bool = False,
+        context: int = 0,
+    ) -> Dict[str, Any]:
+        log_path = Path(path) if path else get_default_editor_log_path()
+        max_lines = max(1, int(tail))
+        context_lines = max(0, int(context))
+        filters = []
+        if contains:
+            filters.append(str(contains))
+        if ab_umcp_only:
+            filters.append("[AB-UMCP]")
+
+        summary: Dict[str, Any] = {
+            "path": str(log_path),
+            "status": "missing",
+            "tail": max_lines,
+            "context": context_lines,
+            "filters": filters,
+            "totalLinesScanned": 0,
+            "matchedCount": 0,
+            "returnedCount": 0,
+        }
+
+        try:
+            with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+                returned_entries: deque[dict[str, Any]] = deque(maxlen=max_lines)
+                preceding_lines: deque[tuple[int, str]] = deque(maxlen=context_lines)
+                include_until_line = 0
+                last_emitted_line = 0
+
+                def emit_entry(line_number: int, text: str, matched: bool) -> None:
+                    nonlocal last_emitted_line
+                    if line_number <= last_emitted_line and returned_entries:
+                        latest = returned_entries[-1]
+                        if latest.get("lineNumber") == line_number:
+                            latest["matched"] = bool(latest.get("matched")) or matched
+                        return
+                    returned_entries.append(
+                        {
+                            "lineNumber": line_number,
+                            "text": text,
+                            "matched": matched,
+                        }
+                    )
+                    last_emitted_line = line_number
+
+                for line_number, raw_line in enumerate(handle, start=1):
+                    line = raw_line.rstrip("\r\n")
+                    summary["totalLinesScanned"] += 1
+                    is_match = all(token in line for token in filters)
+
+                    if not filters:
+                        emit_entry(line_number, line, True)
+                    elif context_lines <= 0:
+                        if is_match:
+                            summary["matchedCount"] += 1
+                            emit_entry(line_number, line, True)
+                    else:
+                        if is_match:
+                            summary["matchedCount"] += 1
+                            for previous_line_number, previous_text in preceding_lines:
+                                emit_entry(previous_line_number, previous_text, False)
+                            emit_entry(line_number, line, True)
+                            include_until_line = max(include_until_line, line_number + context_lines)
+                        elif line_number <= include_until_line:
+                            emit_entry(line_number, line, False)
+
+                    if context_lines > 0:
+                        preceding_lines.append((line_number, line))
+        except FileNotFoundError:
+            return {
+                "title": "Unity Editor Log",
+                "summary": summary,
+                "lines": [],
+                "entries": [],
+            }
+        except PermissionError as exc:
+            summary["status"] = "access-denied"
+            summary["error"] = str(exc)
+            return {
+                "title": "Unity Editor Log",
+                "summary": summary,
+                "lines": [],
+                "entries": [],
+            }
+        except OSError as exc:
+            summary["status"] = "error"
+            summary["error"] = str(exc)
+            return {
+                "title": "Unity Editor Log",
+                "summary": summary,
+                "lines": [],
+                "entries": [],
+            }
+
+        entries = list(returned_entries)
+        lines = [str(entry.get("text") or "") for entry in entries]
+        summary["status"] = "ok"
+        summary["returnedCount"] = len(lines)
+
+        if not filters:
+            summary["matchedCount"] = summary["returnedCount"]
+
+        return {
+            "title": "Unity Editor Log",
+            "summary": summary,
+            "lines": lines,
+            "entries": entries,
+        }
+
+    def iter_editor_log(
+        self,
+        path: Path | None = None,
+        tail: int = 40,
+        contains: str | None = None,
+        ab_umcp_only: bool = False,
+        duration: float | None = None,
+        poll_interval: float = 0.5,
+    ):
+        if poll_interval <= 0:
+            raise ValueError("poll_interval must be greater than 0.")
+
+        payload = self.get_editor_log(
+            path=path,
+            tail=tail,
+            contains=contains,
+            ab_umcp_only=ab_umcp_only,
+        )
+        summary = payload.get("summary") or {}
+        status = summary.get("status")
+        log_path = Path(summary.get("path") or (path or get_default_editor_log_path()))
+
+        if status == "missing":
+            raise FileNotFoundError(f"Unity Editor.log was not found at `{log_path}`.")
+        if status == "access-denied":
+            raise PermissionError(summary.get("error") or f"Access was denied reading `{log_path}`.")
+        if status != "ok":
+            raise OSError(summary.get("error") or f"Could not read `{log_path}`.")
+
+        filters: list[str] = []
+        if contains:
+            filters.append(str(contains))
+        if ab_umcp_only:
+            filters.append("[AB-UMCP]")
+
+        for line in payload.get("lines") or []:
+            yield line
+
+        deadline = None if duration is None else (time.monotonic() + max(0.0, duration))
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            handle.seek(0, os.SEEK_END)
+            while True:
+                if deadline is not None and time.monotonic() >= deadline:
+                    return
+                position = handle.tell()
+                raw_line = handle.readline()
+                if not raw_line:
+                    time.sleep(poll_interval)
+                    handle.seek(position)
+                    continue
+                line = raw_line.rstrip("\r\n")
+                if all(token in line for token in filters):
+                    yield line
+
+    def emit_unity_breadcrumb(
+        self,
+        message: str,
+        port: Optional[int] = None,
+        level: str = "info",
+        *,
+        record_history: bool = True,
+    ) -> Dict[str, Any]:
+        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
+        normalized_level = str(level or "info").lower()
+        if normalized_level not in {"info", "warning", "error"}:
+            raise ValueError("level must be one of: info, warning, error.")
+
+        escaped_message = json.dumps(f"[CLI-TRACE] {message}")
+        if normalized_level == "warning":
+            logger_call = f"UnityEngine.Debug.LogWarning({escaped_message});"
+            log_type = "UnityEngine.LogType.Warning"
+        elif normalized_level == "error":
+            logger_call = f"UnityEngine.Debug.LogError({escaped_message});"
+            log_type = "UnityEngine.LogType.Error"
+        else:
+            logger_call = f"UnityEngine.Debug.Log({escaped_message});"
+            log_type = "UnityEngine.LogType.Log"
+
+        started_at = time.monotonic()
+        try:
+            result = self.call_route(
+                tool_name_to_route("unity_execute_code"),
+                params={
+                    "code": (
+                        f"var __cliTraceLogType = {log_type};\n"
+                        f"var __cliTracePrevious = UnityEngine.Application.GetStackTraceLogType(__cliTraceLogType);\n"
+                        "try\n"
+                        "{\n"
+                        "    UnityEngine.Application.SetStackTraceLogType(__cliTraceLogType, UnityEngine.StackTraceLogType.None);\n"
+                        f"    {logger_call}\n"
+                        "}\n"
+                        "finally\n"
+                        "{\n"
+                        "    UnityEngine.Application.SetStackTraceLogType(__cliTraceLogType, __cliTracePrevious);\n"
+                        "}\n"
+                        f"return new {{ success = true, level = {json.dumps(normalized_level)}, message = {escaped_message} }};"
+                    )
+                },
+                port=resolved_port,
+                record_history=False,
+            )
+        except Exception as exc:
+            self._record_history(
+                "debug/breadcrumb",
+                {"message": message, "level": normalized_level},
+                resolved_port,
+                status="error",
+                duration_ms=self._elapsed_ms(started_at),
+                error=str(exc),
+                transport="tool",
+                note="Emit Unity console breadcrumb",
+            )
+            raise
+
+        if record_history:
+            self._record_history(
+                "debug/breadcrumb",
+                {"message": message, "level": normalized_level},
+                resolved_port,
+                duration_ms=self._elapsed_ms(started_at),
+                transport="tool",
+                note="Emit Unity console breadcrumb",
+            )
+        return result
+
+    def get_bridge_diagnostics(
+        self,
+        port: Optional[int] = None,
+        ping_timeout: float = 0.75,
+    ) -> Dict[str, Any]:
+        state = self.session_store.load()
+        registry_snapshot = self._read_registry_snapshot()
+        registry_entries = list(registry_snapshot.get("entries") or [])
+        discovery = self.discover_instances()
+
+        candidate_ports: set[int] = {self.default_port}
+        candidate_ports.update(range(self.port_range_start, self.port_range_end + 1))
+        if port is not None:
+            candidate_ports.add(int(port))
+        if state.selected_port is not None:
+            candidate_ports.add(int(state.selected_port))
+        for entry in registry_entries:
+            entry_port = self._coerce_int(entry.get("port"))
+            if entry_port is not None:
+                candidate_ports.add(entry_port)
+
+        checks: list[dict[str, Any]] = []
+        responding_ports: list[int] = []
+        registry_ports = {
+            self._coerce_int(entry.get("port"))
+            for entry in registry_entries
+            if self._coerce_int(entry.get("port")) is not None
+        }
+        discovered_ports = {instance["port"] for instance in discovery}
+
+        for candidate_port in sorted(candidate_ports):
+            try:
+                ping = self.client.ping(candidate_port, timeout=ping_timeout)
+                checks.append(
+                    {
+                        "port": candidate_port,
+                        "status": "ok",
+                        "sourceHints": {
+                            "selected": candidate_port == state.selected_port,
+                            "registry": candidate_port in registry_ports,
+                            "discovered": candidate_port in discovered_ports,
+                            "default": candidate_port == self.default_port,
+                        },
+                        "projectName": ping.get("projectName"),
+                        "projectPath": ping.get("projectPath"),
+                        "unityVersion": ping.get("unityVersion"),
+                        "platform": ping.get("platform"),
+                    }
+                )
+                responding_ports.append(candidate_port)
+            except UnityMCPClientError as exc:
+                message = str(exc)
+                lowered = message.lower()
+                if "timed out" in lowered:
+                    status = "timeout"
+                elif "could not reach" in lowered or "actively refused" in lowered or "failed to respond" in lowered:
+                    status = "unreachable"
+                else:
+                    status = "error"
+                checks.append(
+                    {
+                        "port": candidate_port,
+                        "status": status,
+                        "sourceHints": {
+                            "selected": candidate_port == state.selected_port,
+                            "registry": candidate_port in registry_ports,
+                            "discovered": candidate_port in discovered_ports,
+                            "default": candidate_port == self.default_port,
+                        },
+                        "error": message,
+                    }
+                )
+
+        preferred_port = port if port is not None else state.selected_port
+        port_suffix = f" --port {preferred_port}" if preferred_port is not None else " --port <port>"
+
+        recommended_commands: list[str] = []
+
+        def add_command(command: str) -> None:
+            if command not in recommended_commands:
+                recommended_commands.append(command)
+
+        findings: list[dict[str, Any]] = []
+        if not responding_ports:
+            findings.append(
+                {
+                    "severity": "error",
+                    "title": "No Responding Unity Bridge Ports",
+                    "detail": "No Unity bridge responded across the configured scan range.",
+                }
+            )
+            add_command("cli-anything-unity-mcp instances")
+        if state.selected_port is not None and state.selected_port not in responding_ports:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": "Selected Port Is Not Responding",
+                    "detail": f"The current session still points at port {state.selected_port}, but that port did not answer the latest bridge ping.",
+                }
+            )
+            add_command("cli-anything-unity-mcp instances")
+            if responding_ports:
+                add_command(f"cli-anything-unity-mcp select {responding_ports[0]}")
+        if registry_entries and not discovery:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": "Registry Has Entries But Discovery Is Empty",
+                    "detail": "The Unity registry still has instance entries, but none of them were confirmed as healthy live editors. The registry may be stale or Unity may have moved to a new bridge port.",
+                }
+            )
+            add_command(f"cli-anything-unity-mcp --json debug bridge{port_suffix}")
+        if discovery and registry_snapshot.get("status") == "access-denied":
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": "Registry File Access Denied",
+                    "detail": "Unity is reachable, but the CLI cannot read the shared registry file because access was denied. The CLI can still operate by falling back to direct port scanning.",
+                    "error": registry_snapshot.get("error"),
+                }
+            )
+            add_command("cli-anything-unity-mcp instances")
+        elif discovery and not registry_entries:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": "Discovery Is Running Without Registry Entries",
+                    "detail": "Unity editors answered direct port probes, but the shared registry file is empty or unreadable. The CLI can still operate by falling back to direct port scanning.",
+                }
+            )
+            add_command("cli-anything-unity-mcp instances")
+        if len(responding_ports) > 1:
+            findings.append(
+                {
+                    "severity": "warning",
+                    "title": "Multiple Responding Unity Editors",
+                    "detail": f"Multiple Unity bridge ports responded: {', '.join(str(item) for item in responding_ports)}.",
+                }
+            )
+            add_command("cli-anything-unity-mcp instances")
+
+        assessment = "healthy"
+        if any(item["severity"] == "error" for item in findings):
+            assessment = "error"
+        elif findings:
+            assessment = "warning"
+
+        connection_mode = "unreachable"
+        if responding_ports:
+            if registry_entries:
+                connection_mode = "registry-backed"
+            elif discovery:
+                connection_mode = "portscan-fallback"
+            else:
+                connection_mode = "direct-port-probe"
+
+        if responding_ports:
+            add_command(f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{port_suffix}")
+            add_command(f"cli-anything-unity-mcp --json debug doctor --recent-commands 8{port_suffix}")
+
+        return {
+            "title": "Unity Bridge Diagnostics",
+            "summary": {
+                "assessment": assessment,
+                "connectionMode": connection_mode,
+                "canReachUnity": bool(responding_ports),
+                "selectedPort": state.selected_port,
+                "selectedProject": (state.selected_instance or {}).get("projectName"),
+                "registryPath": str(self.registry_path),
+                "registryStatus": registry_snapshot.get("status"),
+                "registryError": registry_snapshot.get("error"),
+                "registryEntryCount": len(registry_entries),
+                "discoveredInstanceCount": len(discovery),
+                "respondingPortCount": len(responding_ports),
+                "defaultPort": self.default_port,
+                "scanRange": {"start": self.port_range_start, "end": self.port_range_end},
+            },
+            "selectedInstance": state.selected_instance,
+            "registry": registry_snapshot,
+            "registryEntries": registry_entries,
+            "instances": discovery,
+            "portChecks": checks,
+            "findings": findings,
+            "recommendedCommands": recommended_commands,
+        }
 
     def get_tool_info(self, tool_name: str, port: Optional[int] = None) -> Dict[str, Any]:
         tool = get_upstream_tool(tool_name)
@@ -475,15 +1112,36 @@ class UnityMCPBackend:
     ) -> Any:
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         payload = params or {}
-        if use_get:
-            result = self.client.get_api(resolved_port, route, query=payload or None)
-        else:
-            try:
-                result = self.client.call_route(resolved_port, route, payload, use_queue=use_queue)
-            except TypeError:
-                result = self.client.call_route(resolved_port, route, payload)
+        transport = "get" if use_get else ("queue" if use_queue or (use_queue is None and self.client.use_queue) else "post")
+        started_at = time.monotonic()
+        try:
+            if use_get:
+                result = self.client.get_api(resolved_port, route, query=payload or None)
+            else:
+                try:
+                    result = self.client.call_route(resolved_port, route, payload, use_queue=use_queue)
+                except TypeError:
+                    result = self.client.call_route(resolved_port, route, payload)
+        except Exception as exc:
+            if record_history and route not in self.NON_HISTORY_ROUTES:
+                self._record_history(
+                    route,
+                    payload,
+                    resolved_port,
+                    status="error",
+                    duration_ms=self._elapsed_ms(started_at),
+                    error=str(exc),
+                    transport=transport,
+                )
+            raise
         if record_history and route not in self.NON_HISTORY_ROUTES:
-            self.session_store.record_command(route, payload, resolved_port)
+            self._record_history(
+                route,
+                payload,
+                resolved_port,
+                duration_ms=self._elapsed_ms(started_at),
+                transport=transport,
+            )
         return result
 
     def call_tool(
@@ -725,14 +1383,43 @@ class UnityMCPBackend:
         self.session_store.clear_selection()
         return instances
 
+    def _read_registry_snapshot(self) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {
+            "path": str(self.registry_path),
+            "status": "missing",
+            "error": None,
+            "entries": [],
+        }
+        try:
+            raw_text = self.registry_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return snapshot
+        except PermissionError as exc:
+            snapshot["status"] = "access-denied"
+            snapshot["error"] = str(exc)
+            return snapshot
+        except OSError as exc:
+            snapshot["status"] = "error"
+            snapshot["error"] = str(exc)
+            return snapshot
+
+        try:
+            data = json.loads(raw_text)
+        except json.JSONDecodeError as exc:
+            snapshot["status"] = "invalid-json"
+            snapshot["error"] = str(exc)
+            return snapshot
+
+        snapshot["status"] = "ok"
+        snapshot["entries"] = [entry for entry in data if isinstance(entry, dict)]
+        return snapshot
+
     def _read_registry_entries(self) -> List[Dict[str, Any]]:
         try:
-            data = json.loads(self.registry_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
+            snapshot = self._read_registry_snapshot()
+        except Exception:
             return []
-        except (json.JSONDecodeError, OSError):
-            return []
-        return [entry for entry in data if isinstance(entry, dict)]
+        return list(snapshot.get("entries") or [])
 
     def _safe_ping(self, port: int) -> Dict[str, Any] | None:
         try:

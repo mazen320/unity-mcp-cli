@@ -1,104 +1,65 @@
 # Unity MCP CLI
 
-`unity-mcp-cli` is a Codex-first CLI client for Unity projects that use the AnkleBreaker Unity MCP bridge.
+`unity-mcp-cli` is a CLI-first Unity assistant for projects that use the AnkleBreaker Unity MCP plugin.
 
-Instead of exposing Unity through MCP tool registration, this project talks directly to the Unity plugin's local HTTP bridge and uses the shared instance registry to discover running editors.
+It talks directly to the Unity plugin's local HTTP bridge instead of relying on a full MCP tool-registration flow every turn. The result is a faster, easier-to-debug shell surface for Codex and other command-driven agents.
 
-The result is a lighter, easier-to-debug workflow that still uses the real Unity-side backend.
+<p align="center">
+  <img src="docs/media/unity-debug-game-view.png" alt="Unity Game View capture from the CLI debug flow" width="48%" />
+  <img src="docs/media/unity-debug-scene-view.png" alt="Unity Scene View capture from the CLI debug flow" width="48%" />
+</p>
 
-Right now the checked-in coverage matrix tracks `328` upstream catalog tools:
+<p align="center"><sub>Example Game View and Scene View captures saved by <code>debug capture --kind both</code>. These images come from disposable validation scenes used to test the CLI.</sub></p>
 
-- `31` live-tested
-- `31` covered
-- `260` deferred
-- `6` unsupported
+## Why This Exists
 
-Important nuance:
+- Lower overhead than exposing everything through a giant MCP surface
+- Better debugging for real Unity problems
+- A shell-friendly workflow for Codex, scripts, and CI
+- Direct access to the same Unity-side backend the upstream ecosystem already uses
 
-- `unsupported` currently means the Unity Hub-only surface, not "we gave up on it"
-- `deferred` means "known upstream tool that still needs wrapper depth, disposable-fixture audits, or optional-package validation"
-- each tool now carries a `coverageBlocker` field so the CLI can distinguish real platform gaps from plain backlog work
+## What It Does
 
-Use this to inspect current status:
-
-```powershell
-cli-anything-unity-mcp --json tool-coverage --summary
-cli-anything-unity-mcp --json tool-coverage --status unsupported
-cli-anything-unity-mcp --json tool-coverage --status deferred --category terrain
-```
+- discovers running Unity editors
+- inspects project, scene, hierarchy, console, compilation, queue, and editor state
+- creates and edits scripts, scene objects, components, references, and prefabs
+- captures Game View and Scene View screenshots
+- explains likely Unity problems with `debug doctor`
+- shows recent CLI activity with `debug trace`
+- reads the real Unity `Editor.log`
+- exposes an optional thin MCP adapter when a client still needs MCP transport
 
 ## What This Repo Is
 
-This repository publishes a separate CLI/client layer.
+This repo is the CLI/client layer.
 
-It is meant for people who want:
+It is not a clean-room replacement for the Unity backend. The Unity-side plugin still does the real editor work. This project focuses on making that backend easier to drive, observe, and automate from the command line.
 
-- a shell-friendly way to drive Unity
-- lower overhead than a full MCP session
-- a good fit for Codex and other command-driven agents
-- direct access to the same Unity backend the upstream MCP stack uses
+If you are using this repo with Codex or another coding agent, read [AGENTS.md](AGENTS.md) first. It defines the intended CLI-first workflow, debugging loop, and verification expectations.
 
 ## What You Need
 
-To use this repo, you need:
-
 - Python `3.11+`
-- a Unity project with the AnkleBreaker Unity MCP plugin installed
-- the Unity Editor running so the plugin can start its local bridge
-
-If the phrase "install the Unity plugin" is unclear, start here:
-
-- [PLUGIN_SETUP.md](PLUGIN_SETUP.md)
-
-Python dependency requirements are intentionally small:
-
 - `click>=8.1`
+- a Unity project with the AnkleBreaker Unity MCP plugin installed
+- the Unity Editor running
 
-## What You Do Not Need
+If plugin setup is the unclear part, start with [PLUGIN_SETUP.md](PLUGIN_SETUP.md).
 
-You do not need the `unity-mcp-server` repo to use this CLI.
-
-For normal usage, the setup is:
-
-1. Install the Unity plugin in your Unity project.
-2. Run Unity so the bridge starts.
-3. Use this CLI repo to talk to that bridge.
-
-The old server repo matters only if you want the MCP transport layer itself.
-
-You also do not need your own plugin fork just to use this CLI.
-
-Most users should:
-
-1. install the upstream Unity plugin in their Unity project
-2. keep this CLI repo as the thing they customize
-3. only fork the plugin if they need Unity-side backend changes
-
-## How It Works
-
-The system is split into two layers:
-
-- Upstream Unity plugin: the real backend that edits scenes, scripts, components, assets, and play mode
-- This CLI repo: a direct client for that backend over `127.0.0.1`
-
-That means this repo is not a clean-room replacement for the Unity backend. It is a separate CLI layer built to drive the existing bridge more efficiently from Codex and the shell.
-
-## Installation
-
-From the repository root:
+## Install
 
 ```powershell
 python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
-The shorter path also works:
+Or just:
 
 ```powershell
 python -m pip install -e .
 ```
 
-After installation, the command is:
+Main command:
 
 ```powershell
 cli-anything-unity-mcp
@@ -110,433 +71,139 @@ Optional thin MCP adapter:
 cli-anything-unity-mcp-mcp --default-port <port> --port-range-start <port> --port-range-end <port>
 ```
 
-That adapter stays intentionally small. It exposes a curated high-level tool set and a `unity_tool_call` escape hatch instead of mirroring hundreds of tools one-by-one.
-
-## Plugin Setup
-
-The CLI is not the Unity plugin.
-
-You still need to install the Unity-side plugin into the Unity project you want to control.
-
-A local source clone of the plugin repo is not enough by itself. The plugin has to be added to the Unity project.
-
-Fast path:
-
-1. Open your Unity project.
-2. In Unity, go to `Window > Package Manager`.
-3. Click `+`.
-4. Choose `Add package from git URL...`
-5. Paste:
-
-```text
-https://github.com/AnkleBreaker-Studio/unity-mcp-plugin.git
-```
-
-6. Click `Add`.
-7. Wait for Unity to compile.
-8. Look for a console message like:
-
-```text
-[AB-UMCP] Server started on port 7891
-```
-
-That means the Unity-side bridge is running.
-
-Full beginner-friendly setup:
-
-- [PLUGIN_SETUP.md](PLUGIN_SETUP.md)
-
 ## Quick Start
 
 1. Open your Unity project.
-2. Make sure the Unity MCP plugin is installed in that project.
-3. Wait for Unity to log the bridge port.
-4. From this repo, install the CLI and connect to the running editor.
+2. Make sure the AnkleBreaker Unity plugin is installed in that project.
+3. Wait for Unity to log a bridge port like `[AB-UMCP] Server started on port 7892`.
+4. From this repo:
 
 ```powershell
 cli-anything-unity-mcp instances
 cli-anything-unity-mcp select <port>
 cli-anything-unity-mcp --json workflow inspect --port <port>
-cli-anything-unity-mcp --json debug capture --kind both --port <port>
-cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port <port>
-cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port <port>
-```
-
-## Disposable Test Project
-
-If you want a safe project to poke at without touching your main game, scaffold one:
-
-```powershell
-cli-anything-unity-mcp --json workflow scaffold-test-project
-```
-
-By default this creates a sibling folder next to the repo, wires in the local `unity-mcp-plugin` clone when available, and adds an Editor bootstrap script that creates `Assets/Scenes/CodexCliSmoke.unity` on first open.
-
-The sample builders in this repo are meant to support that disposable test flow and contributor validation. They are useful fixtures, but they are not the main product surface of the CLI.
-
-You can also choose an explicit location:
-
-```powershell
-cli-anything-unity-mcp --json workflow scaffold-test-project --project-path "C:\path\to\UnityMcpCliSmokeProject" --force
-```
-
-## Optional Sidecar Agent
-
-The CLI can also save named queue identities so you can run an optional sidecar agent alongside your main Codex flow.
-
-This is not a second built-in LLM inside the CLI. It is a cleaner way to use the Unity bridge's existing multi-agent queue tracking with stable agent IDs.
-
-Example:
-
-```powershell
-cli-anything-unity-mcp --json agent save reviewer --agent-id cli-anything-unity-mcp-reviewer --role reviewer --description "Optional sidecar reviewer"
-cli-anything-unity-mcp --json agent current
-cli-anything-unity-mcp --json agent sessions --port <port>
-cli-anything-unity-mcp --json agent log cli-anything-unity-mcp-reviewer --port <port>
-cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port <port>
-```
-
-Useful commands:
-
-- `agent current`
-- `agent list`
-- `agent save`
-- `agent use`
-- `agent clear`
-- `agent remove`
-- `agent sessions`
-- `agent log`
-- `agent queue`
-- `agent watch`
-
-## Coverage Status Meanings
-
-- `live-tested`: exercised against a real Unity editor
-- `covered`: exercised by automated tests or higher-level workflows
-- `mock-only`: currently verified only through mock bridge coverage
-- `unsupported`: real gap today, currently only the Unity Hub surface
-- `deferred`: not ignored, but still waiting on deeper wrapper work, disposable fixture audits, or package-specific validation
-
-If you want to know why a tool is still deferred, inspect the `coverageBlocker` field from `tool-coverage`.
-
-If you want to watch Unity debug state over time instead of taking one snapshot, use:
-
-```powershell
-cli-anything-unity-mcp --json debug watch --iterations 3 --interval 1 --console-count 20 --port <port>
-```
-
-If you want a quick visual check before or after an edit, save paired Game View and Scene View screenshots with:
-
-```powershell
+cli-anything-unity-mcp --json debug doctor --port <port>
 cli-anything-unity-mcp --json debug capture --kind both --port <port>
 ```
 
-## What It Can Do
+## Using This With Codex
 
-- discover running Unity instances
-- inspect project, scene, editor, hierarchy, and assets
-- browse a 300+ tool compatibility snapshot generated from the upstream Unity MCP ecosystem
-- inspect tool descriptions, tiers, routes, and input schemas with `tool-info`
-- inspect tool coverage status with `tool-coverage`
-- inspect blocker reasons like `unity-hub-integration`, `stateful-live-audit`, and `package-dependent-live-audit`
-- watch Unity debug state over time with repeated sampled snapshots
-- save Game View and Scene View screenshots on demand with `debug capture`
-- create and update scripts
-- create scene objects and attach components
-- wire serialized references between scene objects and assets
-- create prefabs and instantiate them back into the scene
-- scaffold a disposable Unity test project for safe command validation
-- provide sample-building fixtures for repo testing, visual checks, and contributor validation
-- run a reusable advanced-tool audit across safe categories and sample-backed graphics/physics probes
-- validate scenes for missing references and compile problems
-- control play mode with recovery when the bridge rebinds
-- save optional sidecar agent profiles with stable queue identities
-- inspect live Unity-side agent sessions, logs, and queue state
-- watch multi-agent activity over time with repeated queue/session/log/debug samples
-- optionally expose a thin MCP server with curated tools when a client needs MCP transport
+The intended pattern is:
 
-If you want to exercise repo fixtures in a disposable project, use:
+1. use the CLI as the main Unity control surface
+2. inspect and debug before making changes
+3. verify with trace, editor log, and captures
+
+Start here:
 
 ```powershell
-cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase --replace --verify-level quick --port <port>
+cli-anything-unity-mcp --json workflow inspect --port <port>
+cli-anything-unity-mcp --json debug doctor --port <port>
+cli-anything-unity-mcp --json debug trace --tail 20
+cli-anything-unity-mcp --json debug capture --kind both --port <port>
 ```
 
-`quick` skips captures and play-mode checks, `standard` keeps a single game capture, and `deep` runs the full validation pass.
-
-- run high-level smoke tests that clean up after themselves
-- emulate MCP-style meta-tools like `unity_list_advanced_tools` and `unity_advanced_tool`
-- fall back to raw `tool` and `route` calls when a dedicated command does not exist yet
-
-## Roadmap
-
-If you want the current execution plan for full tool coverage, live testing, and higher-end scene/workflow generation, see:
-
-- [TODO.md](TODO.md)
-
-## Main Commands
-
-- `tools`
-- `advanced-tools`
-- `tool-info`
-- `tool-coverage`
-- `agent current`
-- `agent list`
-- `agent save`
-- `agent use`
-- `agent sessions`
-- `agent log`
-- `agent queue`
-- `agent watch`
-- `workflow inspect`
-- `workflow scaffold-test-project`
-- `workflow build-sample`
-- `workflow build-fps-sample`
-- `workflow audit-advanced`
-- `workflow create-behaviour`
-- `workflow wire-reference`
-- `workflow create-prefab`
-- `workflow validate-scene`
-- `workflow reset-scene`
-- `workflow smoke-test`
-- `play play`
-- `play stop`
-- `console`
-- `debug capture`
-- `debug snapshot`
-- `debug template`
-- `debug watch`
-- `tool`
-- `route`
-- `cli-anything-unity-mcp-mcp`
-
-## Thin MCP Adapter
-
-This repo also ships an optional MCP server entry point:
+Normal commands now emit visible Unity-side `[CLI-TRACE]` breadcrumbs, so you can watch agent activity in the Unity Console or Editor log:
 
 ```powershell
-cli-anything-unity-mcp-mcp --default-port <port> --port-range-start <port> --port-range-end <port>
+cli-anything-unity-mcp debug editor-log --contains "CLI-TRACE" --follow
 ```
 
-It is designed to stay efficient:
+For multi-step workflows, those breadcrumbs now include substeps like:
 
-- curated tool set instead of hundreds of mirrored tools
-- efficient defaults for expensive workflows
-- direct delegation into the existing CLI/core instead of maintaining a second implementation
+- `locke-debug: Checking project info`
+- `locke-debug: Checking editor state`
+- `locke-debug: Inspecting scene hierarchy (depth 3, max 12 nodes)`
+- `locke-debug: Listing assets in Assets/Scripts`
 
-The adapter exposes tools like:
+## Best Commands To Know
 
-- `unity_instances`
-- `unity_select_instance`
-- `unity_inspect`
-- `unity_console`
-- `unity_play`
-- `unity_validate_scene`
-- `unity_reset_scene`
-- `unity_create_behaviour`
-- `unity_wire_reference`
-- `unity_create_prefab`
-- `unity_build_sample`
-- `unity_build_fps_sample`
-- `unity_audit_advanced`
-- `unity_advanced_tools`
-- `unity_tool_info`
-- `unity_tool_call`
-
-More beginner-friendly docs live in `START_HERE.md`.
-
-## MCP Vocabulary Compatibility
-
-One of the goals of this CLI is to let Codex keep using the upstream Unity MCP naming style without paying the MCP transport cost.
-
-That means the CLI now understands important MCP meta-tools too:
-
-- `unity_list_advanced_tools`
-- `unity_advanced_tool`
-- `unity_list_instances`
-- `unity_select_instance`
-- `unity_get_project_context`
-
-Examples:
+### General
 
 ```powershell
-cli-anything-unity-mcp --json advanced-tools --category terrain
+cli-anything-unity-mcp instances
+cli-anything-unity-mcp select <port>
+cli-anything-unity-mcp --json status --port <port>
+cli-anything-unity-mcp --json workflow inspect --port <port>
+```
+
+### Debugging
+
+```powershell
+cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port <port>
+cli-anything-unity-mcp --json debug bridge --port <port>
+cli-anything-unity-mcp --json debug trace --tail 20
+cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port <port>
+cli-anything-unity-mcp --json debug capture --kind both --port <port>
+cli-anything-unity-mcp --json debug editor-log --tail 120 --ab-umcp-only
+```
+
+### Tool Surface
+
+```powershell
+cli-anything-unity-mcp --json tools --search scene
 cli-anything-unity-mcp --json tool-info unity_scene_stats
-cli-anything-unity-mcp --json tool unity_list_advanced_tools --param category=terrain
-cli-anything-unity-mcp --json tool unity_advanced_tool --params '{"tool":"unity_scene_stats","params":{}}'
+cli-anything-unity-mcp --json tool unity_scene_stats --port <port>
+cli-anything-unity-mcp --json tool-coverage --summary
 ```
 
-## Current Status
+## Coverage Snapshot
 
-This project is already useful for real Unity authoring work. It has been live-tested against a real Unity project for:
+Current checked-in matrix:
 
-- script creation
-- component attachment
-- serialized reference wiring
-- prefab creation and instantiation
-- complete sample-scaffold generation with cleanup-safe validation
-- reusable advanced-tool audits with disposable graphics/physics probes
-- scene validation
-- scene reset with explicit save or discard behavior
-- play-mode enter and stop
-- cleanup-safe smoke testing
+- `328` upstream catalog tools
+- `31` live-tested
+- `31` covered
+- `260` deferred
+- `6` unsupported
 
-## FAQ
+Important nuance:
 
-### Do I need both the CLI repo and the plugin repo?
+- `unsupported` currently means Unity Hub-only functionality
+- `deferred` means known work that still needs wrapper depth, live audits, or package-specific validation
 
-No.
-
-You need:
-
-- this CLI repo
-- the Unity plugin installed in the Unity project you want to control
-
-You do not need to actively work inside a plugin source clone unless you are changing the Unity-side backend itself.
-
-### Do I need the `unity-mcp-server` repo?
-
-No, not for this project.
-
-This CLI talks directly to the Unity plugin bridge. The old server repo is only relevant if you want the MCP transport layer.
-
-### What if the upstream plugin keeps changing?
-
-That is expected.
-
-The intended maintenance model for this repo is:
-
-- keep the CLI as the main project
-- stay compatible with upstream plugin releases where possible
-- keep plugin-side patches small and upstreamable
-
-### How should I debug a generated workflow when something feels broken?
-
-Start with the Unity console, not guesses.
-
-Useful commands:
+Use:
 
 ```powershell
-cli-anything-unity-mcp --json console --port <port>
-cli-anything-unity-mcp --json tool unity_console_clear --port <port>
-cli-anything-unity-mcp --json tool unity_get_compilation_errors --param count=50 --port <port>
+cli-anything-unity-mcp --json tool-coverage --summary
+cli-anything-unity-mcp --json tool-coverage --status unsupported
+cli-anything-unity-mcp --json tool-coverage --status deferred --category terrain
 ```
 
-The intended loop is:
+## Product Direction
 
-1. Run the workflow.
-2. Check `console` for runtime exceptions.
-3. Check `unity_get_compilation_errors` for script compile issues.
-4. Clear the console and replay the scene after a fix so you know the error is actually gone.
+The main goal is to make this the best Unity CLI assistant surface:
 
-### Does the FPS sample support the Input System package?
+- stronger debugging than raw MCP transport
+- better recovery around play mode and bridge rebinding
+- higher tool parity with the upstream ecosystem
+- room for custom tools and eventually deeper backend independence
 
-Yes.
+Validation should happen through CLI diagnostics, tool audits, and temporary probes. The shipped product surface is the CLI layer itself.
 
-`workflow build-fps-sample` now generates a controller that prefers `UnityEngine.InputSystem` when `ENABLE_INPUT_SYSTEM` is defined and falls back to legacy `UnityEngine.Input` otherwise.
+## Repo Boundaries
 
-Practical notes:
+- You do **not** need `unity-mcp-server` to use this CLI.
+- You do **not** need your own plugin fork just to use this CLI.
+- You **do** need the Unity plugin installed in the Unity project you want to control.
 
-- click the Game view before testing movement so Unity gives it focus
-- keyboard: `WASD`
-- jump: `Space`
-- sprint: `Shift`
-- mouse look uses the active Input System mouse delta when available
+This repo stays focused on the CLI layer. If you need more beginner setup help, use [START_HERE.md](START_HERE.md) and [PLUGIN_SETUP.md](PLUGIN_SETUP.md).
 
-If you see an exception about `UnityEngine.Input` in a project that uses the Input System package, regenerate or update the FPS controller with the current CLI version.
+## Docs
 
-### Should the plugin fork be public too?
+- [START_HERE.md](START_HERE.md): beginner-friendly walkthrough
+- [PLUGIN_SETUP.md](PLUGIN_SETUP.md): plugin install steps
+- [TEST.md](TEST.md): validation commands and test flows
+- [TODO.md](TODO.md): roadmap and coverage work
+- [ATTRIBUTION.md](ATTRIBUTION.md): upstream attribution and boundaries
+- [CONTRIBUTING.md](CONTRIBUTING.md): contributor workflow
 
-Not necessarily.
+## Attribution
 
-The CLI can be your public project. A plugin fork only needs to be public if you want to publish Unity-side fixes or open upstream pull requests from it.
+This project is a separate CLI/client layer built around the AnkleBreaker Unity MCP ecosystem. It still depends on the Unity-side plugin at runtime.
 
-## Known Limitations
-
-- This repo depends on the Unity plugin being present in the target Unity project.
-- If you want to publish Unity-side fixes, those belong in a separate plugin fork or plugin PR.
-- Some bridge routes can vary by plugin version, so the CLI includes fallbacks where possible.
-
-## Project Boundaries
-
-This repo is the CLI client only.
-
-Work that belongs here:
-
-- CLI commands
-- workflow ergonomics
-- session handling
-- JSON output
-- tests for bridge/client behavior
-- docs for Codex and shell-driven use
-
-Work that does not belong here:
-
-- Unity Editor backend command implementations
-- Unity-side scene or editor APIs
-- plugin packaging for Unity projects
-
-If a bug only exists because the Unity plugin behavior itself needs to change, that should usually go into a plugin fork or upstream plugin issue.
-
-## Contributing
-
-Contributions are welcome.
-
-For local setup, testing, repo boundaries, and PR expectations, see [CONTRIBUTING.md](CONTRIBUTING.md).
-For outside contributions, see [CLA.md](CLA.md) too.
-
-If you are not sure whether a change belongs in this repo or the Unity plugin repo, open an issue first and describe the workflow you are trying to improve.
-
-## Security
-
-If you find a security problem, especially around local bridge exposure, unsafe code execution, or destructive editor actions, please follow [SECURITY.md](SECURITY.md) instead of opening a public issue first.
-
-## Upstream Attribution
-
-This CLI is a separate project, but it integrates with the upstream AnkleBreaker Unity MCP plugin and server ecosystem and still depends on that Unity-side backend at runtime.
-
-If you distribute a product or tool that includes or depends on that upstream software, check the upstream license terms and attribution requirements. The upstream license explicitly asks for attribution such as:
-
-- `Made with AnkleBreaker MCP`
-- `Powered by AnkleBreaker MCP`
-
-Project-specific guidance for this repo lives in [ATTRIBUTION.md](ATTRIBUTION.md).
-
-## Validation
-
-```powershell
-python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp.tests.test_full_e2e -v
-cli-anything-unity-mcp --help
-python .\scripts\run_live_mcp_pass.py --port 7891 --profile ui --prepare-scene discard --debug --report-file .\.cli-anything-unity-mcp\live-pass-ui-debug.json
-```
-
-For contributor-focused live validation, `scripts/run_live_mcp_pass.py` now supports named profiles such as `core`, `advanced`, `graphics`, `ui`, `lighting`, `terrain`, and `heavy`.
-
-## Repo Layout
-
-```text
-agent-harness/
-├── ATTRIBUTION.md
-├── CHANGELOG.md
-├── README.md
-├── START_HERE.md
-├── TEST.md
-├── requirements.txt
-├── setup.py
-└── cli_anything/
-    └── unity_mcp/
-```
-
-## Credits
-
-This project was inspired by CLI-Anything and built as a separate CLI layer for the AnkleBreaker Unity MCP ecosystem:
-
-- [AnkleBreaker-Studio/unity-mcp-server](https://github.com/AnkleBreaker-Studio/unity-mcp-server)
-- [AnkleBreaker-Studio/unity-mcp-plugin](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin)
-
-This repository publishes the CLI/client layer only. It does not claim ownership of the upstream Unity backend.
+See [ATTRIBUTION.md](ATTRIBUTION.md) for the exact repo boundary and upstream credit notes.
 
 ## License
 
-This repository is licensed under the MIT License for the code in this repo. See [LICENSE](LICENSE).
-
-Compatibility with the Unity plugin does not change the upstream license terms of the plugin itself. If you use or distribute the plugin, check the upstream plugin and server repositories for their own license terms.
+This repository is MIT licensed. See [LICENSE](LICENSE).

@@ -61,6 +61,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         self.active_scene_path = "Assets/Scenes/MainScene.unity"
         self.scene_dirty = False
         self.is_playing = False
+        self.execute_code_calls = []
         self.gameobjects = {}
         self.scripts = {}
         self.prefabs = {}
@@ -390,6 +391,112 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             "player": player_name,
             "camera": camera_name,
             "hud": hud_name,
+            "materials": [path for path in self.materials],
+            "created": [name for name in self.gameobjects],
+        }
+
+    def _create_bird_pov_scene_from_code(self, code: str) -> dict | None:
+        if "CLI_ANYTHING_BIRD_POV_SCENE" not in (code or ""):
+            return None
+
+        def _extract(name: str) -> str | None:
+            match = re.search(rf'var {name} = "([^"]+)";', code or "")
+            return match.group(1) if match else None
+
+        root_name = _extract("rootName")
+        scene_path = _extract("scenePath")
+        controller_class_name = _extract("controllerClassName")
+        pig_class_name = _extract("pigClassName")
+        material_paths = [
+            _extract("groundMaterialPath"),
+            _extract("perchMaterialPath"),
+            _extract("birdMaterialPath"),
+            _extract("pigMaterialPath"),
+            _extract("blockMaterialPath"),
+            _extract("skyMaterialPath"),
+        ]
+        if not root_name or not scene_path:
+            return None
+
+        self.active_scene_path = scene_path
+        self.active_scene_name = Path(scene_path).stem
+        self.gameobjects = {}
+        self.materials = {
+            path: {"path": path, "shader": "Standard"}
+            for path in material_paths
+            if path
+        }
+
+        environment_name = f"{root_name}_Environment"
+        bird_name = f"{root_name}_Bird"
+        camera_name = "MainCamera"
+        pig_name = f"{root_name}_TowerA_Pig"
+
+        self._register_gameobject(root_name)
+        self._register_gameobject(environment_name, parent=root_name)
+        self._register_gameobject(
+            f"{root_name}_Ground",
+            parent=environment_name,
+            components=["Transform", "MeshFilter", "BoxCollider", "MeshRenderer"],
+        )
+        self._register_gameobject(
+            f"{root_name}_LaunchBase",
+            parent=environment_name,
+            components=["Transform", "MeshFilter", "BoxCollider", "MeshRenderer"],
+        )
+        self._register_gameobject(f"{root_name}_TowerA", parent=environment_name)
+        self._register_gameobject(f"{root_name}_TowerB", parent=environment_name)
+        self._register_gameobject(f"{root_name}_TowerC", parent=environment_name)
+        self._register_gameobject(
+            pig_name,
+            parent=f"{root_name}_TowerA",
+            components=["Transform", "MeshFilter", "SphereCollider", "MeshRenderer", "Rigidbody", pig_class_name or "PigTarget"],
+            position={"x": -4.5, "y": 3.15, "z": 8.5},
+        )
+        self._register_gameobject(
+            f"{root_name}_TowerB_Pig",
+            parent=f"{root_name}_TowerB",
+            components=["Transform", "MeshFilter", "SphereCollider", "MeshRenderer", "Rigidbody", pig_class_name or "PigTarget"],
+            position={"x": 0.0, "y": 3.15, "z": 10.0},
+        )
+        self._register_gameobject(
+            f"{root_name}_TowerC_Pig",
+            parent=f"{root_name}_TowerC",
+            components=["Transform", "MeshFilter", "SphereCollider", "MeshRenderer", "Rigidbody", pig_class_name or "PigTarget"],
+            position={"x": 4.5, "y": 3.15, "z": 7.8},
+        )
+        self._register_gameobject(
+            bird_name,
+            parent=root_name,
+            components=["Transform", "Rigidbody", "SphereCollider", controller_class_name or "BirdController"],
+            position={"x": 0.0, "y": 1.32, "z": -12.45},
+        )
+        self._register_gameobject(
+            camera_name,
+            parent=bird_name,
+            components=["Transform", "Camera", "AudioListener"],
+            position={"x": 0.0, "y": 0.10, "z": 0.20},
+        )
+        self._register_gameobject(
+            f"{root_name}_Sun",
+            parent=root_name,
+            components=["Transform", "Light"],
+        )
+        self._register_gameobject(
+            f"{root_name}_FillLight",
+            parent=root_name,
+            components=["Transform", "Light"],
+        )
+        self.scene_dirty = False
+
+        return {
+            "success": True,
+            "mode": "bird-pov",
+            "scenePath": scene_path,
+            "root": root_name,
+            "bird": bird_name,
+            "camera": camera_name,
+            "pigs": 3,
             "materials": [path for path in self.materials],
             "created": [name for name in self.gameobjects],
         }
@@ -1044,19 +1151,24 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 "count": 2,
                 "actions": [
                     {"timestamp": "2026-04-09T00:00:00Z", "action": "inspect", "status": "completed"},
-                    {"timestamp": "2026-04-09T00:00:05Z", "action": "build-sample", "status": "completed"},
+                    {"timestamp": "2026-04-09T00:00:05Z", "action": "validate-scene", "status": "completed"},
                 ],
             }
         if route == "editor/execute-code":
-            generated_layout = self._create_2d_sample_layout_from_code(str(payload.get("code") or ""))
+            code = str(payload.get("code") or "")
+            self.execute_code_calls.append(code)
+            generated_layout = self._create_2d_sample_layout_from_code(code)
             if generated_layout is not None:
                 return generated_layout
-            generated_fps_scene = self._create_3d_fps_scene_from_code(str(payload.get("code") or ""))
+            generated_bird_scene = self._create_bird_pov_scene_from_code(code)
+            if generated_bird_scene is not None:
+                return generated_bird_scene
+            generated_fps_scene = self._create_3d_fps_scene_from_code(code)
             if generated_fps_scene is not None:
                 return generated_fps_scene
             return {
                 "success": True,
-                "echo": payload.get("code"),
+                "echo": code,
             }
         if route == "editor/play-mode":
             action = payload.get("action")
@@ -1479,8 +1591,315 @@ class FullE2ETests(unittest.TestCase):
 
         self.assertEqual(payload["title"], "Unity CLI Debug Template")
         self.assertGreaterEqual(len(payload["recommendedCommands"]), 4)
-        self.assertIn("debug snapshot", payload["recommendedCommands"][1])
+        self.assertTrue(any("debug bridge" in command for command in payload["recommendedCommands"]))
+        self.assertTrue(any("debug snapshot" in command for command in payload["recommendedCommands"]))
         self.assertIn("snapshotCommand", payload["reportTemplate"])
+
+    def test_debug_bridge_reports_registry_discovery_and_recent_history(self) -> None:
+        self.run_cli("--json", "scene-info")
+
+        result = self.run_cli("--json", "debug", "bridge")
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity Bridge Diagnostics")
+        self.assertEqual(payload["summary"]["assessment"], "healthy")
+        self.assertEqual(payload["summary"]["connectionMode"], "registry-backed")
+        self.assertTrue(payload["summary"]["canReachUnity"])
+        self.assertEqual(payload["summary"]["registryEntryCount"], 1)
+        self.assertEqual(payload["summary"]["discoveredInstanceCount"], 1)
+        self.assertEqual(payload["summary"]["respondingPortCount"], 1)
+        self.assertEqual(payload["summary"]["selectedPort"], self.port)
+        self.assertTrue(any(check["port"] == self.port and check["status"] == "ok" for check in payload["portChecks"]))
+        self.assertGreaterEqual(len(payload["recentCommands"]), 1)
+        self.assertTrue(any("debug doctor" in command for command in payload["recommendedCommands"]))
+        self.assertIn("agent", payload)
+
+    def test_debug_editor_log_reads_tail_and_filters_lines(self) -> None:
+        editor_log = self.tmpdir / "Editor.log"
+        editor_log.write_text(
+            "\n".join(
+                [
+                    "Booting Unity editor",
+                    "[AB-UMCP] Registered instance on port 7892 in registry.",
+                    "Importing assets",
+                    "[AB-UMCP] Server started on port 7892",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "editor-log",
+            "--path",
+            str(editor_log),
+            "--tail",
+            "5",
+            "--ab-umcp-only",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity Editor Log")
+        self.assertEqual(payload["summary"]["status"], "ok")
+        self.assertEqual(payload["summary"]["matchedCount"], 2)
+        self.assertEqual(payload["summary"]["returnedCount"], 2)
+        self.assertEqual(len(payload["lines"]), 2)
+        self.assertTrue(all("[AB-UMCP]" in line for line in payload["lines"]))
+        self.assertEqual(payload["entries"][0]["lineNumber"], 2)
+        self.assertTrue(payload["entries"][0]["matched"])
+        self.assertIn("agent", payload)
+
+    def test_debug_editor_log_context_includes_surrounding_reload_lines(self) -> None:
+        editor_log = self.tmpdir / "Editor.log"
+        editor_log.write_text(
+            "\n".join(
+                [
+                    "Reloading assemblies after forced synchronous recompile.",
+                    "Begin MonoManager ReloadAssembly",
+                    "[AB-UMCP] Unregistered instance (port 7892) from registry.",
+                    "[AB-UMCP] Server stopped",
+                    "Refreshing native plugins compatible for Editor in 2.16 ms, found 4 plugins.",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "editor-log",
+            "--path",
+            str(editor_log),
+            "--tail",
+            "10",
+            "--ab-umcp-only",
+            "--context",
+            "1",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["summary"]["status"], "ok")
+        self.assertEqual(payload["summary"]["context"], 1)
+        self.assertEqual(payload["summary"]["matchedCount"], 2)
+        self.assertEqual(payload["summary"]["returnedCount"], 4)
+        self.assertEqual(
+            [entry["lineNumber"] for entry in payload["entries"]],
+            [2, 3, 4, 5],
+        )
+        self.assertEqual(payload["entries"][0]["text"], "Begin MonoManager ReloadAssembly")
+        self.assertFalse(payload["entries"][0]["matched"])
+        self.assertTrue(payload["entries"][1]["matched"])
+        self.assertTrue(payload["entries"][2]["matched"])
+        self.assertFalse(payload["entries"][3]["matched"])
+
+    def test_debug_editor_log_follow_streams_plain_text_tail(self) -> None:
+        editor_log = self.tmpdir / "Editor.log"
+        editor_log.write_text(
+            "\n".join(
+                [
+                    "Booting Unity editor",
+                    "[AB-UMCP] Registered instance on port 7892 in registry.",
+                    "Importing assets",
+                    "[AB-UMCP] Server started on port 7892",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_cli(
+            "debug",
+            "editor-log",
+            "--path",
+            str(editor_log),
+            "--tail",
+            "5",
+            "--ab-umcp-only",
+            "--follow",
+            "--duration",
+            "0.05",
+            "--poll-interval",
+            "0.01",
+        )
+
+        self.assertIn("[AB-UMCP] Registered instance on port 7892 in registry.", result.stdout)
+        self.assertIn("[AB-UMCP] Server started on port 7892", result.stdout)
+
+    def test_debug_trace_reports_recent_command_status_and_filters(self) -> None:
+        self.run_cli("--json", "scene-info")
+        self.run_cli("--json", "console", "--count", "5")
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--tail",
+            "5",
+            "--command-contains",
+            "scene",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity CLI Trace")
+        self.assertGreaterEqual(payload["count"], 1)
+        self.assertTrue(all("scene" in entry["command"] for entry in payload["entries"]))
+        self.assertTrue(all(entry["status"] == "ok" for entry in payload["entries"]))
+        self.assertTrue(all("durationMs" in entry for entry in payload["entries"]))
+        self.assertTrue(all("summary" in entry for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("commandPath") == "scene-info" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("activity") == "inspecting scene info" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("actor") for entry in payload["entries"]))
+        self.assertTrue(any("Inspecting scene" in str(entry["summary"]) for entry in payload["entries"]))
+        self.assertIn("agent", payload)
+
+    def test_debug_trace_can_filter_entries_by_agent_id(self) -> None:
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+        self.run_cli("--json", "--agent-id", "agent-beta", "console", "--count", "5")
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--tail",
+            "10",
+            "--agent-id",
+            "agent-alpha",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertGreaterEqual(payload["count"], 1)
+        self.assertTrue(all(entry.get("agentId") == "agent-alpha" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("actor") == "agent-alpha" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("commandPath") == "scene-info" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("activity") == "inspecting scene info" for entry in payload["entries"]))
+
+    def test_normal_command_emits_automatic_unity_trace_breadcrumbs(self) -> None:
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+
+        trace_calls = [code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code]
+
+        self.assertGreaterEqual(len(trace_calls), 2)
+        self.assertTrue(any("[CLI-TRACE] agent-alpha: Inspecting scene info" in code for code in trace_calls))
+        self.assertTrue(any("[CLI-TRACE] agent-alpha: Finished inspecting scene info" in code for code in trace_calls))
+
+    def test_workflow_inspect_emits_specific_trace_wording(self) -> None:
+        self.run_cli(
+            "--json",
+            "--agent-id",
+            "agent-alpha",
+            "workflow",
+            "inspect",
+            "--asset-folder",
+            "Assets/Scripts",
+            "--asset-limit",
+            "7",
+            "--hierarchy-depth",
+            "3",
+            "--hierarchy-nodes",
+            "12",
+        )
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--tail",
+            "10",
+            "--agent-id",
+            "agent-alpha",
+        )
+        payload = json.loads(result.stdout.strip())
+        entries = [entry for entry in payload["entries"] if entry.get("commandPath") == "workflow inspect"]
+
+        self.assertTrue(entries)
+        self.assertTrue(
+            any(
+                entry.get("activity")
+                == "inspecting Unity project (assets from Assets/Scripts; sample 7 assets; hierarchy depth 3, max 12 nodes)"
+                for entry in entries
+            )
+        )
+
+        trace_calls = [code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code]
+        self.assertTrue(
+            any(
+                "[CLI-TRACE] agent-alpha: Inspecting Unity project (assets from Assets/Scripts; sample 7 assets; hierarchy depth 3, max 12 nodes)"
+                in code
+                for code in trace_calls
+            )
+        )
+        self.assertTrue(
+            any(
+                "[CLI-TRACE] agent-alpha: Checking project info" in code
+                or "[CLI-TRACE] agent-alpha: Checking editor state" in code
+                or "[CLI-TRACE] agent-alpha: Listing assets in Assets/Scripts" in code
+                for code in trace_calls
+            )
+        )
+
+        progress_entries = [entry for entry in payload["entries"] if entry.get("command") == "cli/progress"]
+        self.assertTrue(progress_entries)
+        self.assertTrue(
+            any(entry.get("summary") == "Checking project info" for entry in progress_entries)
+        )
+        self.assertTrue(
+            any("Inspecting scene hierarchy (depth 3, max 12 nodes)" == entry.get("summary") for entry in progress_entries)
+        )
+
+    def test_internal_metadata_commands_do_not_emit_automatic_unity_trace_breadcrumbs(self) -> None:
+        before = len([code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code])
+
+        self.run_cli("--json", "tool-template", "unity_scene_stats")
+
+        after = len([code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code])
+        self.assertEqual(after, before)
+
+    def test_debug_breadcrumb_emits_unity_trace_marker(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "breadcrumb",
+            "hello from codex",
+            "--level",
+            "warning",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity CLI Breadcrumb")
+        self.assertEqual(payload["message"], "hello from codex")
+        self.assertEqual(payload["level"], "warning")
+        self.assertIn("[CLI-TRACE] hello from codex", payload["result"]["echo"])
+
+    def test_debug_doctor_summarizes_problems_and_recent_commands(self) -> None:
+        self.server.missing_references = [
+            {
+                "gameObject": "BrokenThing",
+                "path": "MainScene/BrokenThing",
+                "issue": "Missing script (component is null)",
+                "componentIndex": 1,
+            }
+        ]
+        self.server.is_playing = True
+        self.run_cli("--json", "scene-info")
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "doctor",
+            "--recent-commands",
+            "5",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity Debug Doctor")
+        self.assertEqual(payload["summary"]["assessment"], "error")
+        self.assertGreaterEqual(payload["summary"]["findingCount"], 3)
+        self.assertTrue(any(item["title"] == "Missing References" for item in payload["findings"]))
+        self.assertTrue(any(item["title"] == "Unity Console Issues" for item in payload["findings"]))
+        self.assertTrue(any(item["title"] == "Editor Still In Play Mode" for item in payload["findings"]))
+        self.assertGreaterEqual(len(payload["recentCommands"]), 1)
+        self.assertTrue(any("play stop" in command for command in payload["recommendedCommands"]))
+        self.assertIn("snapshot", payload)
 
     def test_debug_watch_samples_summary_over_time(self) -> None:
         result = self.run_cli(
@@ -1555,170 +1974,6 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(payload["component"]["success"])
         self.assertEqual(payload["properties"]["component"], "ProbeBehaviour")
         self.assertTrue(payload["editorState"]["sceneDirty"])
-
-    def test_workflow_smoke_test_cleans_up_after_itself(self) -> None:
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "smoke-test",
-            "--prefix",
-            "SmokeProbe",
-            "--folder",
-            "Assets/Tests",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
-        )
-        payload = json.loads(result.stdout.strip())
-
-        self.assertEqual(payload["before"]["scenePath"], "Assets/Scenes/MainScene.unity")
-        self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
-        self.assertTrue(payload["cleanup"]["script"]["success"])
-        self.assertTrue(payload["cleanup"]["gameObject"]["success"])
-        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
-        self.assertFalse(payload["after"]["editorState"]["isPlaying"])
-
-    def test_workflow_build_sample_creates_and_cleans_up_demo_slice(self) -> None:
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "build-sample",
-            "--name",
-            "ArenaProbe",
-            "--cleanup",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
-        )
-        payload = json.loads(result.stdout.strip())
-
-        self.assertEqual(payload["summary"]["sampleId"], "ArenaProbe")
-        self.assertEqual(payload["summary"]["captureMode"], "both")
-        self.assertEqual(payload["validation"]["stats"]["totalGameObjects"], 6)
-        self.assertEqual(payload["objects"]["beaconClone"]["name"], "ArenaProbe_BeaconClone")
-        self.assertEqual(payload["objects"]["beaconClone"]["position"]["x"], -4.0)
-        self.assertEqual(payload["wiring"]["observerTarget"]["referenceName"], "ArenaProbe_Player")
-        self.assertTrue(payload["captures"]["game"]["success"])
-        self.assertTrue(payload["captures"]["scene"]["success"])
-        self.assertTrue(Path(payload["captures"]["game"]["path"]).exists())
-        self.assertTrue(Path(payload["captures"]["scene"]["path"]).exists())
-        self.assertTrue(payload["playMode"]["enter"]["state"]["isPlaying"])
-        self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
-        self.assertEqual(len(payload["cleanup"]["assets"]), 4)
-        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
-
-    def test_workflow_build_sample_auto_detects_2d_scene_and_uses_hierarchy_paths(self) -> None:
-        self.server._register_gameobject(
-            "Global Light 2D",
-            components=["Transform", "Light2D"],
-        )
-
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "build-sample",
-            "--name",
-            "Arena2D",
-            "--cleanup",
-            "--no-play-check",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
-        )
-        payload = json.loads(result.stdout.strip())
-
-        self.assertEqual(payload["summary"]["visualMode"], "2d")
-        self.assertTrue(payload["captures"]["game"]["success"])
-        self.assertTrue(payload["captures"]["scene"]["success"])
-        self.assertEqual(payload["objects"]["floor"]["hierarchyPath"], "Arena2D/Arena2D_Floor")
-        self.assertEqual(payload["objects"]["beaconClone"]["position"]["x"], -4.8)
-        self.assertEqual(payload["wiring"]["observerTarget"]["referenceName"], "Arena2D_Player")
-        self.assertGreaterEqual(payload["validation"]["stats"]["totalGameObjects"], 10)
-        self.assertTrue(payload["cleanup"]["sceneReset"]["success"])
-        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
-
-    def test_workflow_build_fps_sample_creates_new_scene_with_captures(self) -> None:
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "build-fps-sample",
-            "--name",
-            "ArenaFps",
-            "--scene-path",
-            "Assets/Scenes/ArenaFps.unity",
-            "--verify-level",
-            "deep",
-            "--capture-width",
-            "320",
-            "--capture-height",
-            "180",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
-        )
-        payload = json.loads(result.stdout.strip())
-
-        self.assertEqual(payload["summary"]["sampleId"], "ArenaFps")
-        self.assertEqual(payload["summary"]["scenePath"], "Assets/Scenes/ArenaFps.unity")
-        self.assertTrue(payload["summary"]["sceneCreated"])
-        self.assertEqual(payload["validation"]["scene"]["activeScene"], "ArenaFps")
-        self.assertEqual(payload["objects"]["player"]["hierarchyPath"], "ArenaFps/ArenaFps_Player")
-        self.assertEqual(payload["objects"]["camera"]["hierarchyPath"], "ArenaFps/ArenaFps_Player/MainCamera")
-        self.assertEqual(payload["objects"]["hud"]["hierarchyPath"], "ArenaFps/ArenaFps_HUD")
-        self.assertEqual(payload["validation"]["floorMaterial"]["materialName"], "ArenaFpsFloor")
-        self.assertTrue(payload["captures"]["game"]["success"])
-        self.assertTrue(payload["captures"]["scene"]["success"])
-        self.assertTrue(payload["playMode"]["enter"]["state"]["isPlaying"])
-        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
-
-    def test_workflow_build_fps_sample_quick_mode_reuses_unchanged_script(self) -> None:
-        self.run_cli(
-            "--json",
-            "workflow",
-            "build-fps-sample",
-            "--name",
-            "ArenaFpsFast",
-            "--scene-path",
-            "Assets/Scenes/ArenaFpsFast.unity",
-            "--verify-level",
-            "quick",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
-        )
-
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "build-fps-sample",
-            "--name",
-            "ArenaFpsFast",
-            "--scene-path",
-            "Assets/Scenes/ArenaFpsFast.unity",
-            "--verify-level",
-            "quick",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
-        )
-        payload = json.loads(result.stdout.strip())
-
-        self.assertEqual(payload["summary"]["verifyLevel"], "quick")
-        self.assertEqual(payload["summary"]["captureMode"], "none")
-        self.assertFalse(payload["summary"]["playCheckRequested"])
-        self.assertEqual(payload["script"]["status"], "unchanged")
-        self.assertTrue(payload["script"]["skippedWrite"])
-        self.assertTrue(payload["compilation"]["skipped"])
-        self.assertEqual(payload["captures"], {})
-        self.assertNotIn("playMode", payload)
-        self.assertEqual(set(payload["validation"].keys()), {"scene", "editorState"})
-        self.assertFalse(payload["after"]["editorState"]["sceneDirty"])
 
     def test_workflow_audit_advanced_reports_probe_results_and_cleans_up(self) -> None:
         result = self.run_cli(
@@ -1869,56 +2124,15 @@ class FullE2ETests(unittest.TestCase):
         )
         self.assertEqual(terrain_create["coverageStatus"], "live-tested")
 
-    def test_workflow_scaffold_test_project_creates_disposable_unity_project(self) -> None:
-        project_path = self.tmpdir / "UnityMcpCliSmokeProject"
-        plugin_path = self.tmpdir / "unity-mcp-plugin"
-        plugin_path.mkdir(parents=True, exist_ok=True)
-        (plugin_path / "package.json").write_text(
-            json.dumps({"name": "com.anklebreaker.unity-mcp", "version": "2.26.0"}),
-            encoding="utf-8",
-        )
-
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "scaffold-test-project",
-            "--project-path",
-            str(project_path),
-            "--plugin-source",
-            "local",
-            "--plugin-path",
-            str(plugin_path),
-        )
-
-        payload = json.loads(result.stdout.strip())
-        self.assertEqual(payload["pluginSource"], "local")
-        self.assertEqual(payload["starterScenePath"], "Assets/Scenes/CodexCliSmoke.unity")
-        self.assertTrue((project_path / "Packages" / "manifest.json").exists())
-        self.assertTrue((project_path / "ProjectSettings" / "ProjectVersion.txt").exists())
-        self.assertTrue((project_path / "Assets" / "Editor" / "CodexCliTestProjectBootstrap.cs").exists())
-        self.assertTrue((project_path / "CLI_TEST_COMMANDS.md").exists())
-
-        manifest = json.loads((project_path / "Packages" / "manifest.json").read_text(encoding="utf-8"))
-        self.assertIn("com.anklebreaker.unity-mcp", manifest["dependencies"])
-        self.assertTrue(str(manifest["dependencies"]["com.anklebreaker.unity-mcp"]).startswith("file:"))
-
-        bootstrap = (project_path / "Assets" / "Editor" / "CodexCliTestProjectBootstrap.cs").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("CodexCliSmoke.unity", bootstrap)
-        self.assertIn("SmokeCube", bootstrap)
-        self.assertIn("mainCamera.orthographic = false;", bootstrap)
-        self.assertIn("SmokeFloor.mat", bootstrap)
-        self.assertIn("renderer.sharedMaterial = material;", bootstrap)
-
     def test_mcp_server_lists_tools_and_executes_curated_calls(self) -> None:
         process = self.start_mcp_server()
 
         tools_result = self.call_mcp(process, 2, "tools/list")
         tool_names = {tool["name"] for tool in tools_result["tools"]}
-        self.assertIn("unity_build_sample", tool_names)
-        self.assertIn("unity_build_fps_sample", tool_names)
         self.assertIn("unity_tool_call", tool_names)
+        self.assertIn("unity_audit_advanced", tool_names)
+        self.assertNotIn("unity_build_sample", tool_names)
+        self.assertNotIn("unity_build_fps_sample", tool_names)
 
         instances_result = self.call_mcp(process, 3, "tools/call", {"name": "unity_instances"})
         self.assertFalse(instances_result["isError"])
@@ -1933,26 +2147,9 @@ class FullE2ETests(unittest.TestCase):
         self.assertFalse(inspect_result["isError"])
         self.assertEqual(inspect_result["structuredContent"]["summary"]["projectName"], "Demo")
 
-        build_result = self.call_mcp(
-            process,
-            5,
-            "tools/call",
-            {
-                "name": "unity_build_sample",
-                "arguments": {
-                    "name": "McpProbeArena",
-                    "cleanup": True,
-                    "capture": "none",
-                    "playCheck": False,
-                },
-            },
-        )
-        self.assertFalse(build_result["isError"])
-        self.assertEqual(build_result["structuredContent"]["summary"]["sampleName"], "McpProbeArena")
-
         tool_call_result = self.call_mcp(
             process,
-            6,
+            5,
             "tools/call",
             {
                 "name": "unity_tool_call",
@@ -2095,52 +2292,15 @@ class FullE2ETests(unittest.TestCase):
         self.assertFalse(scene_stats_result["isError"])
         self.assertEqual(scene_stats_result["structuredContent"]["sceneName"], "MainScene")
 
-        build_sample_result = self.call_mcp(
-            process,
-            20,
-            "tools/call",
-            {
-                "name": "unity_build_sample",
-                "arguments": {
-                    "name": "McpMatrixArena",
-                    "cleanup": True,
-                    "capture": "none",
-                    "playCheck": False,
-                    "saveIfDirtyStart": True,
-                },
-            },
-        )
-        self.assertFalse(build_sample_result["isError"])
-        self.assertEqual(build_sample_result["structuredContent"]["summary"]["sampleName"], "McpMatrixArena")
-
-        build_fps_result = self.call_mcp(
-            process,
-            21,
-            "tools/call",
-            {
-                "name": "unity_build_fps_sample",
-                "arguments": {
-                    "name": "McpFpsMatrix",
-                    "scenePath": "Assets/Scenes/McpFpsMatrix.unity",
-                    "folder": "Assets/McpPass/FPS",
-                    "replace": True,
-                    "verifyLevel": "quick",
-                    "playCheck": False,
-                    "capture": "none",
-                },
-            },
-        )
-        self.assertFalse(build_fps_result["isError"])
-        self.assertEqual(build_fps_result["structuredContent"]["summary"]["verifyLevel"], "quick")
-
         audit_result = self.call_mcp(
             process,
-            22,
+            20,
             "tools/call",
             {
                 "name": "unity_audit_advanced",
                 "arguments": {
                     "categories": ["graphics", "physics", "settings"],
+                    "saveIfDirtyStart": True,
                 },
             },
         )
@@ -2149,7 +2309,7 @@ class FullE2ETests(unittest.TestCase):
 
         play_result = self.call_mcp(
             process,
-            23,
+            21,
             "tools/call",
             {"name": "unity_play", "arguments": {"action": "play", "wait": True}},
         )
@@ -2158,7 +2318,7 @@ class FullE2ETests(unittest.TestCase):
 
         stop_result = self.call_mcp(
             process,
-            24,
+            22,
             "tools/call",
             {"name": "unity_play", "arguments": {"action": "stop", "wait": True}},
         )
@@ -2167,7 +2327,7 @@ class FullE2ETests(unittest.TestCase):
 
         reset_result = self.call_mcp(
             process,
-            25,
+            23,
             "tools/call",
             {"name": "unity_reset_scene", "arguments": {"discardUnsaved": True}},
         )

@@ -12,21 +12,25 @@ End-to-end coverage:
 - Exercise `agent save`, `agent list`, `agent current`, `agent sessions`, and `agent log` against the CLI plus mock bridge routes.
 - Exercise `agent watch` so queue/session/log activity can be sampled over repeated debug snapshots.
 - Exercise `tool-coverage` summary and category filtering against the generated upstream coverage matrix.
-- Exercise `debug capture` so paired Scene/Game screenshots can be saved independently of the sample-building workflows.
+- Exercise `debug bridge` so registry/discovery/selected-port health can be checked independently of scene logic.
+- Exercise `debug doctor` so the CLI can summarize likely Unity issues and recommend the next commands to run.
+- Exercise `debug trace` so recent CLI route/tool attempts can be inspected with status and duration.
+- Exercise `debug editor-log` so the real Unity Editor.log can be tailed and filtered independently of bridge console output.
+- Exercise `debug editor-log --context` so bridge lines can be inspected together with surrounding reload/import context.
+- Exercise `debug editor-log --follow` so the Editor.log can be streamed live in a plain terminal session.
+- Exercise `debug breadcrumb` so visible [CLI-TRACE] markers can be written into the Unity Console and Editor.log.
+- Exercise `debug capture` so paired Scene/Game screenshots can be saved independently of any higher-level workflow.
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
-  - `workflow build-sample`
-  - `workflow build-fps-sample`
   - `workflow audit-advanced` across memory, graphics, physics, profiler, sceneview, settings, testing, ui, audio, lighting, animation, input, shadergraph, terrain, and navmesh
   - `workflow create-behaviour`
   - `workflow wire-reference`
   - `workflow create-prefab`
   - `workflow validate-scene`
-  - `workflow smoke-test`
 - Exercise the thin MCP adapter against the mock bridge:
   - `initialize`
   - `tools/list`
-  - curated `tools/call` coverage for inspect, validate, create-behaviour, wire-reference, create-prefab, build-sample, build-fps-sample, audit-advanced, play, reset-scene, and the generic `unity_tool_call`
+  - curated `tools/call` coverage for inspect, validate, create-behaviour, wire-reference, create-prefab, audit-advanced, play, reset-scene, and the generic `unity_tool_call`
 - Validate queue-mode request flow through `/api/queue/submit` and `/api/queue/status`.
 
 Validation commands:
@@ -36,7 +40,13 @@ python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp
 cli-anything-unity-mcp --help
 cli-anything-unity-mcp --json tool-coverage --summary
 cli-anything-unity-mcp --json tool-coverage --status unsupported
-cli-anything-unity-mcp --json workflow scaffold-test-project --project-path "C:\Temp\UnityMcpCliSmokeProject" --force
+cli-anything-unity-mcp --json debug bridge --port 7891
+cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port 7891
+cli-anything-unity-mcp --json debug trace --tail 20
+cli-anything-unity-mcp --json debug editor-log --tail 120 --ab-umcp-only
+cli-anything-unity-mcp --json debug editor-log --tail 80 --ab-umcp-only --context 50
+cli-anything-unity-mcp debug editor-log --tail 40 --ab-umcp-only --follow
+cli-anything-unity-mcp --json debug breadcrumb "Trying skybox lighting tweak" --level info --port 7891
 cli-anything-unity-mcp --json debug capture --kind both --port 7891
 cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port 7891
 cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port 7891
@@ -52,5 +62,4 @@ Live pass notes:
 - `--prepare-scene save|discard` lets mutating validation steps start from a clean scene on purpose instead of failing halfway through a run.
 - `--debug` records per-step timings, raw MCP payloads, and Unity console snapshots for failed steps.
 - `--report-file` writes the full run report to disk for later inspection.
-- `workflow build-sample` and `workflow build-fps-sample` are treated as disposable repo fixtures for testing and visual validation, not the main user path.
 - `workflow audit-advanced` now performs disposable scene and asset probes for broader advanced-category coverage, then resets the scene and deletes generated assets.

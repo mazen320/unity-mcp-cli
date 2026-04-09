@@ -35,7 +35,6 @@ PASS_PROFILES: dict[str, dict[str, Any]] = {
         "toolCallTool": "unity_scene_stats",
         "toolCallParams": {},
         "auditCategories": ["graphics", "physics", "sceneview", "settings"],
-        "includeFpsSample": False,
     },
     "advanced": {
         "advancedCategory": "graphics",
@@ -43,7 +42,6 @@ PASS_PROFILES: dict[str, dict[str, Any]] = {
         "toolCallTool": "unity_scene_stats",
         "toolCallParams": {},
         "auditCategories": list(FULL_ADVANCED_AUDIT_CATEGORIES),
-        "includeFpsSample": False,
     },
     "graphics": {
         "advancedCategory": "graphics",
@@ -51,7 +49,6 @@ PASS_PROFILES: dict[str, dict[str, Any]] = {
         "toolCallTool": "unity_scene_stats",
         "toolCallParams": {},
         "auditCategories": ["graphics", "lighting", "sceneview", "shadergraph", "profiler"],
-        "includeFpsSample": False,
     },
     "ui": {
         "advancedCategory": "ui",
@@ -59,7 +56,6 @@ PASS_PROFILES: dict[str, dict[str, Any]] = {
         "toolCallTool": "unity_ui_info",
         "toolCallParams": {},
         "auditCategories": ["ui", "input", "graphics"],
-        "includeFpsSample": False,
     },
     "lighting": {
         "advancedCategory": "lighting",
@@ -67,7 +63,6 @@ PASS_PROFILES: dict[str, dict[str, Any]] = {
         "toolCallTool": "unity_lighting_info",
         "toolCallParams": {},
         "auditCategories": ["lighting", "graphics", "sceneview"],
-        "includeFpsSample": False,
     },
     "terrain": {
         "advancedCategory": "terrain",
@@ -75,7 +70,6 @@ PASS_PROFILES: dict[str, dict[str, Any]] = {
         "toolCallTool": "unity_terrain_info",
         "toolCallParams": {},
         "auditCategories": ["terrain", "lighting", "navmesh"],
-        "includeFpsSample": False,
     },
     "heavy": {
         "advancedCategory": "terrain",
@@ -83,7 +77,6 @@ PASS_PROFILES: dict[str, dict[str, Any]] = {
         "toolCallTool": "unity_terrain_info",
         "toolCallParams": {},
         "auditCategories": list(FULL_ADVANCED_AUDIT_CATEGORIES),
-        "includeFpsSample": True,
     },
 }
 
@@ -93,7 +86,9 @@ def _build_profile_plan(profile: str, include_heavy: bool = False) -> dict[str, 
         raise ValueError(f"Unknown profile: {profile}")
     plan = dict(PASS_PROFILES[profile])
     plan["name"] = profile
-    plan["includeFpsSample"] = bool(plan.get("includeFpsSample")) or include_heavy
+    if include_heavy:
+        expanded = list(dict.fromkeys(list(plan["auditCategories"]) + list(FULL_ADVANCED_AUDIT_CATEGORIES)))
+        plan["auditCategories"] = expanded
     return plan
 
 
@@ -131,7 +126,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include-heavy",
         action="store_true",
-        help="Backward-compatible alias to append the heavier FPS-scene generation pass.",
+        help="Expand the chosen profile to run the broadest advanced-audit category set.",
     )
     parser.add_argument(
         "--prepare-scene",
@@ -351,22 +346,20 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
                 ),
             )
         record(
-            "unity_build_sample",
+            "prepare_audit_scene",
             lambda: client.tool_call(
-                "unity_build_sample",
-                adaptive_tool_args(
-                    name="McpLivePassArena",
-                    cleanup=True,
-                    capture="none",
-                    playCheck=False,
-                ),
+                "unity_reset_scene",
+                adaptive_tool_args(saveIfDirty=True),
             ),
         )
         record(
             f"unity_audit_advanced({profile_plan['name']})",
             lambda: client.tool_call(
                 "unity_audit_advanced",
-                adaptive_tool_args(categories=profile_plan["auditCategories"]),
+                adaptive_tool_args(
+                    categories=profile_plan["auditCategories"],
+                    saveIfDirtyStart=True,
+                ),
             ),
         )
         record(
@@ -382,23 +375,6 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
             lambda: client.tool_call("unity_reset_scene", adaptive_tool_args(discardUnsaved=True)),
         )
 
-        if profile_plan["includeFpsSample"]:
-            record(
-                "unity_build_fps_sample",
-                lambda: client.tool_call(
-                    "unity_build_fps_sample",
-                    adaptive_tool_args(
-                        name="McpLiveFpsPass",
-                        scenePath="Assets/Scenes/McpLiveFpsPass.unity",
-                        folder="Assets/CodexSamples/McpLiveFpsPass",
-                        replace=True,
-                        verifyLevel="quick",
-                        playCheck=False,
-                        capture="none",
-                    ),
-                ),
-            )
-
         passed = sum(1 for step in steps if step["status"] == "passed")
         failed = sum(1 for step in steps if step["status"] == "failed")
         return {
@@ -413,7 +389,7 @@ def _run_pass(args: argparse.Namespace) -> dict[str, Any]:
                 "passed": passed,
                 "failed": failed,
                 "profile": profile_plan["name"],
-                "includeHeavy": bool(profile_plan["includeFpsSample"]),
+                "includeHeavy": bool(args.include_heavy),
                 "prepareScene": args.prepare_scene,
                 "debug": bool(args.debug),
             },

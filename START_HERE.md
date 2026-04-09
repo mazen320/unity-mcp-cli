@@ -172,7 +172,7 @@ The live Unity project acceptance pass confirmed:
 - play mode enter and stop were both confirmed through live state polling
 - the full high-level smoke test completed with play mode enabled and cleaned up after itself
 - the new sample-builder created a full demo slice with generated scripts, primitives, prefab cloning, reference wiring, validation, and cleanup in a real Unity project
-- the advanced-tool audit passed live across memory, graphics, sceneview, settings, profiler, testing, and sample-backed physics probes without leaving scene changes behind
+- the advanced-tool audit passed live across memory, graphics, sceneview, settings, profiler, testing, and disposable physics probes without leaving scene changes behind
 
 That means the CLI is already capable of real authoring work in your project.
 
@@ -286,12 +286,6 @@ Validate the current scene before doing more work:
 cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port 7893
 ```
 
-Run a reversible end-to-end smoke test:
-
-```powershell
-cli-anything-unity-mcp --json workflow smoke-test --port 7893
-```
-
 Run a reusable advanced-tool audit:
 
 ```powershell
@@ -308,26 +302,6 @@ Save paired Game View and Scene View screenshots before or after a visual edit:
 
 ```powershell
 cli-anything-unity-mcp --json debug capture --kind both --port 7893
-```
-
-Build a complete sample slice for testing and clean it up after validation:
-
-```powershell
-cli-anything-unity-mcp --json workflow build-sample --name CodexArena --cleanup --port 7893
-```
-
-Treat the sample-building workflows as disposable repo fixtures for testing commands and validating visuals, not as the main path for everyday project authoring.
-
-If you want to keep the generated sample in the scene to inspect or extend it, leave off `--cleanup`:
-
-```powershell
-cli-anything-unity-mcp --json workflow build-sample --name CodexArena --port 7893
-```
-
-If your scene already has unsaved changes and you want the smoke test to save them first:
-
-```powershell
-cli-anything-unity-mcp --json workflow smoke-test --save-if-dirty-start --port 7893
 ```
 
 ## When To Use `tool` vs `route`
@@ -416,7 +390,7 @@ For actual game work, the best pattern right now is:
 2. Use `workflow create-behaviour` to add gameplay scripts quickly
 3. Use `workflow wire-reference` to connect scene objects and prefab references
 4. Use `workflow create-prefab` once an authored scene object becomes reusable
-5. Use `workflow smoke-test` when you want a full end-to-end validation pass, or `workflow smoke-test --no-play-check` when you want the faster authoring-only version
+5. Use `workflow audit-advanced` when you want a broader compatibility pass across advanced tool categories
 
 For your use case, this is the best current path if the main goal is:
 
@@ -433,7 +407,7 @@ The highest-value next steps are:
    Console log freshness is still the main rough edge worth tightening.
 
 3. Add a Codex skill or instruction file.
-   This will teach Codex exactly how to prefer `workflow inspect`, `workflow create-behaviour`, and `workflow smoke-test` before dropping to lower-level commands.
+   This will teach Codex exactly how to prefer `workflow inspect`, `workflow validate-scene`, and `debug doctor` before dropping to lower-level commands.
 
 4. Add more rollback-friendly authoring helpers.
    Examples: temporary-object workflows, prefab probes, and scene validation passes.

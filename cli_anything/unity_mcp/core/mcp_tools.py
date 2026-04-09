@@ -149,52 +149,12 @@ def _build_create_prefab_args(arguments: dict[str, Any]) -> list[str]:
     return args
 
 
-def _build_build_sample_args(arguments: dict[str, Any]) -> list[str]:
-    args = ["workflow", "build-sample"]
-    _add_option(args, "--name", arguments.get("name"))
-    _add_option(args, "--folder", arguments.get("folder"))
-    _add_option(args, "--prefab-folder", arguments.get("prefabFolder"))
-    _add_option(args, "--visual-mode", arguments.get("visualMode"))
-    _add_flag(args, "--replace", bool(arguments.get("replace")))
-    _add_flag(args, "--cleanup", bool(arguments.get("cleanup")))
-    if "playCheck" in arguments:
-        _add_toggle(args, "--play-check", "--no-play-check", bool(arguments.get("playCheck")))
-    else:
-        args.append("--no-play-check")
-    _add_option(args, "--capture", arguments.get("capture", "none"))
-    _add_option(args, "--capture-width", arguments.get("captureWidth"))
-    _add_option(args, "--capture-height", arguments.get("captureHeight"))
-    _add_flag(args, "--save-if-dirty-start", bool(arguments.get("saveIfDirtyStart")))
-    _add_option(args, "--timeout", arguments.get("timeout"))
-    _add_option(args, "--interval", arguments.get("interval"))
-    _add_option(args, "--port", arguments.get("port"))
-    return args
-
-
-def _build_build_fps_sample_args(arguments: dict[str, Any]) -> list[str]:
-    args = ["workflow", "build-fps-sample"]
-    _add_option(args, "--name", arguments.get("name"))
-    _add_option(args, "--scene-path", arguments.get("scenePath"))
-    _add_option(args, "--folder", arguments.get("folder"))
-    _add_flag(args, "--replace", bool(arguments.get("replace")))
-    _add_option(args, "--verify-level", arguments.get("verifyLevel", "quick"))
-    _add_toggle(args, "--play-check", "--no-play-check", arguments.get("playCheck"))
-    _add_option(args, "--capture", arguments.get("capture"))
-    _add_option(args, "--capture-width", arguments.get("captureWidth"))
-    _add_option(args, "--capture-height", arguments.get("captureHeight"))
-    _add_flag(args, "--save-if-dirty-start", bool(arguments.get("saveIfDirtyStart")))
-    _add_option(args, "--timeout", arguments.get("timeout"))
-    _add_option(args, "--interval", arguments.get("interval"))
-    _add_option(args, "--port", arguments.get("port"))
-    return args
-
-
 def _build_audit_advanced_args(arguments: dict[str, Any]) -> list[str]:
     args = ["workflow", "audit-advanced"]
     for category in _ensure_list(arguments, "categories"):
         args.extend(["--category", category])
-    if "sampleBacked" in arguments and not bool(arguments.get("sampleBacked")):
-        args.append("--no-sample-backed")
+    if "probeBacked" in arguments and not bool(arguments.get("probeBacked")):
+        args.append("--no-probe-backed")
     _add_option(args, "--prefix", arguments.get("prefix"))
     _add_flag(args, "--save-if-dirty-start", bool(arguments.get("saveIfDirtyStart")))
     _add_option(args, "--timeout", arguments.get("timeout"))
@@ -371,60 +331,13 @@ _MCP_TOOLS: tuple[MCPToolSpec, ...] = (
         build_args=_build_create_prefab_args,
     ),
     MCPToolSpec(
-        name="unity_build_sample",
-        description="Build a compact gameplay slice with efficient defaults: no captures and no play-mode validation unless requested.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "default": "CodexSampleArena"},
-                "folder": {"type": "string", "default": "Assets/CodexSamples"},
-                "prefabFolder": {"type": "string"},
-                "visualMode": {"type": "string", "enum": ["auto", "2d", "3d"], "default": "auto"},
-                "replace": {"type": "boolean", "default": False},
-                "cleanup": {"type": "boolean", "default": False},
-                "playCheck": {"type": "boolean", "default": False},
-                "capture": {"type": "string", "enum": ["none", "game", "scene", "both"], "default": "none"},
-                "captureWidth": {"type": "integer", "default": 640},
-                "captureHeight": {"type": "integer", "default": 360},
-                "saveIfDirtyStart": {"type": "boolean", "default": False},
-                "timeout": {"type": "number", "default": 30.0},
-                "interval": {"type": "number", "default": 0.5},
-                "port": {"type": "integer"},
-            },
-        },
-        build_args=_build_build_sample_args,
-    ),
-    MCPToolSpec(
-        name="unity_build_fps_sample",
-        description="Build the 3D FPS starter scene. Defaults to quick verification for faster agent loops unless you request a deeper pass.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "default": "CodexFpsShowcase"},
-                "scenePath": {"type": "string", "default": "Assets/Scenes/CodexFpsShowcase.unity"},
-                "folder": {"type": "string", "default": "Assets/CodexSamples/FPS"},
-                "replace": {"type": "boolean", "default": False},
-                "verifyLevel": {"type": "string", "enum": ["quick", "standard", "deep"], "default": "quick"},
-                "playCheck": {"type": "boolean"},
-                "capture": {"type": "string", "enum": ["none", "game", "scene", "both"]},
-                "captureWidth": {"type": "integer", "default": 960},
-                "captureHeight": {"type": "integer", "default": 540},
-                "saveIfDirtyStart": {"type": "boolean", "default": False},
-                "timeout": {"type": "number", "default": 30.0},
-                "interval": {"type": "number", "default": 0.5},
-                "port": {"type": "integer"},
-            },
-        },
-        build_args=_build_build_fps_sample_args,
-    ),
-    MCPToolSpec(
         name="unity_audit_advanced",
         description="Run the curated advanced-tool audit to measure live compatibility against the current Unity project.",
         input_schema={
             "type": "object",
             "properties": {
                 "categories": {"type": "array", "items": {"type": "string"}},
-                "sampleBacked": {"type": "boolean", "default": True},
+                "probeBacked": {"type": "boolean", "default": True},
                 "prefix": {"type": "string", "default": "CodexAdvancedAudit"},
                 "saveIfDirtyStart": {"type": "boolean", "default": False},
                 "timeout": {"type": "number", "default": 20.0},
