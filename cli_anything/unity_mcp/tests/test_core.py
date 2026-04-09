@@ -13,7 +13,11 @@ from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConn
 from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_route
 from cli_anything.unity_mcp.core.session import SessionStore
 from cli_anything.unity_mcp.core.tool_coverage import build_tool_coverage_matrix
-from cli_anything.unity_mcp.core.workflows import build_demo_fps_controller_script
+from cli_anything.unity_mcp.core.workflows import (
+    build_3d_fps_sample_scene_code,
+    build_demo_fps_controller_script,
+    build_unity_test_project_bootstrap_script,
+)
 from scripts.run_live_mcp_pass import _build_profile_plan, _default_report_file
 from cli_anything.unity_mcp.utils.unity_mcp_backend import (
     BackendSelectionError,
@@ -186,6 +190,27 @@ class CoreTests(unittest.TestCase):
         self.assertIn("DrawCrosshair(", script)
         self.assertIn("WasSensitivityIncreasePressedThisFrame()", script)
         self.assertIn("Input.GetAxisRaw(\"Horizontal\")", script)
+
+    def test_generated_3d_fps_scene_forces_perspective_camera(self) -> None:
+        script = build_3d_fps_sample_scene_code(
+            "SampleArena",
+            "Assets/Scenes/SampleArena.unity",
+            replace_existing=True,
+            floor_material_path="Assets/Materials/Floor.mat",
+            wall_material_path="Assets/Materials/Wall.mat",
+            trim_material_path="Assets/Materials/Trim.mat",
+            accent_material_path="Assets/Materials/Accent.mat",
+            sky_material_path="Assets/Materials/Sky.mat",
+        )
+
+        self.assertIn("cameraComponent.orthographic = false;", script)
+        self.assertIn("sceneView.orthographic = false;", script)
+
+    def test_smoke_project_bootstrap_forces_main_camera_perspective(self) -> None:
+        script = build_unity_test_project_bootstrap_script("UnityMcpCliSmokeProject")
+
+        self.assertIn("mainCamera.orthographic = false;", script)
+        self.assertIn("mainCamera.fieldOfView = 60f;", script)
 
     def test_tool_route_overrides_and_round_trip(self) -> None:
         self.assertEqual(tool_name_to_route("unity_execute_code"), "editor/execute-code")

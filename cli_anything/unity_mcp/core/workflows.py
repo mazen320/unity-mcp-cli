@@ -172,6 +172,9 @@ def build_unity_test_project_bootstrap_script(
         "        Camera mainCamera = Camera.main;\n"
         "        if (mainCamera != null)\n"
         "        {\n"
+        "            mainCamera.orthographic = false;\n"
+        "            mainCamera.orthographicSize = 5f;\n"
+        "            mainCamera.fieldOfView = 60f;\n"
         "            mainCamera.transform.position = new Vector3(0f, 3.2f, -7.5f);\n"
         "            mainCamera.transform.rotation = Quaternion.Euler(16f, 0f, 0f);\n"
         "        }\n\n"
@@ -1360,6 +1363,7 @@ cameraGo.transform.localPosition = new UnityEngine.Vector3(0f, 0.72f, 0f);
 cameraGo.transform.localRotation = UnityEngine.Quaternion.identity;
 cameraGo.tag = "MainCamera";
 var cameraComponent = cameraGo.AddComponent<UnityEngine.Camera>();
+cameraComponent.orthographic = false;
 cameraComponent.fieldOfView = 78f;
 cameraComponent.nearClipPlane = 0.03f;
 cameraComponent.farClipPlane = 200f;

@@ -1877,6 +1877,7 @@ class FullE2ETests(unittest.TestCase):
         )
         self.assertIn("CodexCliSmoke.unity", bootstrap)
         self.assertIn("SmokeCube", bootstrap)
+        self.assertIn("mainCamera.orthographic = false;", bootstrap)
 
     def test_mcp_server_lists_tools_and_executes_curated_calls(self) -> None:
         process = self.start_mcp_server()
