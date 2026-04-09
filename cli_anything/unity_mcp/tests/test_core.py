@@ -5,8 +5,11 @@ import shutil
 import unittest
 import uuid
 from pathlib import Path
+from typing import Any
+from urllib.request import Request, urlopen
 
 from cli_anything.unity_mcp.core.agent_profiles import AgentProfileStore, derive_agent_profiles_path
+from cli_anything.unity_mcp.core.debug_dashboard import DashboardConfig, serve_debug_dashboard
 from cli_anything.unity_mcp.core.debug_doctor import build_debug_doctor_report
 from cli_anything.unity_mcp.core.embedded_cli import EmbeddedCLIOptions, run_cli_json
 from cli_anything.unity_mcp.core.mcp_tools import get_mcp_tool, iter_mcp_tools
@@ -83,6 +86,84 @@ class RebindingBackend(UnityMCPBackend):
                 "source": "portscan",
             }
         ]
+
+
+class DashboardBackendStub:
+    def __init__(self) -> None:
+        self.preferences = {
+            "unityConsoleBreadcrumbs": True,
+            "dashboardAutoRefresh": True,
+            "dashboardRefreshSeconds": 2.0,
+            "dashboardConsoleCount": 40,
+            "dashboardIssueLimit": 20,
+            "dashboardIncludeHierarchy": False,
+            "dashboardEditorLogTail": 80,
+            "dashboardAbUmcpOnly": False,
+        }
+        self.last_state_args: dict[str, Any] | None = None
+
+    def get_debug_preferences(self) -> dict[str, Any]:
+        return dict(self.preferences)
+
+    def update_debug_preferences(self, **updates: Any) -> dict[str, Any]:
+        self.preferences.update({key: value for key, value in updates.items() if value is not None})
+        return dict(self.preferences)
+
+    def build_debug_dashboard_state(
+        self,
+        *,
+        port: int | None = None,
+        console_count: int = 40,
+        message_type: str = "all",
+        issue_limit: int = 20,
+        include_hierarchy: bool = False,
+        editor_log_tail: int = 80,
+        editor_log_contains: str | None = None,
+        ab_umcp_only: bool = False,
+        trace_tail: int = 20,
+        history_formatter: Any = None,
+    ) -> dict[str, Any]:
+        self.last_state_args = {
+            "port": port,
+            "console_count": console_count,
+            "message_type": message_type,
+            "issue_limit": issue_limit,
+            "include_hierarchy": include_hierarchy,
+            "editor_log_tail": editor_log_tail,
+            "editor_log_contains": editor_log_contains,
+            "ab_umcp_only": ab_umcp_only,
+            "trace_tail": trace_tail,
+            "history_formatter": history_formatter,
+        }
+        return {
+            "title": "Unity Debug Dashboard",
+            "generatedAt": 123.0,
+            "preferences": dict(self.preferences),
+            "snapshot": {
+                "summary": {
+                    "projectName": "Demo",
+                    "activeScene": "MainScene",
+                    "sceneDirty": False,
+                    "consoleEntryCount": 1,
+                    "consoleHighestSeverity": "info",
+                    "queueQueuedRequests": 0,
+                },
+                "editorState": {"isPlaying": False, "isCompiling": False},
+                "consoleSummary": {"highestSeverity": "info"},
+                "console": {"entries": [{"type": "info", "message": "ok"}]},
+                "compilation": {"count": 0, "entries": []},
+                "missingReferences": {"totalFound": 0, "results": []},
+                "queue": {"totalQueued": 0, "activeAgents": 0},
+                "cameraDiagnostics": {},
+            },
+            "bridge": {"summary": {"assessment": "healthy"}},
+            "editorLog": {
+                "summary": {"status": "ok", "returnedCount": 1},
+                "entries": [{"lineNumber": 1, "text": "[AB-UMCP] Server started", "matched": True}],
+            },
+            "trace": {"entries": [{"summary": "Checking project info", "phase": "inspect"}]},
+            "request": {"port": port},
+        }
 
 
 class CoreTests(unittest.TestCase):
@@ -252,6 +333,92 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(state.history[1]["durationMs"], 12.5)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_session_store_persists_debug_preferences(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            session_path = tmpdir / "session.json"
+            store = SessionStore(session_path)
+            state = store.update_debug_preferences(
+                unityConsoleBreadcrumbs=False,
+                dashboardRefreshSeconds=1.5,
+                dashboardConsoleCount=64,
+                dashboardIssueLimit=12,
+                dashboardIncludeHierarchy=True,
+            )
+
+            self.assertFalse(state.debug_preferences["unityConsoleBreadcrumbs"])
+            self.assertEqual(state.debug_preferences["dashboardRefreshSeconds"], 1.5)
+            self.assertEqual(state.debug_preferences["dashboardConsoleCount"], 64)
+            self.assertEqual(state.debug_preferences["dashboardIssueLimit"], 12)
+            self.assertTrue(state.debug_preferences["dashboardIncludeHierarchy"])
+
+            reloaded = SessionStore(session_path).get_debug_preferences()
+            self.assertFalse(reloaded["unityConsoleBreadcrumbs"])
+            self.assertEqual(reloaded["dashboardRefreshSeconds"], 1.5)
+            self.assertEqual(reloaded["dashboardConsoleCount"], 64)
+            self.assertEqual(reloaded["dashboardIssueLimit"], 12)
+            self.assertTrue(reloaded["dashboardIncludeHierarchy"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_debug_dashboard_server_exposes_state_and_persists_settings(self) -> None:
+        backend = DashboardBackendStub()
+        handle = serve_debug_dashboard(
+            backend=backend,
+            config=DashboardConfig(
+                host="127.0.0.1",
+                port=0,
+                unity_port=7892,
+                open_browser=False,
+            ),
+        )
+        try:
+            settings_payload = json.loads(urlopen(handle.url + "api/settings", timeout=5).read().decode("utf-8"))
+            self.assertTrue(settings_payload["preferences"]["unityConsoleBreadcrumbs"])
+
+            request = Request(
+                handle.url + "api/settings",
+                data=json.dumps(
+                    {
+                        "unityConsoleBreadcrumbs": False,
+                        "dashboardConsoleCount": 22,
+                        "dashboardIncludeHierarchy": True,
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            save_payload = json.loads(urlopen(request, timeout=5).read().decode("utf-8"))
+            self.assertTrue(save_payload["success"])
+            self.assertFalse(save_payload["preferences"]["unityConsoleBreadcrumbs"])
+            self.assertEqual(save_payload["preferences"]["dashboardConsoleCount"], 22)
+            self.assertTrue(save_payload["preferences"]["dashboardIncludeHierarchy"])
+
+            state_payload = json.loads(
+                urlopen(
+                    handle.url
+                    + "api/state?consoleCount=11&issueLimit=7&traceTail=5&editorLogTail=33"
+                    + "&messageType=warning&includeHierarchy=true&abUmcpOnly=true&editorLogContains=AB-UMCP",
+                    timeout=5,
+                )
+                .read()
+                .decode("utf-8")
+            )
+            self.assertEqual(state_payload["title"], "Unity Debug Dashboard")
+            self.assertEqual(state_payload["doctor"]["summary"]["assessment"], "healthy")
+            self.assertEqual(backend.last_state_args["port"], 7892)
+            self.assertEqual(backend.last_state_args["console_count"], 11)
+            self.assertEqual(backend.last_state_args["issue_limit"], 7)
+            self.assertEqual(backend.last_state_args["trace_tail"], 5)
+            self.assertEqual(backend.last_state_args["editor_log_tail"], 33)
+            self.assertEqual(backend.last_state_args["message_type"], "warning")
+            self.assertTrue(backend.last_state_args["include_hierarchy"])
+            self.assertTrue(backend.last_state_args["ab_umcp_only"])
+            self.assertEqual(backend.last_state_args["editor_log_contains"], "AB-UMCP")
+        finally:
+            handle.close()
 
     def test_call_route_records_error_trace_entry(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex

@@ -1854,6 +1854,41 @@ class FullE2ETests(unittest.TestCase):
         after = len([code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code])
         self.assertEqual(after, before)
 
+    def test_debug_settings_can_disable_and_reenable_unity_console_breadcrumbs(self) -> None:
+        disable_result = self.run_cli(
+            "--json",
+            "debug",
+            "settings",
+            "--no-unity-console-breadcrumbs",
+            "--dashboard-console-count",
+            "55",
+        )
+        disable_payload = json.loads(disable_result.stdout.strip())
+
+        self.assertFalse(disable_payload["preferences"]["unityConsoleBreadcrumbs"])
+        self.assertEqual(disable_payload["preferences"]["dashboardConsoleCount"], 55)
+        self.assertEqual(disable_payload["updated"], ["dashboardConsoleCount", "unityConsoleBreadcrumbs"])
+
+        before = len([code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code])
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+        after = len([code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code])
+        self.assertEqual(after, before)
+
+        enable_result = self.run_cli(
+            "--json",
+            "debug",
+            "settings",
+            "--unity-console-breadcrumbs",
+        )
+        enable_payload = json.loads(enable_result.stdout.strip())
+
+        self.assertTrue(enable_payload["preferences"]["unityConsoleBreadcrumbs"])
+        self.assertEqual(enable_payload["preferences"]["dashboardConsoleCount"], 55)
+
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+        final = len([code for code in self.server.execute_code_calls if "[CLI-TRACE]" in code])
+        self.assertGreater(final, after)
+
     def test_debug_breadcrumb_emits_unity_trace_marker(self) -> None:
         result = self.run_cli(
             "--json",

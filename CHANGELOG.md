@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file.
 - `debug watch` for repeatedly sampling Unity console/editor/queue state over time without rerunning snapshot by hand
 - `agent watch` for sampling queue, sessions, logs, and debug snapshot summaries over time
 - explicit CLI progress trace entries so multi-step workflows can write substeps into both `debug trace` and the Unity Console
+- persisted `debug settings` for Unity Console breadcrumb control and dashboard defaults
+- `debug dashboard`, a local browser UI for live doctor findings, trace entries, bridge diagnostics, Unity console state, and Editor.log context
 
 ### Improved
 
@@ -36,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - tool coverage entries now include blocker labels so deferred tools are grouped as live-audit work, package-dependent work, environment-sensitive work, or true Hub integration gaps
 - Unity console summaries now normalize common plugin log types like `log` into useful snapshot severity output
 - automatic Unity breadcrumbs now use more specific workflow wording, including substeps like `Checking project info`, `Checking editor state`, and `Listing assets in Assets/...`
+- `debug editor-log` now supports context windows around matches so bridge lines can be inspected with the surrounding reload/import activity
 
 ### Changed
 

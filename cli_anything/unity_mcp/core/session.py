@@ -22,11 +22,62 @@ def get_workspace_fallback_session_path() -> Path:
     return Path.cwd() / ".cli-anything-unity-mcp" / "session.json"
 
 
+DEFAULT_DEBUG_PREFERENCES: Dict[str, Any] = {
+    "unityConsoleBreadcrumbs": True,
+    "dashboardAutoRefresh": True,
+    "dashboardRefreshSeconds": 2.0,
+    "dashboardConsoleCount": 40,
+    "dashboardIssueLimit": 20,
+    "dashboardIncludeHierarchy": False,
+    "dashboardEditorLogTail": 80,
+    "dashboardAbUmcpOnly": False,
+}
+
+
+def normalize_debug_preferences(values: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    normalized = dict(DEFAULT_DEBUG_PREFERENCES)
+    if not isinstance(values, dict):
+        return normalized
+
+    def _coerce_bool(key: str) -> None:
+        if key in values:
+            normalized[key] = bool(values.get(key))
+
+    def _coerce_int(key: str, minimum: int) -> None:
+        if key not in values:
+            return
+        try:
+            normalized[key] = max(minimum, int(values.get(key)))
+        except (TypeError, ValueError):
+            return
+
+    def _coerce_float(key: str, minimum: float) -> None:
+        if key not in values:
+            return
+        try:
+            normalized[key] = max(minimum, float(values.get(key)))
+        except (TypeError, ValueError):
+            return
+
+    _coerce_bool("unityConsoleBreadcrumbs")
+    _coerce_bool("dashboardAutoRefresh")
+    _coerce_bool("dashboardIncludeHierarchy")
+    _coerce_bool("dashboardAbUmcpOnly")
+    _coerce_float("dashboardRefreshSeconds", 0.25)
+    _coerce_int("dashboardConsoleCount", 1)
+    _coerce_int("dashboardIssueLimit", 1)
+    _coerce_int("dashboardEditorLogTail", 1)
+    return normalized
+
+
 @dataclass
 class SessionState:
     selected_port: Optional[int] = None
     selected_instance: Optional[Dict[str, Any]] = None
     history: List[Dict[str, Any]] = field(default_factory=list)
+    debug_preferences: Dict[str, Any] = field(
+        default_factory=lambda: dict(DEFAULT_DEBUG_PREFERENCES)
+    )
 
 
 class SessionStore:
@@ -48,6 +99,7 @@ class SessionStore:
             selected_port=data.get("selected_port"),
             selected_instance=data.get("selected_instance"),
             history=data.get("history", []),
+            debug_preferences=normalize_debug_preferences(data.get("debug_preferences")),
         )
 
     def save(self, state: SessionState) -> SessionState:
@@ -126,6 +178,16 @@ class SessionStore:
     def clear_history(self) -> SessionState:
         state = self.load()
         state.history = []
+        return self.save(state)
+
+    def get_debug_preferences(self) -> Dict[str, Any]:
+        return dict(self.load().debug_preferences)
+
+    def update_debug_preferences(self, **updates: Any) -> SessionState:
+        state = self.load()
+        merged = dict(state.debug_preferences)
+        merged.update({key: value for key, value in updates.items() if value is not None})
+        state.debug_preferences = normalize_debug_preferences(merged)
         return self.save(state)
 
     @staticmethod

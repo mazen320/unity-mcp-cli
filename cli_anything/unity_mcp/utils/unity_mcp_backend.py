@@ -7,13 +7,13 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import quote
 
 from ..core.client import UnityMCPClient, UnityMCPClientError, UnityMCPConnectionError
 from ..core.routes import iter_known_tools, route_to_tool_name, tool_name_to_route
 from ..core.schema_templates import summarize_schema
-from ..core.session import SessionState, SessionStore
+from ..core.session import SessionState, SessionStore, normalize_debug_preferences
 from ..core.tool_catalog import get_upstream_tool, iter_upstream_tools
 from ..core.tool_coverage import build_tool_coverage_matrix
 
@@ -125,7 +125,7 @@ class UnityMCPBackend:
             except BackendSelectionError:
                 resolved_port = None
 
-        if emit_breadcrumb and resolved_port is not None:
+        if emit_breadcrumb and resolved_port is not None and self.should_emit_unity_breadcrumbs():
             self.emit_unity_breadcrumb(
                 message=breadcrumb_message or message,
                 port=resolved_port,
@@ -152,6 +152,17 @@ class UnityMCPBackend:
     @staticmethod
     def _elapsed_ms(started_at: float) -> float:
         return (time.monotonic() - started_at) * 1000.0
+
+    def get_debug_preferences(self) -> Dict[str, Any]:
+        return self.session_store.get_debug_preferences()
+
+    def update_debug_preferences(self, **updates: Any) -> Dict[str, Any]:
+        state = self.session_store.update_debug_preferences(**updates)
+        return dict(state.debug_preferences)
+
+    def should_emit_unity_breadcrumbs(self) -> bool:
+        preferences = self.get_debug_preferences()
+        return bool(preferences.get("unityConsoleBreadcrumbs", True))
 
     def list_instances(self) -> Dict[str, Any]:
         state = self.session_store.load()
@@ -419,6 +430,65 @@ class UnityMCPBackend:
             )
         return payload
 
+    def build_debug_dashboard_state(
+        self,
+        *,
+        port: Optional[int] = None,
+        console_count: int = 40,
+        message_type: str = "all",
+        issue_limit: int = 20,
+        include_hierarchy: bool = False,
+        editor_log_tail: int = 80,
+        editor_log_contains: str | None = None,
+        ab_umcp_only: bool = False,
+        trace_tail: int = 20,
+        history_formatter: Callable[[Dict[str, Any]], Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
+        active_port = self.resolve_port(explicit_port=port, allow_default=False)
+        snapshot = self.get_debug_snapshot(
+            port=active_port,
+            console_count=console_count,
+            message_type=message_type,
+            issue_limit=issue_limit,
+            include_hierarchy=include_hierarchy,
+        )
+        raw_history = self.get_history()
+        recent_history = raw_history[-trace_tail:] if trace_tail > 0 else list(raw_history)
+        rendered_history = (
+            [history_formatter(entry) for entry in recent_history]
+            if history_formatter is not None
+            else list(recent_history)
+        )
+        editor_log = self.get_editor_log(
+            tail=editor_log_tail,
+            contains=editor_log_contains,
+            ab_umcp_only=ab_umcp_only,
+        )
+        return {
+            "title": "Unity Debug Dashboard",
+            "generatedAt": time.time(),
+            "preferences": normalize_debug_preferences(self.get_debug_preferences()),
+            "snapshot": snapshot,
+            "bridge": self.get_bridge_diagnostics(port=active_port),
+            "editorLog": editor_log,
+            "trace": {
+                "tail": trace_tail,
+                "entries": rendered_history,
+                "rawEntries": recent_history,
+            },
+            "request": {
+                "port": active_port,
+                "consoleCount": console_count,
+                "messageType": message_type,
+                "issueLimit": issue_limit,
+                "includeHierarchy": include_hierarchy,
+                "editorLogTail": editor_log_tail,
+                "editorLogContains": editor_log_contains,
+                "abUmcpOnly": ab_umcp_only,
+                "traceTail": trace_tail,
+            },
+        }
+
     def get_camera_diagnostics(
         self,
         port: Optional[int] = None,
@@ -641,12 +711,30 @@ class UnityMCPBackend:
         level: str = "info",
         *,
         record_history: bool = True,
+        force: bool = False,
     ) -> Dict[str, Any]:
-        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         normalized_level = str(level or "info").lower()
         if normalized_level not in {"info", "warning", "error"}:
             raise ValueError("level must be one of: info, warning, error.")
+        if not force and not self.should_emit_unity_breadcrumbs():
+            payload = {
+                "success": False,
+                "skipped": True,
+                "reason": "unityConsoleBreadcrumbs disabled",
+                "message": message,
+                "level": normalized_level,
+            }
+            if record_history:
+                self._record_history(
+                    "debug/breadcrumb",
+                    {"message": message, "level": normalized_level},
+                    port,
+                    transport="local",
+                    note="Skipped Unity console breadcrumb",
+                )
+            return payload
 
+        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         escaped_message = json.dumps(f"[CLI-TRACE] {message}")
         if normalized_level == "warning":
             logger_call = f"UnityEngine.Debug.LogWarning({escaped_message});"

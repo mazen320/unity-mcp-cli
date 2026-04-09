@@ -19,6 +19,8 @@ End-to-end coverage:
 - Exercise `debug editor-log --context` so bridge lines can be inspected together with surrounding reload/import context.
 - Exercise `debug editor-log --follow` so the Editor.log can be streamed live in a plain terminal session.
 - Exercise `debug breadcrumb` so visible [CLI-TRACE] markers can be written into the Unity Console and Editor.log.
+- Exercise `debug settings` so Unity Console breadcrumbs and dashboard defaults can be persisted safely.
+- Exercise `debug dashboard` so a local browser UI can inspect doctor findings, trace, bridge state, console output, and Editor.log together.
 - Exercise `debug capture` so paired Scene/Game screenshots can be saved independently of any higher-level workflow.
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
@@ -43,9 +45,13 @@ cli-anything-unity-mcp --json tool-coverage --status unsupported
 cli-anything-unity-mcp --json debug bridge --port 7891
 cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port 7891
 cli-anything-unity-mcp --json debug trace --tail 20
+cli-anything-unity-mcp --json debug settings
+cli-anything-unity-mcp --json debug settings --no-unity-console-breadcrumbs
+cli-anything-unity-mcp --json debug settings --unity-console-breadcrumbs
 cli-anything-unity-mcp --json debug editor-log --tail 120 --ab-umcp-only
 cli-anything-unity-mcp --json debug editor-log --tail 80 --ab-umcp-only --context 50
 cli-anything-unity-mcp debug editor-log --tail 40 --ab-umcp-only --follow
+cli-anything-unity-mcp debug dashboard --port 7891 --no-open-browser
 cli-anything-unity-mcp --json debug breadcrumb "Trying skybox lighting tweak" --level info --port 7891
 cli-anything-unity-mcp --json debug capture --kind both --port 7891
 cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port 7891

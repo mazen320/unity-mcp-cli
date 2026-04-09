@@ -17,6 +17,7 @@ from click.core import ParameterSource
 from . import __version__
 from .core.agent_profiles import AgentProfile, AgentProfileStore, derive_agent_profiles_path
 from .core.client import UnityMCPClient, UnityMCPClientError
+from .core.debug_dashboard import DashboardConfig, serve_debug_dashboard
 from .core.debug_doctor import build_debug_doctor_report
 from .core.session import SessionStore
 from .core.workflows import (
@@ -364,6 +365,14 @@ def _describe_cli_activity(ctx: click.Context) -> str:
                 f"context {params.get('context')}" if params.get("context") else "",
                 "follow mode" if params.get("follow") else "",
             )
+        if second == "settings":
+            return "inspecting debug settings"
+        if second == "dashboard":
+            return _with_details(
+                "opening live debug dashboard",
+                f"host {params.get('host')}" if params.get("host") else "",
+                "browser auto-open" if params.get("open_browser") else "headless launch",
+            )
         if second == "watch":
             return _with_details(
                 "watching Unity debug state",
@@ -400,7 +409,7 @@ def _should_auto_breadcrumb(ctx: click.Context) -> bool:
         return False
     if tokens[0] in {"history", "tool-template", "tool-info", "tool-coverage", "tools", "advanced-tools"}:
         return False
-    if tokens[0] == "debug" and len(tokens) > 1 and tokens[1] in {"trace", "template", "editor-log"}:
+    if tokens[0] == "debug" and len(tokens) > 1 and tokens[1] in {"trace", "template", "editor-log", "settings", "dashboard"}:
         return False
     if tokens[0] == "agent" and len(tokens) > 1 and tokens[1] in {"current", "list", "save", "use", "clear", "remove"}:
         return False
@@ -1408,6 +1417,189 @@ def debug_template_command(ctx: click.Context, port: int | None) -> None:
     _run_and_emit(ctx, _callback)
 
 
+@debug_group.command("settings")
+@click.option(
+    "--unity-console-breadcrumbs/--no-unity-console-breadcrumbs",
+    default=None,
+    help="Enable or disable automatic CLI breadcrumbs in the Unity Console and Editor.log.",
+)
+@click.option(
+    "--dashboard-auto-refresh/--no-dashboard-auto-refresh",
+    default=None,
+    help="Persist whether the live debug dashboard should refresh automatically.",
+)
+@click.option("--dashboard-refresh-seconds", type=float, default=None, help="Persist the default dashboard refresh interval.")
+@click.option("--dashboard-console-count", type=int, default=None, help="Persist the default Unity console count for the dashboard.")
+@click.option("--dashboard-issue-limit", type=int, default=None, help="Persist the default compilation/missing-reference issue limit.")
+@click.option(
+    "--dashboard-include-hierarchy/--no-dashboard-include-hierarchy",
+    default=None,
+    help="Persist whether the dashboard should include hierarchy snapshots by default.",
+)
+@click.option("--dashboard-editor-log-tail", type=int, default=None, help="Persist the default Editor.log tail length.")
+@click.option(
+    "--dashboard-ab-umcp-only/--no-dashboard-ab-umcp-only",
+    default=None,
+    help="Persist whether the dashboard should filter Editor.log to [AB-UMCP] lines by default.",
+)
+@click.pass_context
+def debug_settings_command(
+    ctx: click.Context,
+    unity_console_breadcrumbs: bool | None,
+    dashboard_auto_refresh: bool | None,
+    dashboard_refresh_seconds: float | None,
+    dashboard_console_count: int | None,
+    dashboard_issue_limit: int | None,
+    dashboard_include_hierarchy: bool | None,
+    dashboard_editor_log_tail: int | None,
+    dashboard_ab_umcp_only: bool | None,
+) -> None:
+    """Inspect or persist CLI debug preferences such as Unity Console breadcrumbs."""
+
+    def _callback() -> dict[str, Any]:
+        updates: dict[str, Any] = {}
+        if ctx.get_parameter_source("unity_console_breadcrumbs") != ParameterSource.DEFAULT:
+            updates["unityConsoleBreadcrumbs"] = unity_console_breadcrumbs
+        if ctx.get_parameter_source("dashboard_auto_refresh") != ParameterSource.DEFAULT:
+            updates["dashboardAutoRefresh"] = dashboard_auto_refresh
+        if ctx.get_parameter_source("dashboard_refresh_seconds") != ParameterSource.DEFAULT:
+            updates["dashboardRefreshSeconds"] = dashboard_refresh_seconds
+        if ctx.get_parameter_source("dashboard_console_count") != ParameterSource.DEFAULT:
+            updates["dashboardConsoleCount"] = dashboard_console_count
+        if ctx.get_parameter_source("dashboard_issue_limit") != ParameterSource.DEFAULT:
+            updates["dashboardIssueLimit"] = dashboard_issue_limit
+        if ctx.get_parameter_source("dashboard_include_hierarchy") != ParameterSource.DEFAULT:
+            updates["dashboardIncludeHierarchy"] = dashboard_include_hierarchy
+        if ctx.get_parameter_source("dashboard_editor_log_tail") != ParameterSource.DEFAULT:
+            updates["dashboardEditorLogTail"] = dashboard_editor_log_tail
+        if ctx.get_parameter_source("dashboard_ab_umcp_only") != ParameterSource.DEFAULT:
+            updates["dashboardAbUmcpOnly"] = dashboard_ab_umcp_only
+
+        preferences = (
+            ctx.obj.backend.update_debug_preferences(**updates)
+            if updates
+            else ctx.obj.backend.get_debug_preferences()
+        )
+        return {
+            "title": "Unity Debug Settings",
+            "updated": sorted(updates.keys()),
+            "preferences": preferences,
+            "agent": {
+                "agentId": ctx.obj.agent_id,
+                "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+                "source": ctx.obj.agent_source,
+                "legacy": ctx.obj.legacy_mode,
+            },
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@debug_group.command("dashboard")
+@click.option("--host", type=str, default="127.0.0.1", show_default=True, help="Host interface for the local dashboard server.")
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.option(
+    "--listen-port",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Local dashboard port. Use 0 to auto-pick an open port.",
+)
+@click.option("--open-browser/--no-open-browser", default=True, show_default=True, help="Open the dashboard in your browser automatically.")
+@click.option("--console-count", type=int, default=None, help="Initial Unity console count. Defaults to saved debug settings.")
+@click.option("--issue-limit", type=int, default=None, help="Initial issue limit. Defaults to saved debug settings.")
+@click.option(
+    "--include-hierarchy/--no-include-hierarchy",
+    default=None,
+    help="Start with hierarchy snapshots enabled or disabled. Defaults to saved debug settings.",
+)
+@click.option("--editor-log-tail", type=int, default=None, help="Initial Editor.log tail. Defaults to saved debug settings.")
+@click.option(
+    "--ab-umcp-only/--no-ab-umcp-only",
+    default=None,
+    help="Start with Editor.log filtered to [AB-UMCP] lines or unfiltered. Defaults to saved debug settings.",
+)
+@click.option("--trace-tail", type=int, default=20, show_default=True, help="How many recent trace entries to show in the dashboard.")
+@click.option(
+    "--type",
+    "message_type",
+    type=click.Choice(["all", "info", "warning", "error"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="Initial console severity filter.",
+)
+@click.pass_context
+def debug_dashboard_command(
+    ctx: click.Context,
+    host: str,
+    port: int | None,
+    listen_port: int,
+    open_browser: bool,
+    console_count: int | None,
+    issue_limit: int | None,
+    include_hierarchy: bool | None,
+    editor_log_tail: int | None,
+    ab_umcp_only: bool | None,
+    trace_tail: int,
+    message_type: str,
+) -> None:
+    """Launch a live browser dashboard for Unity debug state, trace, and logs."""
+
+    preferences = ctx.obj.backend.get_debug_preferences()
+    config = DashboardConfig(
+        host=host,
+        port=listen_port,
+        unity_port=port,
+        open_browser=open_browser,
+        console_count=int(console_count or preferences.get("dashboardConsoleCount", 40)),
+        issue_limit=int(issue_limit or preferences.get("dashboardIssueLimit", 20)),
+        include_hierarchy=(
+            include_hierarchy
+            if include_hierarchy is not None
+            else bool(preferences.get("dashboardIncludeHierarchy", False))
+        ),
+        editor_log_tail=int(editor_log_tail or preferences.get("dashboardEditorLogTail", 80)),
+        ab_umcp_only=(
+            ab_umcp_only
+            if ab_umcp_only is not None
+            else bool(preferences.get("dashboardAbUmcpOnly", False))
+        ),
+        trace_tail=trace_tail,
+        message_type=message_type,
+    )
+    ctx.obj.backend.set_runtime_context(
+        agent_id=ctx.obj.agent_id,
+        agent_profile=ctx.obj.agent_profile.name if ctx.obj.agent_profile else None,
+        command_path=_normalized_command_path(ctx),
+        activity=_describe_cli_activity(ctx),
+    )
+    handle = serve_debug_dashboard(
+        backend=ctx.obj.backend,
+        config=config,
+        history_formatter=_humanize_history_entry,
+    )
+    payload = {
+        "title": "Unity Debug Dashboard",
+        **handle.to_payload(),
+        "unityPort": port,
+        "preferences": ctx.obj.backend.get_debug_preferences(),
+        "agent": {
+            "agentId": ctx.obj.agent_id,
+            "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+            "source": ctx.obj.agent_source,
+            "legacy": ctx.obj.legacy_mode,
+        },
+    }
+    click.echo(format_output(payload, ctx.obj.json_output))
+    if not ctx.obj.json_output:
+        click.echo("Press Ctrl+C to stop the dashboard server.")
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        handle.close()
+
+
 @debug_group.command("trace")
 @click.option("--tail", type=int, default=20, show_default=True, help="How many recent CLI trace entries to return.")
 @click.option(
@@ -1485,7 +1677,12 @@ def debug_breadcrumb_command(
     """Write a visible [CLI-TRACE] marker into the Unity console and Editor.log."""
 
     def _callback() -> dict[str, Any]:
-        payload = ctx.obj.backend.emit_unity_breadcrumb(message=message, port=port, level=level)
+        payload = ctx.obj.backend.emit_unity_breadcrumb(
+            message=message,
+            port=port,
+            level=level,
+            force=True,
+        )
         return {
             "title": "Unity CLI Breadcrumb",
             "message": message,

@@ -109,6 +109,19 @@ Normal commands now emit visible Unity-side `[CLI-TRACE]` breadcrumbs, so you ca
 cli-anything-unity-mcp debug editor-log --contains "CLI-TRACE" --follow
 ```
 
+If you want a more detailed live debugging surface, launch the local browser dashboard:
+
+```powershell
+cli-anything-unity-mcp debug dashboard --port <port>
+```
+
+If Unity Console breadcrumbs are getting noisy, you can turn them off without disabling local trace/history:
+
+```powershell
+cli-anything-unity-mcp --json debug settings --no-unity-console-breadcrumbs
+cli-anything-unity-mcp --json debug settings --unity-console-breadcrumbs
+```
+
 For multi-step workflows, those breadcrumbs now include substeps like:
 
 - `locke-debug: Checking project info`
@@ -133,9 +146,11 @@ cli-anything-unity-mcp --json workflow inspect --port <port>
 cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port <port>
 cli-anything-unity-mcp --json debug bridge --port <port>
 cli-anything-unity-mcp --json debug trace --tail 20
+cli-anything-unity-mcp --json debug settings
 cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port <port>
 cli-anything-unity-mcp --json debug capture --kind both --port <port>
 cli-anything-unity-mcp --json debug editor-log --tail 120 --ab-umcp-only
+cli-anything-unity-mcp debug dashboard --port <port>
 ```
 
 ### Tool Surface
