@@ -34,6 +34,7 @@ python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp
 cli-anything-unity-mcp --help
 cli-anything-unity-mcp --json tool-coverage --summary
 cli-anything-unity-mcp --json tool-coverage --status unsupported
+cli-anything-unity-mcp --json workflow scaffold-test-project --project-path "C:\Temp\UnityMcpCliSmokeProject" --force
 cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port 7891
 python .\scripts\run_live_mcp_pass.py --port 7891
 python .\scripts\run_live_mcp_pass.py --port 7891 --profile ui --prepare-scene discard --debug --report-file .\.cli-anything-unity-mcp\live-pass-ui-debug.json

@@ -1793,6 +1793,45 @@ class FullE2ETests(unittest.TestCase):
         )
         self.assertEqual(terrain_create["coverageStatus"], "live-tested")
 
+    def test_workflow_scaffold_test_project_creates_disposable_unity_project(self) -> None:
+        project_path = self.tmpdir / "UnityMcpCliSmokeProject"
+        plugin_path = self.tmpdir / "unity-mcp-plugin"
+        plugin_path.mkdir(parents=True, exist_ok=True)
+        (plugin_path / "package.json").write_text(
+            json.dumps({"name": "com.anklebreaker.unity-mcp", "version": "2.26.0"}),
+            encoding="utf-8",
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "scaffold-test-project",
+            "--project-path",
+            str(project_path),
+            "--plugin-source",
+            "local",
+            "--plugin-path",
+            str(plugin_path),
+        )
+
+        payload = json.loads(result.stdout.strip())
+        self.assertEqual(payload["pluginSource"], "local")
+        self.assertEqual(payload["starterScenePath"], "Assets/Scenes/CodexCliSmoke.unity")
+        self.assertTrue((project_path / "Packages" / "manifest.json").exists())
+        self.assertTrue((project_path / "ProjectSettings" / "ProjectVersion.txt").exists())
+        self.assertTrue((project_path / "Assets" / "Editor" / "CodexCliTestProjectBootstrap.cs").exists())
+        self.assertTrue((project_path / "CLI_TEST_COMMANDS.md").exists())
+
+        manifest = json.loads((project_path / "Packages" / "manifest.json").read_text(encoding="utf-8"))
+        self.assertIn("com.anklebreaker.unity-mcp", manifest["dependencies"])
+        self.assertTrue(str(manifest["dependencies"]["com.anklebreaker.unity-mcp"]).startswith("file:"))
+
+        bootstrap = (project_path / "Assets" / "Editor" / "CodexCliTestProjectBootstrap.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("CodexCliSmoke.unity", bootstrap)
+        self.assertIn("SmokeCube", bootstrap)
+
     def test_mcp_server_lists_tools_and_executes_curated_calls(self) -> None:
         process = self.start_mcp_server()
 

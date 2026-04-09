@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import posixpath
 import re
 import time
@@ -68,6 +69,173 @@ def build_asset_path(folder: str | None, leaf_name: str, extension: str = ".cs")
     normalized_folder = normalize_asset_folder(folder)
     suffix = extension if leaf_name.endswith(extension) else f"{leaf_name}{extension}"
     return posixpath.join(normalized_folder, suffix)
+
+
+def build_unity_test_project_manifest(plugin_reference: str) -> str:
+    payload = {
+        "dependencies": {
+            "com.unity.inputsystem": "1.19.0",
+            "com.unity.test-framework": "1.6.0",
+            "com.unity.ugui": "2.0.0",
+            "com.anklebreaker.unity-mcp": plugin_reference,
+        }
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=True) + "\n"
+
+
+def build_unity_test_project_gitignore() -> str:
+    return (
+        "/Library/\n"
+        "/Logs/\n"
+        "/Temp/\n"
+        "/Obj/\n"
+        "/Build/\n"
+        "/Builds/\n"
+        "/UserSettings/\n"
+        "/MemoryCaptures/\n"
+        "/Recordings/\n"
+        "*.csproj\n"
+        "*.sln\n"
+        "*.suo\n"
+        "*.tmp\n"
+        "*.user\n"
+        "*.userprefs\n"
+        "*.pidb\n"
+        "*.booproj\n"
+        "*.svd\n"
+        "*.pdb\n"
+        "*.mdb\n"
+        "*.opendb\n"
+        "*.VC.db\n"
+        "*.DS_Store\n"
+        ".vs/\n"
+    )
+
+
+def build_unity_test_project_bootstrap_script(
+    project_label: str,
+    scene_path: str = "Assets/Scenes/CodexCliSmoke.unity",
+) -> str:
+    scene_name = posixpath.splitext(posixpath.basename(scene_path))[0]
+    safe_label = escape_csharp_string(project_label)
+    safe_scene_path = escape_csharp_string(scene_path)
+    safe_scene_name = escape_csharp_string(scene_name)
+    return (
+        "using System.IO;\n"
+        "using UnityEditor;\n"
+        "using UnityEditor.SceneManagement;\n"
+        "using UnityEngine;\n"
+        "using UnityEngine.SceneManagement;\n\n"
+        "[InitializeOnLoad]\n"
+        "public static class CodexCliTestProjectBootstrap\n"
+        "{\n"
+        f"    private const string ScenePath = \"{safe_scene_path}\";\n"
+        f"    private const string SceneName = \"{safe_scene_name}\";\n"
+        f"    private const string ProjectLabel = \"{safe_label}\";\n\n"
+        "    static CodexCliTestProjectBootstrap()\n"
+        "    {\n"
+        "        EditorApplication.delayCall += EnsureStarterScene;\n"
+        "    }\n\n"
+        "    [MenuItem(\"Tools/Codex CLI Smoke/Reset Starter Scene\")]\n"
+        "    public static void EnsureStarterScene()\n"
+        "    {\n"
+        "        EditorApplication.delayCall -= EnsureStarterScene;\n"
+        "        EnsureFolder(\"Assets/Scenes\");\n"
+        "        EnsureFolder(\"Assets/CodexCliSmoke\");\n"
+        "        if (File.Exists(ScenePath))\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n\n"
+        "        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);\n"
+        "        scene.name = SceneName;\n\n"
+        "        GameObject root = new GameObject(ProjectLabel + \"Root\");\n"
+        "        GameObject floor = GameObject.CreatePrimitive(PrimitiveType.Cube);\n"
+        "        floor.name = \"SmokeFloor\";\n"
+        "        floor.transform.SetParent(root.transform);\n"
+        "        floor.transform.position = new Vector3(0f, -0.5f, 0f);\n"
+        "        floor.transform.localScale = new Vector3(8f, 1f, 8f);\n\n"
+        "        GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);\n"
+        "        cube.name = \"SmokeCube\";\n"
+        "        cube.transform.SetParent(root.transform);\n"
+        "        cube.transform.position = new Vector3(0f, 0.75f, 0f);\n\n"
+        "        GameObject beacon = GameObject.CreatePrimitive(PrimitiveType.Sphere);\n"
+        "        beacon.name = \"SmokeBeacon\";\n"
+        "        beacon.transform.SetParent(root.transform);\n"
+        "        beacon.transform.position = new Vector3(2.25f, 0.8f, 1.5f);\n"
+        "        beacon.transform.localScale = new Vector3(0.85f, 0.85f, 0.85f);\n\n"
+        "        Light directional = Object.FindObjectOfType<Light>();\n"
+        "        if (directional != null)\n"
+        "        {\n"
+        "            directional.intensity = 1.2f;\n"
+        "            directional.transform.rotation = Quaternion.Euler(42f, -35f, 0f);\n"
+        "        }\n\n"
+        "        Camera mainCamera = Camera.main;\n"
+        "        if (mainCamera != null)\n"
+        "        {\n"
+        "            mainCamera.transform.position = new Vector3(0f, 3.2f, -7.5f);\n"
+        "            mainCamera.transform.rotation = Quaternion.Euler(16f, 0f, 0f);\n"
+        "        }\n\n"
+        "        bool saved = EditorSceneManager.SaveScene(scene, ScenePath);\n"
+        "        AssetDatabase.SaveAssets();\n"
+        "        AssetDatabase.Refresh();\n"
+        "        if (saved)\n"
+        "        {\n"
+        "            Debug.Log(\"[CodexCliSmoke] Created starter scene at \" + ScenePath);\n"
+        "        }\n"
+        "    }\n\n"
+        "    private static void EnsureFolder(string assetPath)\n"
+        "    {\n"
+        "        if (AssetDatabase.IsValidFolder(assetPath))\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n"
+        "        string[] parts = assetPath.Split('/');\n"
+        "        string current = parts[0];\n"
+        "        for (int i = 1; i < parts.Length; i++)\n"
+        "        {\n"
+        "            string next = current + \"/\" + parts[i];\n"
+        "            if (!AssetDatabase.IsValidFolder(next))\n"
+        "            {\n"
+        "                AssetDatabase.CreateFolder(current, parts[i]);\n"
+        "            }\n"
+        "            current = next;\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+
+
+def build_unity_test_project_readme(
+    project_name: str,
+    plugin_reference: str,
+    scene_path: str = "Assets/Scenes/CodexCliSmoke.unity",
+) -> str:
+    return (
+        f"# {project_name}\n\n"
+        "This is a disposable Unity smoke project for `unity-mcp-cli`.\n\n"
+        "## What It Includes\n\n"
+        f"- local plugin reference: `{plugin_reference}`\n"
+        f"- starter scene bootstrap: `{scene_path}`\n"
+        "- an Editor bootstrap script that creates a simple floor/cube/beacon scene on first open\n\n"
+        "## Open It\n\n"
+        "1. Open this folder in Unity.\n"
+        "2. Let Package Manager restore packages and compile scripts.\n"
+        "3. Wait for the Unity console to show the AB Unity MCP bridge port.\n"
+        "4. Run the CLI commands below from the `agent-harness` repo.\n\n"
+        "## First Commands To Try\n\n"
+        "```powershell\n"
+        "cli-anything-unity-mcp instances\n"
+        "cli-anything-unity-mcp select <port>\n"
+        "cli-anything-unity-mcp --json workflow inspect --port <port>\n"
+        "cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port <port>\n"
+        "cli-anything-unity-mcp --json workflow build-sample --name CliSmokeArena --cleanup --port <port>\n"
+        "cli-anything-unity-mcp --json workflow build-fps-sample --name CliSmokeFps --replace --scene-path Assets/Scenes/CliSmokeFps.unity --verify-level quick --port <port>\n"
+        "```\n\n"
+        "## Notes\n\n"
+        "- If the bridge port changes, rerun `instances` and `select`.\n"
+        "- If something looks off, run `debug snapshot` first and inspect the Unity console.\n"
+        "- This project is meant to be safe to rebuild and throw away.\n"
+    )
 
 
 def get_active_scene_path(scene_info: Dict[str, Any]) -> str:

@@ -27,6 +27,10 @@ from .core.workflows import (
     build_demo_fps_controller_script,
     build_demo_follow_script,
     build_demo_spin_script,
+    build_unity_test_project_bootstrap_script,
+    build_unity_test_project_gitignore,
+    build_unity_test_project_manifest,
+    build_unity_test_project_readme,
     get_active_scene_path,
     require_workflow_success,
     sanitize_csharp_identifier,
@@ -1276,6 +1280,137 @@ def history_command(ctx: click.Context, clear_history: bool) -> None:
 @cli.group("workflow")
 def workflow_group() -> None:
     """High-level workflows that combine multiple Unity bridge actions safely."""
+
+
+@workflow_group.command("scaffold-test-project")
+@click.option(
+    "--project-path",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Folder to create the disposable Unity smoke project in.",
+)
+@click.option(
+    "--project-name",
+    type=str,
+    default="UnityMcpCliSmokeProject",
+    show_default=True,
+    help="Human-friendly project name for the scaffolded test project.",
+)
+@click.option(
+    "--unity-version",
+    type=str,
+    default="6000.4.0f1",
+    show_default=True,
+    help="Unity editor version to record in ProjectVersion.txt.",
+)
+@click.option(
+    "--plugin-source",
+    type=click.Choice(["auto", "local", "git"], case_sensitive=False),
+    default="auto",
+    show_default=True,
+    help="Use the local plugin clone when available, or fall back to the upstream git URL.",
+)
+@click.option(
+    "--plugin-path",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Optional explicit path to a local AnkleBreaker Unity MCP plugin clone.",
+)
+@click.option("--force", is_flag=True, help="Overwrite the managed scaffold files if the project folder already exists.")
+@click.pass_context
+def workflow_scaffold_test_project_command(
+    ctx: click.Context,
+    project_path: Path | None,
+    project_name: str,
+    unity_version: str,
+    plugin_source: str,
+    plugin_path: Path | None,
+    force: bool,
+) -> None:
+    """Create a disposable Unity smoke project with the plugin wired in and starter commands ready."""
+
+    def _callback() -> dict[str, Any]:
+        inferred_root = Path.cwd().resolve().parent / sanitize_csharp_identifier(project_name)
+        target_root = (project_path or inferred_root).resolve()
+        if target_root.exists() and any(target_root.iterdir()) and not force:
+            raise ValueError(
+                f"Test project folder `{target_root}` already exists and is not empty. Rerun with --force to overwrite the managed scaffold files."
+            )
+
+        packages_dir = target_root / "Packages"
+        project_settings_dir = target_root / "ProjectSettings"
+        assets_dir = target_root / "Assets"
+        editor_dir = assets_dir / "Editor"
+
+        repo_root = Path(__file__).resolve().parents[4]
+        local_plugin_candidate = (plugin_path or (repo_root / "unity-mcp-plugin")).resolve()
+        selected_plugin_source = plugin_source.lower()
+        if selected_plugin_source == "auto":
+            selected_plugin_source = "local" if local_plugin_candidate.exists() else "git"
+
+        if selected_plugin_source == "local":
+            if not local_plugin_candidate.exists():
+                raise ValueError(
+                    "Local plugin source was requested, but no plugin clone was found. Pass --plugin-path or use --plugin-source git."
+                )
+            relative_plugin = os.path.relpath(local_plugin_candidate, packages_dir).replace("\\", "/")
+            plugin_reference = f"file:{relative_plugin}"
+            plugin_reference_display = str(local_plugin_candidate)
+        else:
+            plugin_reference = "https://github.com/AnkleBreaker-Studio/unity-mcp-plugin.git"
+            plugin_reference_display = plugin_reference
+
+        scene_path = "Assets/Scenes/CodexCliSmoke.unity"
+        files_to_write = {
+            target_root / ".gitignore": build_unity_test_project_gitignore(),
+            packages_dir / "manifest.json": build_unity_test_project_manifest(plugin_reference),
+            project_settings_dir / "ProjectVersion.txt": (
+                f"m_EditorVersion: {unity_version}\n"
+                f"m_EditorVersionWithRevision: {unity_version} (8cf496087c8f)\n"
+            ),
+            editor_dir / "CodexCliTestProjectBootstrap.cs": build_unity_test_project_bootstrap_script(
+                project_name,
+                scene_path=scene_path,
+            ),
+            target_root / "CLI_TEST_COMMANDS.md": build_unity_test_project_readme(
+                project_name,
+                plugin_reference_display,
+                scene_path=scene_path,
+            ),
+        }
+
+        written_files: list[str] = []
+        for path, content in files_to_write.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            written_files.append(str(path))
+
+        return {
+            "projectName": project_name,
+            "projectPath": str(target_root),
+            "unityVersion": unity_version,
+            "pluginSource": selected_plugin_source,
+            "pluginReference": plugin_reference,
+            "pluginReferenceDisplay": plugin_reference_display,
+            "starterScenePath": scene_path,
+            "managedFiles": written_files,
+            "nextSteps": [
+                f"Open `{target_root}` in Unity.",
+                "Wait for packages to restore and the bridge to log its port in the Unity console.",
+                "Run `cli-anything-unity-mcp instances`, then `select <port>`.",
+                "Start with `workflow inspect` or `debug snapshot`, then try `build-sample` and `build-fps-sample`.",
+            ],
+            "starterCommands": [
+                "cli-anything-unity-mcp instances",
+                "cli-anything-unity-mcp select <port>",
+                "cli-anything-unity-mcp --json workflow inspect --port <port>",
+                "cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port <port>",
+                "cli-anything-unity-mcp --json workflow build-sample --name CliSmokeArena --cleanup --port <port>",
+                "cli-anything-unity-mcp --json workflow build-fps-sample --name CliSmokeFps --replace --scene-path Assets/Scenes/CliSmokeFps.unity --verify-level quick --port <port>",
+            ],
+        }
+
+    _run_and_emit(ctx, _callback)
 
 
 @workflow_group.command("inspect")

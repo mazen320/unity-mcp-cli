@@ -163,6 +163,22 @@ cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port <port
 cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port <port>
 ```
 
+## Disposable Test Project
+
+If you want a safe project to poke at without touching your main game, scaffold one:
+
+```powershell
+cli-anything-unity-mcp --json workflow scaffold-test-project
+```
+
+By default this creates a sibling folder next to the repo, wires in the local `unity-mcp-plugin` clone when available, and adds an Editor bootstrap script that creates `Assets/Scenes/CodexCliSmoke.unity` on first open.
+
+You can also choose an explicit location:
+
+```powershell
+cli-anything-unity-mcp --json workflow scaffold-test-project --project-path "C:\path\to\UnityMcpCliSmokeProject" --force
+```
+
 ## Optional Sidecar Agent
 
 The CLI can also save named queue identities so you can run an optional sidecar agent alongside your main Codex flow.
@@ -253,6 +269,7 @@ If you want the current execution plan for full tool coverage, live testing, and
 - `agent log`
 - `agent queue`
 - `workflow inspect`
+- `workflow scaffold-test-project`
 - `workflow build-sample`
 - `workflow build-fps-sample`
 - `workflow audit-advanced`
