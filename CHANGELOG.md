@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - `workflow audit-advanced` for repeatable validation of safe advanced-tool categories and disposable sample-backed graphics/physics probes
 - Unity debug snapshot/template commands for bundling console, compilation, scene, hierarchy, and queue state into a reusable CLI-first debug flow
 - `workflow scaffold-test-project` for creating a disposable Unity smoke project wired to the local plugin clone or upstream git package
+- `debug watch` for repeatedly sampling Unity console/editor/queue state over time without rerunning snapshot by hand
 - `agent watch` for sampling queue, sessions, logs, and debug snapshot summaries over time
 
 ### Improved

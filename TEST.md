@@ -38,6 +38,7 @@ cli-anything-unity-mcp --json tool-coverage --status unsupported
 cli-anything-unity-mcp --json workflow scaffold-test-project --project-path "C:\Temp\UnityMcpCliSmokeProject" --force
 cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port 7891
 cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port 7891
+cli-anything-unity-mcp --json debug watch --iterations 2 --interval 0 --console-count 20 --port 7891
 python .\scripts\run_live_mcp_pass.py --port 7891
 python .\scripts\run_live_mcp_pass.py --port 7891 --profile ui --prepare-scene discard --debug --report-file .\.cli-anything-unity-mcp\live-pass-ui-debug.json
 python .\scripts\run_live_mcp_pass.py --port 7891 --include-heavy --debug --report-file .\.cli-anything-unity-mcp\live-pass-heavy-debug.json

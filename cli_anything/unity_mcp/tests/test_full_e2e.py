@@ -1482,6 +1482,27 @@ class FullE2ETests(unittest.TestCase):
         self.assertIn("debug snapshot", payload["recommendedCommands"][1])
         self.assertIn("snapshotCommand", payload["reportTemplate"])
 
+    def test_debug_watch_samples_summary_over_time(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "watch",
+            "--iterations",
+            "2",
+            "--interval",
+            "0",
+            "--console-count",
+            "10",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity Debug Watch")
+        self.assertEqual(payload["watch"]["iterations"], 2)
+        self.assertEqual(len(payload["samples"]), 2)
+        self.assertEqual(payload["latest"]["summary"]["consoleEntryCount"], 3)
+        self.assertEqual(payload["latest"]["consoleSummary"]["highestSeverity"], "error")
+        self.assertEqual(payload["latest"]["queue"]["activeAgents"], 1)
+
     def test_workflow_inspect_returns_combined_snapshot(self) -> None:
         self.server.scripts["Assets/Scripts/Existing.cs"] = "public class Existing {}"
 

@@ -218,6 +218,12 @@ Useful commands:
 
 If you want to know why a tool is still deferred, inspect the `coverageBlocker` field from `tool-coverage`.
 
+If you want to watch Unity debug state over time instead of taking one snapshot, use:
+
+```powershell
+cli-anything-unity-mcp --json debug watch --iterations 3 --interval 1 --console-count 20 --port <port>
+```
+
 ## What It Can Do
 
 - discover running Unity instances
@@ -226,6 +232,7 @@ If you want to know why a tool is still deferred, inspect the `coverageBlocker` 
 - inspect tool descriptions, tiers, routes, and input schemas with `tool-info`
 - inspect tool coverage status with `tool-coverage`
 - inspect blocker reasons like `unity-hub-integration`, `stateful-live-audit`, and `package-dependent-live-audit`
+- watch Unity debug state over time with repeated sampled snapshots
 - create and update scripts
 - create scene objects and attach components
 - wire serialized references between scene objects and assets
@@ -286,6 +293,9 @@ If you want the current execution plan for full tool coverage, live testing, and
 - `play play`
 - `play stop`
 - `console`
+- `debug snapshot`
+- `debug template`
+- `debug watch`
 - `tool`
 - `route`
 - `cli-anything-unity-mcp-mcp`

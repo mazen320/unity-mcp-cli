@@ -228,6 +228,8 @@ def build_unity_test_project_readme(
         "cli-anything-unity-mcp select <port>\n"
         "cli-anything-unity-mcp --json workflow inspect --port <port>\n"
         "cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port <port>\n"
+        "cli-anything-unity-mcp --json debug watch --iterations 2 --interval 0 --console-count 20 --port <port>\n"
+        "cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port <port>\n"
         "cli-anything-unity-mcp --json workflow build-sample --name CliSmokeArena --cleanup --port <port>\n"
         "cli-anything-unity-mcp --json workflow build-fps-sample --name CliSmokeFps --replace --scene-path Assets/Scenes/CliSmokeFps.unity --verify-level quick --port <port>\n"
         "```\n\n"

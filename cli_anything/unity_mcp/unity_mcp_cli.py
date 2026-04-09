@@ -1587,6 +1587,8 @@ def workflow_scaffold_test_project_command(
                 "cli-anything-unity-mcp select <port>",
                 "cli-anything-unity-mcp --json workflow inspect --port <port>",
                 "cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port <port>",
+                "cli-anything-unity-mcp --json debug watch --iterations 2 --interval 0 --console-count 20 --port <port>",
+                "cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port <port>",
                 "cli-anything-unity-mcp --json workflow build-sample --name CliSmokeArena --cleanup --port <port>",
                 "cli-anything-unity-mcp --json workflow build-fps-sample --name CliSmokeFps --replace --scene-path Assets/Scenes/CliSmokeFps.unity --verify-level quick --port <port>",
             ],
