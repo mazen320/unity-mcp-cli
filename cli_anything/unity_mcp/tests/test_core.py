@@ -211,6 +211,9 @@ class CoreTests(unittest.TestCase):
 
         self.assertIn("mainCamera.orthographic = false;", script)
         self.assertIn("mainCamera.fieldOfView = 60f;", script)
+        self.assertIn("CreateMaterial(", script)
+        self.assertIn("Assets/CodexCliSmoke/Materials/SmokeFloor.mat", script)
+        self.assertIn("mainCamera.clearFlags = CameraClearFlags.SolidColor;", script)
 
     def test_tool_route_overrides_and_round_trip(self) -> None:
         self.assertEqual(tool_name_to_route("unity_execute_code"), "editor/execute-code")
