@@ -1503,6 +1503,36 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(payload["latest"]["consoleSummary"]["highestSeverity"], "error")
         self.assertEqual(payload["latest"]["queue"]["activeAgents"], 1)
 
+    def test_debug_capture_saves_game_and_scene_images(self) -> None:
+        output_dir = self.tmpdir / "captures"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(output_dir, ignore_errors=True))
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "capture",
+            "--kind",
+            "both",
+            "--width",
+            "320",
+            "--height",
+            "180",
+            "--label",
+            "visual-check",
+            "--output-dir",
+            str(output_dir),
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity Debug Capture")
+        self.assertEqual(payload["capture"]["kind"], "both")
+        self.assertEqual(payload["capture"]["label"], "visual-check")
+        self.assertTrue(payload["captures"]["game"]["success"])
+        self.assertTrue(payload["captures"]["scene"]["success"])
+        self.assertTrue(Path(payload["captures"]["game"]["path"]).exists())
+        self.assertTrue(Path(payload["captures"]["scene"]["path"]).exists())
+
     def test_workflow_inspect_returns_combined_snapshot(self) -> None:
         self.server.scripts["Assets/Scripts/Existing.cs"] = "public class Existing {}"
 

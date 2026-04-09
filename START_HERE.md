@@ -304,11 +304,19 @@ Focus on only the categories you care about:
 cli-anything-unity-mcp --json workflow audit-advanced --category graphics --category physics --port 7893
 ```
 
+Save paired Game View and Scene View screenshots before or after a visual edit:
+
+```powershell
+cli-anything-unity-mcp --json debug capture --kind both --port 7893
+```
+
 Build a complete sample slice for testing and clean it up after validation:
 
 ```powershell
 cli-anything-unity-mcp --json workflow build-sample --name CodexArena --cleanup --port 7893
 ```
+
+Treat the sample-building workflows as disposable repo fixtures for testing commands and validating visuals, not as the main path for everyday project authoring.
 
 If you want to keep the generated sample in the scene to inspect or extend it, leave off `--cleanup`:
 

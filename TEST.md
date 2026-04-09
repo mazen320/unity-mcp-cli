@@ -12,6 +12,7 @@ End-to-end coverage:
 - Exercise `agent save`, `agent list`, `agent current`, `agent sessions`, and `agent log` against the CLI plus mock bridge routes.
 - Exercise `agent watch` so queue/session/log activity can be sampled over repeated debug snapshots.
 - Exercise `tool-coverage` summary and category filtering against the generated upstream coverage matrix.
+- Exercise `debug capture` so paired Scene/Game screenshots can be saved independently of the sample-building workflows.
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
   - `workflow build-sample`
@@ -36,6 +37,7 @@ cli-anything-unity-mcp --help
 cli-anything-unity-mcp --json tool-coverage --summary
 cli-anything-unity-mcp --json tool-coverage --status unsupported
 cli-anything-unity-mcp --json workflow scaffold-test-project --project-path "C:\Temp\UnityMcpCliSmokeProject" --force
+cli-anything-unity-mcp --json debug capture --kind both --port 7891
 cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port 7891
 cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port 7891
 cli-anything-unity-mcp --json debug watch --iterations 2 --interval 0 --console-count 20 --port 7891
@@ -50,4 +52,5 @@ Live pass notes:
 - `--prepare-scene save|discard` lets mutating validation steps start from a clean scene on purpose instead of failing halfway through a run.
 - `--debug` records per-step timings, raw MCP payloads, and Unity console snapshots for failed steps.
 - `--report-file` writes the full run report to disk for later inspection.
+- `workflow build-sample` and `workflow build-fps-sample` are treated as disposable repo fixtures for testing and visual validation, not the main user path.
 - `workflow audit-advanced` now performs disposable scene and asset probes for broader advanced-category coverage, then resets the scene and deletes generated assets.

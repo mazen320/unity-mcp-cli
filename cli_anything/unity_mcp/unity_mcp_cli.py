@@ -732,12 +732,14 @@ def debug_template_command(ctx: click.Context, port: int | None) -> None:
             "recommendedCommands": [
                 f"cli-anything-unity-mcp --json status{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
                 f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
+                f"cli-anything-unity-mcp --json debug capture --kind both{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
                 f"cli-anything-unity-mcp --json console --count 50 --type error{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
                 f"cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
                 f"cli-anything-unity-mcp --json agent queue{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
             ],
             "checklist": [
                 "Capture the current editor, scene, console, compilation, and queue state with `debug snapshot`.",
+                "Save paired Game View and Scene View screenshots with `debug capture --kind both` before and after visually meaningful edits.",
                 "Look at `consoleSummary.highestSeverity` first, then read the newest error messages and stack traces.",
                 "Check `compilation.count` before trusting any runtime behavior.",
                 "Check `missingReferences.totalFound` before debugging scene logic.",
@@ -754,6 +756,92 @@ def debug_template_command(ctx: click.Context, port: int | None) -> None:
                 "actual": "",
                 "snapshotCommand": f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{' --port ' + str(active_port) if selected_port is not None else ' --port <port>'}",
             },
+        }
+
+    _run_and_emit(ctx, _callback)
+
+
+@debug_group.command("capture")
+@click.option(
+    "--kind",
+    type=click.Choice(["game", "scene", "both"], case_sensitive=False),
+    default="both",
+    show_default=True,
+    help="Which Unity views to capture.",
+)
+@click.option("--width", type=int, default=960, show_default=True, help="Capture width in pixels.")
+@click.option("--height", type=int, default=540, show_default=True, help="Capture height in pixels.")
+@click.option("--label", type=str, default=None, help="Optional file name prefix for saved captures.")
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Directory where captures should be written. Defaults to .cli-anything-unity-mcp/captures.",
+)
+@click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port.")
+@click.pass_context
+def debug_capture_command(
+    ctx: click.Context,
+    kind: str,
+    width: int,
+    height: int,
+    label: str | None,
+    output_dir: Path | None,
+    port: int | None,
+) -> None:
+    """Capture Game View and/or Scene View screenshots for visual verification."""
+
+    def _callback() -> dict[str, Any]:
+        if width < 1 or height < 1:
+            raise ValueError("--width and --height must be positive integers.")
+
+        capture_dir = (output_dir or (Path(".cli-anything-unity-mcp") / "captures")).resolve()
+        capture_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_label = re.sub(r"[^A-Za-z0-9._-]+", "-", (label or "").strip()).strip("-")
+        if not safe_label:
+            safe_label = datetime.now(UTC).strftime("debug-capture-%Y%m%d-%H%M%S")
+
+        requested_kinds = ["game", "scene"] if kind.lower() == "both" else [kind.lower()]
+        captures: dict[str, Any] = {}
+
+        for requested_kind in requested_kinds:
+            route = "graphics/game-capture" if requested_kind == "game" else "graphics/scene-capture"
+            result = ctx.obj.backend.call_route(
+                route,
+                params={"width": width, "height": height},
+                port=port,
+            )
+            encoded = str(result.get("base64") or "")
+            if not encoded:
+                raise ValueError(f"{requested_kind} capture did not return image data.")
+            output_path = (capture_dir / f"{safe_label}-{requested_kind}.png").resolve()
+            output_path.write_bytes(base64.b64decode(encoded))
+            captures[requested_kind] = {
+                "success": True,
+                "path": str(output_path),
+                "width": int(result.get("width") or width),
+                "height": int(result.get("height") or height),
+                "cameraName": result.get("cameraName"),
+            }
+
+        return {
+            "title": "Unity Debug Capture",
+            "agent": {
+                "agentId": ctx.obj.agent_id,
+                "profile": _serialize_agent_profile(ctx.obj.agent_profile),
+                "source": ctx.obj.agent_source,
+                "legacy": ctx.obj.legacy_mode,
+            },
+            "capture": {
+                "kind": kind.lower(),
+                "width": width,
+                "height": height,
+                "label": safe_label,
+                "outputDir": str(capture_dir),
+                "port": port,
+            },
+            "captures": captures,
         }
 
     _run_and_emit(ctx, _callback)

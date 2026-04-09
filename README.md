@@ -157,8 +157,7 @@ Full beginner-friendly setup:
 cli-anything-unity-mcp instances
 cli-anything-unity-mcp select <port>
 cli-anything-unity-mcp --json workflow inspect --port <port>
-cli-anything-unity-mcp --json workflow build-sample --name CodexArena --cleanup --port <port>
-cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase --replace --port <port>
+cli-anything-unity-mcp --json debug capture --kind both --port <port>
 cli-anything-unity-mcp --json workflow create-behaviour PlayerMover --port <port>
 cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy --port <port>
 ```
@@ -172,6 +171,8 @@ cli-anything-unity-mcp --json workflow scaffold-test-project
 ```
 
 By default this creates a sibling folder next to the repo, wires in the local `unity-mcp-plugin` clone when available, and adds an Editor bootstrap script that creates `Assets/Scenes/CodexCliSmoke.unity` on first open.
+
+The sample builders in this repo are meant to support that disposable test flow and contributor validation. They are useful fixtures, but they are not the main product surface of the CLI.
 
 You can also choose an explicit location:
 
@@ -224,6 +225,12 @@ If you want to watch Unity debug state over time instead of taking one snapshot,
 cli-anything-unity-mcp --json debug watch --iterations 3 --interval 1 --console-count 20 --port <port>
 ```
 
+If you want a quick visual check before or after an edit, save paired Game View and Scene View screenshots with:
+
+```powershell
+cli-anything-unity-mcp --json debug capture --kind both --port <port>
+```
+
 ## What It Can Do
 
 - discover running Unity instances
@@ -233,12 +240,13 @@ cli-anything-unity-mcp --json debug watch --iterations 3 --interval 1 --console-
 - inspect tool coverage status with `tool-coverage`
 - inspect blocker reasons like `unity-hub-integration`, `stateful-live-audit`, and `package-dependent-live-audit`
 - watch Unity debug state over time with repeated sampled snapshots
+- save Game View and Scene View screenshots on demand with `debug capture`
 - create and update scripts
 - create scene objects and attach components
 - wire serialized references between scene objects and assets
 - create prefabs and instantiate them back into the scene
-- build a complete sample gameplay slice that exercises scripts, transforms, references, prefabs, validation, and play mode
-- build a fresh 3D FPS sample scene with authored materials, a first-person controller, captures, and play-mode validation
+- scaffold a disposable Unity test project for safe command validation
+- provide sample-building fixtures for repo testing, visual checks, and contributor validation
 - run a reusable advanced-tool audit across safe categories and sample-backed graphics/physics probes
 - validate scenes for missing references and compile problems
 - control play mode with recovery when the bridge rebinds
@@ -247,7 +255,7 @@ cli-anything-unity-mcp --json debug watch --iterations 3 --interval 1 --console-
 - watch multi-agent activity over time with repeated queue/session/log/debug samples
 - optionally expose a thin MCP server with curated tools when a client needs MCP transport
 
-For faster FPS iteration, use:
+If you want to exercise repo fixtures in a disposable project, use:
 
 ```powershell
 cli-anything-unity-mcp --json workflow build-fps-sample --name CodexFpsShowcase --replace --verify-level quick --port <port>
@@ -293,6 +301,7 @@ If you want the current execution plan for full tool coverage, live testing, and
 - `play play`
 - `play stop`
 - `console`
+- `debug capture`
 - `debug snapshot`
 - `debug template`
 - `debug watch`
