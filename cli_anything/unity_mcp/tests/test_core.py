@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import unittest
 import uuid
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from cli_anything.unity_mcp.core.agent_profiles import AgentProfileStore, derive_agent_profiles_path
@@ -13,7 +15,8 @@ from cli_anything.unity_mcp.core.debug_dashboard import DashboardConfig, serve_d
 from cli_anything.unity_mcp.core.debug_doctor import build_debug_doctor_report
 from cli_anything.unity_mcp.core.embedded_cli import EmbeddedCLIOptions, run_cli_json
 from cli_anything.unity_mcp.core.mcp_tools import get_mcp_tool, iter_mcp_tools
-from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConnectionError
+from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConnectionError, UnityMCPHTTPError
+from cli_anything.unity_mcp.core.memory import ProjectMemory
 from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_route
 from cli_anything.unity_mcp.core.session import SessionState, SessionStore
 from cli_anything.unity_mcp.core.tool_coverage import build_tool_coverage_matrix
@@ -24,6 +27,15 @@ from scripts.run_live_mcp_pass import (
     _default_report_file,
     _format_live_pass_summary,
     _summarize_live_pass_report,
+)
+from cli_anything.unity_mcp.core.file_ipc import (
+    FileIPCClient,
+    FileIPCConnectionError,
+    FileIPCError,
+    FileIPCTimeoutError,
+    _atomic_write,
+    _safe_read_json,
+    discover_file_ipc_instances,
 )
 from cli_anything.unity_mcp.utils.unity_mcp_backend import (
     BackendSelectionError,
@@ -67,6 +79,53 @@ class CatalogClient(FakeClient):
 class ErrorRouteClient(FakeClient):
     def call_route(self, port: int, route: str, params: dict | None = None) -> dict:
         raise UnityMCPClientError(f"route failed: {route}")
+
+
+class ContextFallbackClient(FakeClient):
+    def __init__(self, pings: dict[int, dict]) -> None:
+        super().__init__(pings)
+        self.route_calls: list[tuple[int, str, dict]] = []
+        self.get_calls: list[tuple[int, str]] = []
+
+    def call_route(self, port: int, route: str, params: dict | None = None) -> dict:
+        self.route_calls.append((port, route, params or {}))
+        raise UnityMCPHTTPError(404, "not found")
+
+    def get_api(self, port: int, api_path: str, query: dict | None = None, timeout: float | None = None) -> dict:
+        self.get_calls.append((port, api_path))
+        return {"projectPath": "C:/Projects/Demo", "apiPath": api_path}
+
+
+class ContextQueueUnknownClient(FakeClient):
+    def __init__(self, pings: dict[int, dict]) -> None:
+        super().__init__(pings)
+        self.route_calls: list[tuple[int, str, dict]] = []
+        self.get_calls: list[tuple[int, str]] = []
+
+    def call_route(self, port: int, route: str, params: dict | None = None) -> dict:
+        self.route_calls.append((port, route, params or {}))
+        if route == "context":
+            return {"error": "Unknown API endpoint: context"}
+        if route == "editor/execute-code":
+            return {
+                "success": True,
+                "result": {
+                    "enabled": True,
+                    "contextPath": "Assets/MCP/Context",
+                    "fileCount": 1,
+                    "categories": [
+                        {
+                            "category": "Architecture",
+                            "content": "Main-thread-safe context.",
+                        }
+                    ],
+                },
+            }
+        return {"error": f"Unexpected route: {route}"}
+
+    def get_api(self, port: int, api_path: str, query: dict | None = None, timeout: float | None = None) -> dict:
+        self.get_calls.append((port, api_path))
+        raise AssertionError("context queue fallback should not use direct GET when execute-code works")
 
 
 class RebindingBackend(UnityMCPBackend):
@@ -213,6 +272,93 @@ class DashboardBackendStub:
 
 
 class CoreTests(unittest.TestCase):
+    def test_project_memory_tracks_recurring_and_resolved_missing_references(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            memory = ProjectMemory("C:/Projects/Demo", store_root=tmpdir, allow_fallback=False)
+            issue = {
+                "path": "MainScene/Player",
+                "component": "PlayerController",
+                "issue": "Missing object reference",
+            }
+
+            first = memory.record_missing_references([issue], "MainScene")
+            second = memory.record_missing_references([issue], "MainScene")
+            recurring = memory.get_recurring_missing_refs()
+            resolved = memory.record_missing_references([], "MainScene")
+
+            self.assertEqual(len(first["newIssues"]), 1)
+            self.assertEqual(first["recurringIssues"], [])
+            self.assertEqual(second["recurringIssues"][0]["seenCount"], 2)
+            self.assertEqual(recurring[0]["gameObject"], "MainScene/Player")
+            self.assertEqual(recurring[0]["seenCount"], 2)
+            self.assertEqual(resolved["resolvedIssues"][0]["gameObject"], "MainScene/Player")
+            self.assertEqual(resolved["totalTracked"], 0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_project_memory_selection_summary_is_compact_and_public(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            memory = ProjectMemory("C:/Projects/Demo", store_root=tmpdir, allow_fallback=False)
+            issue = {
+                "path": "MainScene/Player",
+                "component": "PlayerController",
+                "issue": "Missing object reference",
+            }
+            memory.remember_structure("render_pipeline", "URP")
+            memory.remember_structure("_last_doctor_state", {"findings": []})
+            memory.remember_fix(
+                "CS0246",
+                "cli-anything-unity-mcp --json debug doctor",
+                context="Missing namespace or package.",
+            )
+            memory.record_missing_references([issue], "MainScene")
+            memory.record_missing_references([issue], "MainScene")
+
+            summary = memory.summarize_for_selection(max_fixes=1, max_recurring=1)
+
+            self.assertIsNotNone(summary)
+            assert summary is not None
+            self.assertEqual(summary["totalEntries"], 4)
+            self.assertEqual(summary["structure"]["render_pipeline"], "URP")
+            self.assertNotIn("_last_doctor_state", summary["structure"])
+            self.assertEqual(summary["knownFixes"][0]["pattern"], "CS0246")
+            self.assertEqual(summary["recurringMissingRefs"][0]["gameObject"], "MainScene/Player")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_project_memory_explicit_roots_do_not_read_workspace_fallback(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        original_cwd = Path.cwd()
+        original_env = os.environ.get("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR")
+        try:
+            os.chdir(tmpdir)
+            fallback_root = tmpdir / ".cli-anything-unity-mcp" / "memory"
+            fallback_memory = ProjectMemory(
+                "C:/Projects/Demo",
+                store_root=fallback_root,
+                allow_fallback=False,
+            )
+            fallback_memory.save("pattern", "stale_fallback", {"value": "do not read this"})
+
+            explicit_memory = ProjectMemory("C:/Projects/Demo", store_root=tmpdir / "explicit")
+            self.assertEqual(explicit_memory.recall(), [])
+
+            os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(tmpdir / "env")
+            env_memory = ProjectMemory("C:/Projects/Demo")
+            self.assertEqual(env_memory.recall(), [])
+        finally:
+            if original_env is None:
+                os.environ.pop("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR", None)
+            else:
+                os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = original_env
+            os.chdir(original_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_agent_profile_store_persists_selection_and_profiles(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         tmpdir.mkdir(parents=True, exist_ok=True)
@@ -257,14 +403,77 @@ class CoreTests(unittest.TestCase):
         tools = {tool["name"]: tool for tool in payload["tools"]}
         self.assertEqual(tools["unity_terrain_create"]["coverageStatus"], "live-tested")
         self.assertEqual(tools["unity_terrain_info"]["coverageStatus"], "live-tested")
-        self.assertEqual(tools["unity_terrain_create_grid"]["coverageStatus"], "deferred")
-        self.assertEqual(tools["unity_terrain_create_grid"]["coverageBlocker"], "stateful-live-audit")
-        self.assertIn("disposable fixtures", tools["unity_terrain_create_grid"]["coverageNote"])
+        # terrain/create-grid is now mock-only (promoted from deferred in this session).
+        self.assertEqual(tools["unity_terrain_create_grid"]["coverageStatus"], "mock-only")
+        self.assertIn("mock Unity bridge", tools["unity_terrain_create_grid"]["coverageNote"])
         self.assertGreaterEqual(payload["summary"]["countsByStatus"]["live-tested"], 1)
 
+        full_payload = build_tool_coverage_matrix()
+        all_tools = {tool["name"]: tool for tool in full_payload["tools"]}
+        for name in (
+            "unity_agents_list",
+            "unity_advanced_tool",
+            "unity_console_log",
+            "unity_list_advanced_tools",
+            "unity_list_instances",
+            "unity_select_instance",
+        ):
+            self.assertEqual(all_tools[name]["coverageStatus"], "covered", name)
+            self.assertEqual(all_tools[name]["coverageBlocker"], "verified-automated", name)
+
+    def test_tool_coverage_matrix_marks_mock_only_focused_routes(self) -> None:
+        payload = build_tool_coverage_matrix()
+
+        tools = {tool["name"]: tool for tool in payload["tools"]}
+        for name in (
+            "unity_ui_create_element",
+            "unity_ui_set_text",
+            "unity_ui_set_image",
+            "unity_lighting_create_light_probe_group",
+            "unity_lighting_create_reflection_probe",
+            "unity_lighting_set_environment",
+            "unity_animation_add_event",
+            "unity_animation_add_parameter",
+            "unity_animation_add_transition",
+            "unity_animation_clip_info",
+            "unity_animation_get_curve_keyframes",
+            "unity_animation_get_events",
+            "unity_terrain_get_heights_region",
+            "unity_terrain_get_steepness",
+            "unity_terrain_get_tree_instances",
+            "unity_terrain_list",
+            "unity_playerprefs_get",
+            "unity_playerprefs_set",
+            "unity_playerprefs_delete",
+            "unity_playerprefs_delete_all",
+            "unity_input_add_action",
+            "unity_input_add_binding",
+            "unity_input_add_composite_binding",
+            "unity_input_add_map",
+            "unity_input_remove_action",
+            "unity_input_remove_map",
+            "unity_spriteatlas_add",
+            "unity_spriteatlas_create",
+            "unity_spriteatlas_delete",
+            "unity_spriteatlas_info",
+            "unity_spriteatlas_list",
+            "unity_spriteatlas_remove",
+            "unity_spriteatlas_settings",
+            "unity_mppm_activate_scenario",
+            "unity_mppm_info",
+            "unity_mppm_list_scenarios",
+            "unity_mppm_start",
+            "unity_mppm_status",
+            "unity_mppm_stop",
+        ):
+            self.assertEqual(tools[name]["coverageStatus"], "mock-only", name)
+            self.assertEqual(tools[name]["coverageBlocker"], "verified-mock", name)
+            self.assertIn("mock Unity bridge", tools[name]["coverageNote"], name)
+
     def test_tool_coverage_matrix_can_build_next_agent_batch(self) -> None:
+        # Use "amplify" category — package-dependent, stays deferred long-term.
         payload = build_tool_coverage_matrix(
-            category="terrain",
+            category="amplify",
             status="deferred",
             summary_only=True,
             next_batch_limit=3,
@@ -276,11 +485,82 @@ class CoreTests(unittest.TestCase):
         self.assertLessEqual(len(payload["nextBatch"]), 3)
         candidate = payload["nextBatch"][0]
         self.assertEqual(candidate["coverageStatus"], "deferred")
-        self.assertEqual(candidate["category"], "terrain")
+        self.assertEqual(candidate["category"], "amplify")
+        self.assertEqual(candidate["coverageBlocker"], "package-dependent-live-audit")
+        self.assertEqual(candidate["fixtureHint"]["package"], "Amplify Shader Editor")
+        self.assertIn("Assets/CLIAnythingFixtures/Amplify", candidate["fixtureHint"]["fixtureRoot"])
         self.assertIn(candidate["risk"], {"read-only", "safe-mutation", "stateful-mutation", "destructive"})
         self.assertIn("cli-anything-unity-mcp --json tool-info", candidate["recommendedCommands"][0])
         self.assertIn("cli-anything-unity-mcp --json tool-template", candidate["recommendedCommands"][1])
-        self.assertIn("disposable Unity scene", candidate["handoffPrompt"])
+        self.assertIn("disposable Unity project", candidate["handoffPrompt"])
+        self.assertIn("preflight", candidate["handoffPrompt"])
+
+    def test_tool_coverage_matrix_can_build_package_fixture_plans(self) -> None:
+        payload = build_tool_coverage_matrix(
+            status="deferred",
+            summary_only=True,
+            fixture_plan=True,
+        )
+
+        self.assertNotIn("tools", payload)
+        self.assertTrue(payload["summary"]["filters"]["fixturePlan"])
+        plans = {plan["category"]: plan for plan in payload["fixturePlans"]}
+        self.assertEqual(sorted(plans), ["amplify", "uma"])
+        self.assertEqual(plans["amplify"]["package"], "Amplify Shader Editor")
+        self.assertEqual(plans["amplify"]["deferredToolCount"], 23)
+        self.assertEqual(plans["uma"]["package"], "UMA / UMA DCS")
+        self.assertEqual(plans["uma"]["deferredToolCount"], 15)
+        self.assertIn("Assets/CLIAnythingFixtures/Amplify", plans["amplify"]["fixtureRoot"])
+        self.assertIn("unity_amplify_status", plans["amplify"]["preflight"])
+        self.assertIn("--next-batch 10", plans["amplify"]["recommendedCommands"][0])
+        self.assertIn("preflight commands first", plans["amplify"]["handoffPrompt"])
+        self.assertIn("readOnlyFirst", plans["amplify"])
+        self.assertIn("safeMutationNext", plans["amplify"])
+        self.assertIn("statefulMutationLater", plans["amplify"])
+        self.assertIn("destructiveLast", plans["amplify"])
+
+    def test_tool_coverage_matrix_can_build_unsupported_support_plans(self) -> None:
+        payload = build_tool_coverage_matrix(
+            status="unsupported",
+            summary_only=True,
+            support_plan=True,
+        )
+
+        self.assertNotIn("tools", payload)
+        self.assertTrue(payload["summary"]["filters"]["supportPlan"])
+        support_plans = {plan["category"]: plan for plan in payload["supportPlans"]}
+        self.assertEqual(sorted(support_plans), ["hub"])
+        hub_plan = support_plans["hub"]
+        self.assertEqual(hub_plan["coverageBlocker"], "unity-hub-integration")
+        self.assertEqual(hub_plan["toolCount"], 6)
+        self.assertIn("unity_hub_list_editors", {tool["name"] for tool in hub_plan["tools"]})
+        self.assertIn("read-only editor discovery", hub_plan["handoffPrompt"])
+        self.assertIn("cli-anything-unity-mcp --json tool-info unity_hub_list_editors", hub_plan["recommendedCommands"])
+        self.assertGreaterEqual(len(hub_plan["safeImplementationOrder"]), 3)
+
+    def test_tool_coverage_matrix_can_build_cross_track_handoff_plan(self) -> None:
+        payload = build_tool_coverage_matrix(
+            summary_only=True,
+            handoff_plan=True,
+        )
+
+        self.assertNotIn("tools", payload)
+        self.assertTrue(payload["summary"]["filters"]["handoffPlan"])
+        handoff = payload["handoffPlan"]
+        self.assertEqual(handoff["remainingToolCount"], 44)
+        self.assertEqual(handoff["deferredToolCount"], 38)
+        self.assertEqual(handoff["unsupportedToolCount"], 6)
+        self.assertEqual(handoff["deferredByBlocker"], {"package-dependent-live-audit": 38})
+        self.assertEqual(handoff["unsupportedByBlocker"], {"unity-hub-integration": 6})
+        tracks = {track["name"]: track for track in handoff["tracks"]}
+        self.assertEqual(sorted(tracks), ["optional-package-live-audits", "unity-hub-backend"])
+        self.assertEqual(tracks["optional-package-live-audits"]["categories"], ["amplify", "uma"])
+        self.assertEqual(tracks["optional-package-live-audits"]["toolCount"], 38)
+        self.assertEqual(tracks["unity-hub-backend"]["categories"], ["hub"])
+        self.assertEqual(tracks["unity-hub-backend"]["toolCount"], 6)
+        self.assertIn("--fixture-plan", tracks["optional-package-live-audits"]["nextCommand"])
+        self.assertIn("--support-plan", tracks["unity-hub-backend"]["nextCommand"])
+        self.assertIn("coverage work", handoff["handoffPrompt"])
 
     def test_tool_coverage_matrix_explains_hub_tools_as_unity_hub_integration_gap(self) -> None:
         payload = build_tool_coverage_matrix(category="hub")
@@ -964,6 +1244,138 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_context_tool_uses_queue_safe_route_before_direct_get(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            registry_path = tmpdir / "instances.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "port": 7890,
+                            "projectName": "Demo",
+                            "projectPath": "C:/Projects/Demo",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            client = CatalogClient(
+                {
+                    7890: {
+                        "status": "ok",
+                        "projectName": "Demo",
+                        "projectPath": "C:/Projects/Demo",
+                        "unityVersion": "6000.0.0f1",
+                    }
+                }
+            )
+            backend = UnityMCPBackend(
+                client=client,
+                session_store=SessionStore(tmpdir / "session.json"),
+                registry_path=registry_path,
+            )
+
+            result = backend.call_tool("unity_get_project_context", params={"category": "Architecture"})
+
+            self.assertTrue(result["success"])
+            self.assertEqual(client.calls[0][0], "context")
+            self.assertEqual(client.calls[0][2]["category"], "Architecture")
+            history = backend.session_store.load().history
+            self.assertEqual(history[-1]["command"], "context")
+            self.assertEqual(history[-1]["transport"], "queue")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_context_tool_uses_execute_code_shim_when_queue_route_is_missing(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            registry_path = tmpdir / "instances.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "port": 7890,
+                            "projectName": "Demo",
+                            "projectPath": "C:/Projects/Demo",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            client = ContextQueueUnknownClient(
+                {
+                    7890: {
+                        "status": "ok",
+                        "projectName": "Demo",
+                        "projectPath": "C:/Projects/Demo",
+                        "unityVersion": "6000.0.0f1",
+                    }
+                }
+            )
+            backend = UnityMCPBackend(
+                client=client,
+                session_store=SessionStore(tmpdir / "session.json"),
+                registry_path=registry_path,
+            )
+
+            result = backend.call_tool("unity_get_project_context", params={"category": "Architecture"})
+
+            self.assertTrue(result["enabled"])
+            self.assertEqual(result["categories"][0]["content"], "Main-thread-safe context.")
+            self.assertEqual([call[1] for call in client.route_calls], ["context", "editor/execute-code"])
+            self.assertEqual(client.get_calls, [])
+            self.assertIn(
+                'GetContextResponse("Architecture")',
+                client.route_calls[1][2]["code"],
+            )
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_context_tool_falls_back_to_direct_get_for_legacy_bridge(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            registry_path = tmpdir / "instances.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "port": 7890,
+                            "projectName": "Demo",
+                            "projectPath": "C:/Projects/Demo",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            client = ContextFallbackClient(
+                {
+                    7890: {
+                        "status": "ok",
+                        "projectName": "Demo",
+                        "projectPath": "C:/Projects/Demo",
+                        "unityVersion": "6000.0.0f1",
+                    }
+                }
+            )
+            backend = UnityMCPBackend(
+                client=client,
+                session_store=SessionStore(tmpdir / "session.json"),
+                registry_path=registry_path,
+            )
+
+            result = backend.call_tool("unity_get_project_context", params={"category": "Architecture"})
+
+            self.assertEqual(result["apiPath"], "context/Architecture")
+            self.assertEqual(client.route_calls[0][1], "context")
+            self.assertEqual(client.route_calls[1][1], "editor/execute-code")
+            self.assertEqual(client.get_calls[0][1], "context/Architecture")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_list_advanced_tools_meta_groups_by_category(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         tmpdir.mkdir(parents=True, exist_ok=True)
@@ -1059,6 +1471,83 @@ class CoreTests(unittest.TestCase):
         )
         self.assertIn(
             "cli-anything-unity-mcp --json debug capture --kind both --port 7892",
+            report["recommendedCommands"],
+        )
+
+    def test_debug_doctor_enriches_compilation_errors_with_heuristics(self) -> None:
+        snapshot = {
+            "summary": {"port": 7892, "consoleEntryCount": 0, "sceneDirty": False},
+            "editorState": {"isPlaying": False, "isCompiling": False},
+            "console": {"entries": []},
+            "consoleSummary": {"highestSeverity": "info"},
+            "compilation": {
+                "count": 2,
+                "entries": [
+                    {
+                        "message": (
+                            "Assets/Scripts/Player.cs(12,8): error CS0246: "
+                            "The type or namespace name 'Foo' could not be found"
+                        )
+                    },
+                    {
+                        "message": (
+                            "Assets/Scripts/Enemy.cs(18,20): error CS0103: "
+                            "The name 'target' does not exist in the current context"
+                        )
+                    },
+                ],
+            },
+            "missingReferences": {"totalFound": 0, "results": []},
+            "queue": {"totalQueued": 0, "activeAgents": 0},
+        }
+
+        report = build_debug_doctor_report(snapshot, [], 7892)
+
+        titles = [finding["title"] for finding in report["findings"]]
+        self.assertIn("Compilation Issues", titles)
+        self.assertIn("CS0246: Missing Type or Namespace", titles)
+        self.assertIn("CS0103: Undefined Name in Scope", titles)
+        self.assertEqual(report["compilationSummary"]["totalErrors"], 2)
+        self.assertEqual(report["compilationSummary"]["uniqueErrorCodes"], ["CS0246", "CS0103"])
+        self.assertIn("Assets/Scripts/Player.cs", report["compilationSummary"]["affectedFiles"])
+        self.assertTrue(
+            any(
+                finding.get("evidence", {}).get("location") == "Assets/Scripts/Player.cs line 12"
+                for finding in report["findings"]
+            )
+        )
+        self.assertIn(
+            "cli-anything-unity-mcp --json debug snapshot --console-count 50 --port 7892",
+            report["recommendedCommands"],
+        )
+
+    def test_debug_doctor_enriches_runtime_console_patterns(self) -> None:
+        snapshot = {
+            "summary": {"port": 7892, "consoleEntryCount": 1, "sceneDirty": False},
+            "editorState": {"isPlaying": False, "isCompiling": False},
+            "console": {
+                "entries": [
+                    {
+                        "type": "error",
+                        "message": "NullReferenceException: Object reference not set to an instance of an object",
+                    }
+                ]
+            },
+            "consoleSummary": {"highestSeverity": "error"},
+            "compilation": {"count": 0, "entries": []},
+            "missingReferences": {"totalFound": 0, "results": []},
+            "queue": {"totalQueued": 0, "activeAgents": 0},
+        }
+
+        report = build_debug_doctor_report(snapshot, [], 7892)
+
+        null_ref = next(
+            finding for finding in report["findings"] if finding["title"] == "NullReferenceException at Runtime"
+        )
+        self.assertTrue(null_ref["heuristic"])
+        self.assertIn("serialized field", null_ref["detail"].lower())
+        self.assertIn(
+            "cli-anything-unity-mcp --json console --count 50 --type error --port 7892",
             report["recommendedCommands"],
         )
 
@@ -1178,5 +1667,301 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["registryError"], "Access is denied")
             self.assertTrue(any(item["title"] == "Registry File Access Denied" for item in payload["findings"]))
             self.assertTrue(any("debug doctor" in command for command in payload["recommendedCommands"]))
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    # ── File IPC transport tests ─────────────────────────────────────────
+
+    def test_file_ipc_client_ping_raises_when_no_umcp_dir(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            client = FileIPCClient(tmpdir)
+            with self.assertRaises(FileIPCConnectionError):
+                client.ping()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_file_ipc_client_ping_reads_heartbeat(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            umcp = tmpdir / ".umcp"
+            umcp.mkdir()
+            from datetime import datetime, timezone
+            ping_data = {
+                "status": "ok",
+                "projectName": "TestProject",
+                "projectPath": str(tmpdir),
+                "unityVersion": "6000.4.0f1",
+                "platform": "WindowsEditor",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+                "transport": "file-ipc",
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            client = FileIPCClient(tmpdir)
+            result = client.ping()
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(result["projectName"], "TestProject")
+            self.assertEqual(result["transport"], "file-ipc")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_file_ipc_client_ping_rejects_stale_heartbeat(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            umcp = tmpdir / ".umcp"
+            umcp.mkdir()
+            from datetime import datetime, timezone, timedelta
+            stale_time = datetime.now(timezone.utc) - timedelta(seconds=30)
+            ping_data = {
+                "status": "ok",
+                "projectName": "StaleProject",
+                "lastHeartbeat": stale_time.isoformat(),
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            client = FileIPCClient(tmpdir)
+            with self.assertRaises(FileIPCConnectionError):
+                client.ping()
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_file_ipc_client_call_route_roundtrip(self) -> None:
+        """Simulate Unity responding to a file IPC command."""
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            client = FileIPCClient(tmpdir, poll_interval=0.01, timeout=2.0)
+            client.ensure_dirs()
+
+            import threading
+            captured: dict[str, Any] = {}
+
+            def fake_unity_responder():
+                """Watch inbox, write response to outbox."""
+                import time as _time
+                deadline = _time.monotonic() + 2.0
+                while _time.monotonic() < deadline:
+                    inbox = tmpdir / ".umcp" / "inbox"
+                    if inbox.exists():
+                        for f in inbox.iterdir():
+                            if f.suffix == ".json":
+                                cmd = json.loads(f.read_text())
+                                captured.update(cmd)
+                                f.unlink()
+                                response = {
+                                    "id": cmd["id"],
+                                    "result": {
+                                        "success": True,
+                                        "route": cmd["route"],
+                                        "echo": json.loads(cmd.get("params") or "{}"),
+                                    },
+                                }
+                                outbox = tmpdir / ".umcp" / "outbox"
+                                outbox.mkdir(parents=True, exist_ok=True)
+                                resp_path = outbox / f"{cmd['id']}.json"
+                                resp_path.write_text(json.dumps(response))
+                                return
+                    _time.sleep(0.01)
+
+            responder = threading.Thread(target=fake_unity_responder, daemon=True)
+            responder.start()
+
+            result = client.call_route("scene/info", params={"key": "value"})
+            self.assertTrue(result["success"])
+            self.assertEqual(result["route"], "scene/info")
+            self.assertEqual(result["echo"]["key"], "value")
+            self.assertIsInstance(captured["params"], str)
+
+            responder.join(timeout=2.0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_file_ipc_client_timeout_raises(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            client = FileIPCClient(tmpdir, poll_interval=0.01, timeout=0.05)
+            client.ensure_dirs()
+
+            with self.assertRaises(FileIPCTimeoutError):
+                client.call_route("scene/info")
+
+            # Command file should have been cleaned up on timeout
+            inbox_files = list((tmpdir / ".umcp" / "inbox").iterdir())
+            self.assertEqual(len(inbox_files), 0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_file_ipc_discovery_finds_active_project(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            umcp = tmpdir / ".umcp"
+            umcp.mkdir()
+            from datetime import datetime, timezone
+            ping_data = {
+                "status": "ok",
+                "projectName": "DiscoverMe",
+                "projectPath": str(tmpdir),
+                "unityVersion": "6000.4.0f1",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            instances = discover_file_ipc_instances([tmpdir])
+            self.assertEqual(len(instances), 1)
+            self.assertEqual(instances[0]["projectName"], "DiscoverMe")
+            self.assertEqual(instances[0]["transport"], "file-ipc")
+            self.assertIsNone(instances[0]["port"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_file_ipc_discovery_skips_stale_project(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            umcp = tmpdir / ".umcp"
+            umcp.mkdir()
+            from datetime import datetime, timezone, timedelta
+            stale = datetime.now(timezone.utc) - timedelta(seconds=60)
+            ping_data = {"status": "ok", "lastHeartbeat": stale.isoformat()}
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            instances = discover_file_ipc_instances([tmpdir])
+            self.assertEqual(len(instances), 0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_file_ipc_cleanup_removes_stale_files(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            client = FileIPCClient(tmpdir)
+            client.ensure_dirs()
+
+            # Create old files
+            old_file = tmpdir / ".umcp" / "inbox" / "old-command.json"
+            old_file.write_text('{"id":"old"}')
+            # Backdate the file
+            import time
+            old_time = time.time() - 120
+            os.utime(old_file, (old_time, old_time))
+
+            # Create recent file
+            new_file = tmpdir / ".umcp" / "inbox" / "new-command.json"
+            new_file.write_text('{"id":"new"}')
+
+            cleaned = client.cleanup_stale(max_age_seconds=60.0)
+            self.assertEqual(cleaned, 1)
+            self.assertFalse(old_file.exists())
+            self.assertTrue(new_file.exists())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_backend_discovers_file_ipc_instances(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            # Set up a file IPC project
+            umcp = tmpdir / "MyProject" / ".umcp"
+            umcp.mkdir(parents=True)
+            from datetime import datetime, timezone
+            ping_data = {
+                "status": "ok",
+                "projectName": "MyProject",
+                "projectPath": str(tmpdir / "MyProject"),
+                "unityVersion": "6000.4.0f1",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+                "transport": "file-ipc",
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            # Create backend with file transport only (skip HTTP)
+            fake_client = FakeClient(pings={})
+            session_path = tmpdir / "session.json"
+            backend = UnityMCPBackend(
+                client=fake_client,
+                session_store=SessionStore(session_path),
+                registry_path=tmpdir / "instances.json",
+                transport="file",
+                file_ipc_paths=[tmpdir / "MyProject"],
+            )
+
+            instances = backend.discover_instances()
+            self.assertEqual(len(instances), 1)
+            self.assertEqual(instances[0]["projectName"], "MyProject")
+            self.assertEqual(instances[0]["transport"], "file-ipc")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_backend_file_ipc_ping_and_queue_info_do_not_use_http(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        umcp = project / ".umcp"
+        umcp.mkdir(parents=True, exist_ok=True)
+        try:
+            from datetime import datetime, timezone
+
+            ping_data = {
+                "status": "ok",
+                "projectName": "MyProject",
+                "projectPath": str(project),
+                "unityVersion": "6000.4.0f1",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+                "transport": "file-ipc",
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            session_store = SessionStore(tmpdir / "session.json")
+            session_store.save(
+                SessionState(
+                    selected_port=None,
+                    selected_instance={
+                        "projectName": "MyProject",
+                        "projectPath": str(project),
+                        "port": None,
+                        "transport": "file-ipc",
+                    },
+                    history=[],
+                )
+            )
+            backend = UnityMCPBackend(
+                client=FakeClient(pings={}),
+                session_store=session_store,
+                registry_path=tmpdir / "instances.json",
+                transport="file",
+                file_ipc_paths=[project],
+            )
+            backend.set_runtime_context(agent_id="agent-file-ipc")
+
+            ping = backend.ping()
+            self.assertEqual(ping["projectName"], "MyProject")
+            self.assertEqual(ping["transport"], "file-ipc")
+            self.assertIsNone(ping["port"])
+
+            with patch.object(
+                FileIPCClient,
+                "call_route",
+                return_value={
+                    "transport": "file-ipc",
+                    "queueSupported": False,
+                    "activeAgents": 1,
+                    "totalQueued": 0,
+                    "agentId": "agent-file-ipc",
+                    "message": "File IPC executes each request on Unity's main thread from .umcp/inbox; no Unity queue is required.",
+                },
+            ) as call_route:
+                queue = backend.get_queue_info()
+            self.assertFalse(queue["queueSupported"])
+            self.assertEqual(queue["transport"], "file-ipc")
+            self.assertEqual(queue["activeAgents"], 1)
+            self.assertEqual(queue["totalQueued"], 0)
+            self.assertEqual(queue["agentId"], "agent-file-ipc")
+            self.assertIn("no Unity queue is required", queue["message"])
+            call_route.assert_called_once_with("queue/info", timeout=1.0)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

@@ -44,6 +44,7 @@ cli-anything-unity-mcp --json debug capture --kind both --port <port>
 - Prefer `workflow` commands before dropping to `tool` or `route`.
 - Use `tool-info`, `tools`, and `tool-coverage` to discover capability instead of guessing command shapes.
 - Use `agent save`, `agent use`, and `--agent-id` when you want stable trace/debug attribution.
+- On File IPC, use `agent queue`, `agent sessions`, `agent log <agent-id>`, and `agent watch --iterations 1` for agent visibility. The bridge records agent activity only when commands arrive, so do not add Unity-side polling loops for this.
 
 ## Required Debugging Behavior
 
@@ -84,6 +85,15 @@ cli-anything-unity-mcp --json agent save locke --agent-id locke-debug --select
 cli-anything-unity-mcp --json scene-info --port <port>
 cli-anything-unity-mcp --json debug trace --tail 20 --agent-id locke-debug
 cli-anything-unity-mcp debug editor-log --contains "CLI-TRACE" --follow
+```
+
+On the File IPC transport, Unity also keeps a lightweight in-memory agent registry:
+
+```powershell
+cli-anything-unity-mcp --transport file --file-ipc-path C:/Projects/MyUnityProject --agent-id locke-debug --json agent queue
+cli-anything-unity-mcp --transport file --file-ipc-path C:/Projects/MyUnityProject --agent-id locke-debug --json agent sessions
+cli-anything-unity-mcp --transport file --file-ipc-path C:/Projects/MyUnityProject --agent-id locke-debug --json agent log locke-debug
+cli-anything-unity-mcp --transport file --file-ipc-path C:/Projects/MyUnityProject --agent-id locke-debug --json agent watch --iterations 1 --interval 0
 ```
 
 ## Visual Verification Rules
@@ -151,6 +161,105 @@ When memory exists for the active project, `debug doctor`:
 - Full snapshots or hierarchy dumps — too large and go stale immediately
 - Things already visible in git or the project files
 
+## Tool Coverage System
+
+Tool coverage is tracked in `core/tool_coverage.py` via `LIVE_TESTED_ROUTE_NOTES`, `COVERED_ROUTE_NOTES`, `COVERED_TOOL_NOTES`, `MOCK_ONLY_ROUTE_NOTES`, plus computed `deferred`/`unsupported` statuses.
+
+**Current state (2026-04-10):** 32 live-tested, 37 covered, 215 mock-only, 38 deferred, 6 unsupported (86.6% coverage).
+
+### How to promote a tool from `deferred` to `mock-only`
+
+Three things must happen together — never do one without the others:
+
+1. **Add the route** to `MOCK_ONLY_ROUTE_NOTES` in `core/tool_coverage.py`.
+2. **Add a mock bridge handler** in `test_full_e2e.py` inside `MockUnityBridge._handle_route()`. Existing state dicts to reuse: `self.gameobjects`, `self.scripts`, `self.prefabs`, `self.terrains`, `self.animation_clips`, `self.animation_controllers`, `self._shadergraphs`, `self._selection`, `self._scriptable_objects`, `self._editorprefs`.
+3. **Add test assertions** in `test_mock_only_advanced_routes_work_against_mock_bridge`.
+
+Keep `amplify` and `uma` deferred until optional-package fixtures exist. `spriteatlas` and MPPM/scenario routes are already mock-only covered.
+
+Before assigning Amplify or UMA live-audit work, run:
+
+```powershell
+cli-anything-unity-mcp --json tool-coverage --status deferred --summary --fixture-plan
+```
+
+Use the returned package requirement, fixture root, preflight list, risk-ordered tool groups, and cleanup guidance as the handoff packet for contributors or sidecar agents.
+
+Before assigning Unity Hub work, run:
+
+```powershell
+cli-anything-unity-mcp --json tool-coverage --status unsupported --summary --support-plan
+```
+
+Use that output to keep Hub work separate from the Unity Editor bridge. Start with read-only Hub discovery, then install-path state changes, and leave editor/module install commands for last because they are long-running and machine-stateful.
+
+For one compact "what is left?" handoff, run:
+
+```powershell
+cli-anything-unity-mcp --json tool-coverage --summary --handoff-plan
+```
+
+That output should be the first thing shared with contributors before splitting optional-package audit work from Unity Hub backend work.
+
+### Remaining deferred categories
+
+Package-dependent live fixture work only:
+`amplify` (23), `uma` (15).
+
+## File-Based IPC Transport
+
+The CLI supports a zero-config file-based IPC transport as an alternative to HTTP. This is useful when:
+- The full Unity MCP HTTP plugin is not installed
+- Ports are blocked or unreliable
+- You need main-thread execution without queue contention
+- Play-mode or domain reloads break the HTTP bridge
+
+### How it works
+
+1. Drop `unity-scripts/Editor/FileIPCBridge.cs` and `StandaloneRouteHandler.cs` into `Assets/Editor/` in your Unity project. Optionally drop in `CliAnythingWindow.cs` too for the native `Window > CLI Anything` panel.
+2. Unity auto-initializes the bridge on domain reload — creates `.umcp/inbox/`, `.umcp/outbox/`, and refreshes `.umcp/ping.json` every 2 seconds.
+3. The CLI writes command JSON files to `.umcp/inbox/`, polls `.umcp/outbox/` for responses.
+4. Everything runs on Unity's main thread automatically — no threading issues.
+
+### CLI usage
+
+```powershell
+# Auto-detect (tries HTTP first, falls back to file IPC)
+cli-anything-unity-mcp --transport auto --file-ipc-path C:/Projects/MyUnityProject instances
+
+# File IPC only (skip HTTP port scanning)
+cli-anything-unity-mcp --transport file --file-ipc-path C:/Projects/MyUnityProject scene-info
+
+# Multiple projects
+cli-anything-unity-mcp --transport file --file-ipc-path C:/Projects/Game1 --file-ipc-path C:/Projects/Game2 instances
+```
+
+### Architecture
+
+- **`core/file_ipc.py`** — `FileIPCClient` (command write, response poll, heartbeat ping, stale cleanup) and `discover_file_ipc_instances()`.
+- **`FileIPCBridge.cs`** — Polls inbox on `EditorApplication.update`, tries the full MCP plugin via reflection first, falls back to `StandaloneRouteHandler` when the plugin reports an unknown route.
+- **`FileIPCBridge.cs` agent registry** — Handles `queue/info`, `agents/list`, and `agents/log` directly for File IPC. It records `agentId`, route, status, timestamp, and error string without a background polling UI.
+- **`StandaloneRouteHandler.cs`** — ~27 core routes (scene, project, editor, gameobject, component, asset, script, undo, screenshot) with a `MiniJson` parser. Add new routes to its `switch` statement.
+- **`CliAnythingWindow.cs`** — Optional native Unity panel with cached hierarchy/search/stats and common inspector/actions UI. Keep it event-driven; do not add polling.
+- **Backend** — `UnityMCPBackend` caches `FileIPCClient` instances in `_file_ipc_clients`, keyed by project path. `discover_instances()` merges HTTP and file IPC results, deduplicating by project path (HTTP preferred). `call_route()` delegates to the right transport based on the selected instance.
+
+File IPC command params must stay as a raw JSON string in the command file. Unity's `JsonUtility` drops arbitrary object fields, so writing `params` as an object makes every route receive `{}`.
+
+### When NOT to use file IPC
+
+- For high-throughput operations (HTTP is ~10x faster per request)
+- When the full Unity MCP plugin is installed and working (HTTP gives more routes)
+- File IPC doesn't support the queue system — it's always main-thread direct
+
+## Documentation Update Rule
+
+**Every time you make code changes, you must also update:**
+- `CHANGELOG.md` — what was added or changed under `## Unreleased`
+- `TODO.md` — update "What Was Built", "What NOT to duplicate", priorities, and coverage table
+- `AGENTS.md` — if new commands, patterns, state dicts, or agent-facing rules were added
+
+This is not optional. Other agents read these files first before touching any code.
+
 ## What Not To Do
 
 - Do not present temporary probes or validation helpers as the main value of the project.
@@ -160,3 +269,9 @@ When memory exists for the active project, `debug doctor`:
 - Do not skip `memory recall` at the start of a session on a known project — past fixes and structure facts save bridge round-trips.
 - Do not manually save things to memory that `workflow inspect` already caches automatically (render pipeline, Unity version, packages).
 - Do not trust cached structure as ground truth without verifying against the current bridge state when something looks wrong.
+- Do not promote a route to `mock-only` without all three steps: coverage dict entry + mock handler + test assertion.
+- Do not call direct `/api/context` for normal project-context reads; use `UnityMCPBackend.get_context()` so Unity settings/context work stays on the queued main-thread-safe path.
+- Do not make code changes without updating `CHANGELOG.md`, `TODO.md`, and `AGENTS.md`.
+- Do not create a second file IPC client — `core/file_ipc.py` already has `FileIPCClient`. The backend caches them in `_file_ipc_clients`.
+- Do not add routes to `StandaloneRouteHandler.cs` without reading the existing switch statement — just add a new case.
+- Do not add polling to `CliAnythingWindow.cs`; refresh caches from Unity events or explicit user actions.

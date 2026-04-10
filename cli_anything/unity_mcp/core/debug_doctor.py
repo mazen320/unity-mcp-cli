@@ -3,6 +3,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from .error_heuristics import (
+    analyze_compilation_errors,
+    analyze_console_messages,
+    summarize_compilation_errors,
+)
+
 if TYPE_CHECKING:
     from .memory import ProjectMemory
 
@@ -170,17 +176,36 @@ def build_debug_doctor_report(
         add_command(f"cli-anything-unity-mcp --json debug capture --kind both{port_suffix}")
 
     if int(compilation.get("count") or 0) > 0:
-        entries = compilation.get("entries") or []
-        first_entry = entries[0] if entries and isinstance(entries[0], dict) else {}
+        comp_entries = list(compilation.get("entries") or [])
+        comp_summary = summarize_compilation_errors(comp_entries)
+
+        # Top-level umbrella finding so the summary is always visible.
         findings.append(
             _finding(
                 "error",
                 "Compilation Issues",
-                str(first_entry.get("message") or "Unity reports script compilation errors."),
+                (
+                    f"{comp_summary['totalErrors']} error(s) across "
+                    f"{len(comp_summary['affectedFiles'])} file(s). "
+                    f"Unique codes: {', '.join(comp_summary['uniqueErrorCodes'][:5]) or 'unknown'}."
+                    if comp_summary["uniqueErrorCodes"]
+                    else f"{comp_summary['totalErrors']} compiler error(s) detected."
+                ),
                 f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{port_suffix}",
-                {"count": int(compilation.get("count") or 0)},
+                {
+                    "count": comp_summary["totalErrors"],
+                    "uniqueErrorCodes": comp_summary["uniqueErrorCodes"],
+                    "affectedFiles": comp_summary["affectedFiles"],
+                    "errorCodeCounts": comp_summary["errorCodeCounts"],
+                },
             )
         )
+        # Per-code enriched findings (deduped, human-readable).
+        for heuristic_finding in analyze_compilation_errors(comp_entries, port_suffix):
+            findings.append(heuristic_finding)
+            cmd = heuristic_finding.get("command")
+            if cmd:
+                add_command(cmd)
         add_command(f"cli-anything-unity-mcp --json console --count 50 --type error{port_suffix}")
 
     if int(missing_references.get("totalFound") or 0) > 0:
@@ -224,6 +249,12 @@ def build_debug_doctor_report(
             )
         )
         add_command(f"cli-anything-unity-mcp --json console --count 50 --type {highest_severity}{port_suffix}")
+        # Enrich with Unity-specific runtime pattern heuristics.
+        for heuristic_finding in analyze_console_messages(entries, port_suffix):
+            findings.append(heuristic_finding)
+            cmd = heuristic_finding.get("command")
+            if cmd:
+                add_command(cmd)
 
     if bool(editor_state.get("isCompiling")):
         findings.append(
@@ -314,6 +345,10 @@ def build_debug_doctor_report(
             )
         )
 
+    # Compilation summary at top level for quick agent scanning.
+    comp_entries = list(compilation.get("entries") or [])
+    comp_summary_block = summarize_compilation_errors(comp_entries) if comp_entries else None
+
     return {
         "title": "Unity Debug Doctor",
         "summary": {
@@ -323,6 +358,7 @@ def build_debug_doctor_report(
             "findingCount": len(findings),
         },
         "findings": findings,
+        "compilationSummary": comp_summary_block,
         "recentCommands": list(recent_history or []),
         "recommendedCommands": recommended_commands,
         "snapshot": snapshot,

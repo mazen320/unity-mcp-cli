@@ -3,17 +3,25 @@
 Unit coverage:
 - Route mapping for generic `tool` calls and irregular override cases.
 - Session persistence and command history trimming.
+- Project memory for recurring and resolved missing-reference tracking.
+- Project memory isolation when explicit or env-configured memory roots are used.
+- Project memory selection summaries for compact public context.
+- Tool coverage matrix promotion for focused `mock-only` routes.
 - Instance discovery behavior for single-instance auto-select and multi-instance selection requirements.
 - Selected-project recovery when the Unity bridge disappears and comes back on a new port.
+- Main-thread-safe project-context retrieval: queued `context`, queued `editor/execute-code` shim when the route is missing, and direct GET only for legacy fallback.
 
 End-to-end coverage:
 - Run the installed `cli-anything-unity-mcp` entry point in subprocess mode.
-- Exercise `instances`, `select`, `scene-info`, `tool unity_execute_code`, and REPL-default behavior against a mock Unity bridge server.
+- Exercise `instances`, `select`, select-time project memory surfacing, `scene-info`, `tool unity_execute_code`, and REPL-default behavior against a mock Unity bridge server.
 - Exercise `agent save`, `agent list`, `agent current`, `agent sessions`, and `agent log` against the CLI plus mock bridge routes.
 - Exercise `agent watch` so queue/session/log activity can be sampled over repeated debug snapshots.
 - Exercise `tool-coverage` summary and category filtering against the generated upstream coverage matrix.
+- Exercise focused mock-only advanced routes across the broad advanced-tool surface through the subprocess CLI plus mock Unity bridge.
 - Exercise `debug bridge` so registry/discovery/selected-port health can be checked independently of scene logic.
 - Exercise `debug doctor` so the CLI can summarize likely Unity issues and recommend the next commands to run.
+- Exercise `debug doctor` compiler/runtime heuristics so CS error codes and Unity exception patterns become actionable findings.
+- Exercise `workflow validate-scene` recurring missing-reference memory integration.
 - Exercise `debug trace` so recent CLI route/tool attempts can be inspected with status and duration.
 - Exercise `debug editor-log` so the real Unity Editor.log can be tailed and filtered independently of bridge console output.
 - Exercise `debug editor-log --context` so bridge lines can be inspected together with surrounding reload/import context.
@@ -22,6 +30,11 @@ End-to-end coverage:
 - Exercise `debug settings` so Unity Console breadcrumbs and dashboard defaults can be persisted safely.
 - Exercise `debug dashboard` so a local browser UI can inspect doctor findings, trace, bridge state, console output, and Editor.log together.
 - Exercise `debug capture` so paired Scene/Game screenshots can be saved independently of any higher-level workflow.
+- Exercise `tool-coverage --fixture-plan` so remaining package-dependent deferred work has agent-ready setup, preflight, risk ordering, and cleanup guidance.
+- Exercise `tool-coverage --support-plan` so unsupported Unity Hub work has an explicit implementation track and guardrails.
+- Exercise `tool-coverage --handoff-plan` so remaining deferred and unsupported work has one cross-track contributor handoff.
+- Exercise File IPC route params so the Python client writes Unity-readable raw JSON strings instead of objects that `JsonUtility` drops.
+- Exercise File IPC agent registry routes so `agent queue`, `agent sessions`, `agent log`, and `agent watch` work without the AnkleBreaker HTTP queue.
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
   - `workflow audit-advanced` across memory, graphics, physics, profiler, sceneview, settings, testing, ui, audio, lighting, animation, input, shadergraph, terrain, and navmesh
@@ -41,8 +54,19 @@ python -m pip install -e .
 python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp.tests.test_full_e2e -v
 cli-anything-unity-mcp --help
 cli-anything-unity-mcp --json tool-coverage --summary
-cli-anything-unity-mcp --json tool-coverage --category terrain --status deferred --summary --next-batch 5
+cli-anything-unity-mcp --json tool-coverage --category amplify --status deferred --summary --next-batch 5
+cli-anything-unity-mcp --json tool-coverage --status deferred --summary --fixture-plan
+cli-anything-unity-mcp --json tool-coverage --status unsupported --summary --support-plan
+cli-anything-unity-mcp --json tool-coverage --summary --handoff-plan
 cli-anything-unity-mcp --json tool-coverage --status unsupported
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json instances
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json state
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json route --params '{"menuItem":"Window/CLI Anything"}' editor/execute-menu-item
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --agent-id file-test-agent --json agent queue
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --agent-id file-test-agent --json agent sessions
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --agent-id file-test-agent --json agent log file-test-agent
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --agent-id file-test-agent --json agent watch --iterations 1 --interval 0
+cli-anything-unity-mcp --json tool unity_get_project_context --port 7891
 cli-anything-unity-mcp --json debug bridge --port 7891
 cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port 7891
 cli-anything-unity-mcp --json debug trace --tail 20

@@ -1,8 +1,10 @@
 # Unity Plugin Setup
 
-This page explains the one piece that confuses most people:
+This page explains the full advanced AnkleBreaker plugin path.
 
-`unity-mcp-cli` is the client, but the Unity Editor still needs a plugin inside the Unity project.
+If you want the standalone core route path that does not require the AnkleBreaker plugin, use [FILE_IPC.md](FILE_IPC.md) instead.
+
+`unity-mcp-cli` is the client. For the plugin HTTP path, the Unity Editor also needs the AnkleBreaker plugin inside the Unity project.
 
 ## What The Plugin Is
 
@@ -18,7 +20,7 @@ It runs inside the Unity Editor and does the real work:
 - enters play mode
 - captures scene and game screenshots
 
-Without that plugin, the CLI has nothing to talk to.
+Without that plugin, the plugin HTTP path has nothing to talk to. The separate File IPC path can still work for core routes if you install the bridge scripts from this repo.
 
 Simple mental model:
 
@@ -55,7 +57,7 @@ So there are two different things:
    Useful if you want to read or edit plugin code.
 
 2. Plugin installed into a Unity project
-   Required for the CLI to control that Unity project.
+   Required for the plugin HTTP path to control that Unity project.
 
 Most people only need the second one.
 
@@ -159,7 +161,13 @@ You do not need:
 - an MCP client setup
 - a plugin source fork just to use the CLI
 
-For normal use, the minimum setup is:
+For standalone core File IPC use, the minimum setup is:
+
+1. Unity project
+2. `FileIPCBridge.cs` and `StandaloneRouteHandler.cs` copied into `Assets/Editor/`
+3. this CLI installed on your machine
+
+For full advanced plugin HTTP use, the minimum setup is:
 
 1. Unity project
 2. upstream Unity plugin installed in that project
@@ -167,12 +175,13 @@ For normal use, the minimum setup is:
 
 ## Why This Dependency Still Exists
 
-This CLI is a better client layer, not a full replacement for the Unity Editor backend.
+This CLI is a better client layer plus a growing standalone bridge, not a full replacement for every Unity Editor backend route yet.
 
 Right now:
 
-- the plugin is still the thing inside Unity that actually performs editor actions
-- the CLI is the lightweight way to drive it
+- the File IPC bridge performs core editor actions without the AnkleBreaker plugin
+- the plugin is still the thing inside Unity that performs the broad advanced route surface
+- the CLI is the lightweight way to drive either path
 
-If this project ever grows its own full Unity-side backend package, that setup can change.
+If the standalone bridge grows into a full Unity-side backend package, this setup can change.
 But today, this is the honest architecture.

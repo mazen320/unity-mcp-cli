@@ -66,7 +66,30 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         self.scripts = {}
         self.prefabs = {}
         self.materials = {}
+        self.ui_elements = {}
+        self.lighting_environment = {}
+        self.animation_clips = {}
+        self.animation_controllers = {}
+        self.terrains = {}
         self.missing_references = []
+        self._shadergraphs: dict = {}
+        self._selection: list = []
+        self._playerprefs: dict = {}
+        self._input_assets: dict = {}
+        self._scriptable_objects: dict = {}
+        self._editorprefs: dict = {}
+        self._spriteatlases: dict = {}
+        self._mppm = {
+            "activeScenario": None,
+            "running": False,
+            "scenarios": [
+                {
+                    "path": "Assets/CLIAnythingFixtures/MPPM/TwoPlayers.mppm",
+                    "name": "TwoPlayers",
+                    "playerCount": 2,
+                }
+            ],
+        }
 
     def _resolve_gameobject_name(self, payload: dict) -> str | None:
         raw_name = (
@@ -645,11 +668,12 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             self.scene_dirty = False
             return {"success": True, "scene": self.active_scene_name, "path": self.active_scene_path}
         if route == "scene/new":
-            self.active_scene_name = "Untitled"
-            self.active_scene_path = "Assets/Scenes/Untitled.unity"
+            name = str(payload.get("name") or "Untitled")
+            self.active_scene_name = name
+            self.active_scene_path = f"Assets/Scenes/{name}.unity"
             self.scene_dirty = False
             self.gameobjects = {}
-            return {"success": True, "name": self.active_scene_name, "path": self.active_scene_path}
+            return {"success": True, "sceneName": name, "name": name, "path": self.active_scene_path}
         if route == "scene/open":
             path = payload.get("path") or self.active_scene_path
             discard_unsaved = bool(payload.get("discardUnsaved"))
@@ -1038,6 +1062,204 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 "setPassCalls": mesh_objects,
                 "frameTimeMs": 16.6,
             }
+        # ── Profiler additional routes ────────────────────────────────────
+        if route == "profiler/enable":
+            enabled = bool(payload.get("enabled", True))
+            return {"success": True, "enabled": enabled}
+        if route == "profiler/analyze":
+            return {"success": True, "frames": 60, "avgFrameTimeMs": 16.6, "peakFrameTimeMs": 33.2, "bottleneck": "Rendering"}
+        if route == "profiler/frame-data":
+            frame = int(payload.get("frame") or 0)
+            return {"frame": frame, "frameTimeMs": 16.6, "renderTimeMs": 8.2, "scriptTimeMs": 2.1, "physicsTimeMs": 1.0}
+        if route == "profiler/memory":
+            return {"totalMB": 256.0, "usedMB": 128.0, "reservedMB": 200.0, "gcAllocMB": 0.5}
+        if route == "profiler/memory-breakdown":
+            return {"totalMB": 256.0, "textures": 64.0, "meshes": 32.0, "scripts": 12.0, "audio": 8.0, "other": 140.0}
+        if route == "profiler/memory-snapshot":
+            return {"success": True, "snapshotPath": "Temp/MemorySnapshot.snap", "totalMB": 256.0}
+        if route == "profiler/memory-top-assets":
+            return {"count": 3, "assets": [{"name": "MainTexture", "sizeMB": 32.0, "type": "Texture2D"}, {"name": "MainMesh", "sizeMB": 12.0, "type": "Mesh"}, {"name": "AudioClip", "sizeMB": 8.0, "type": "AudioClip"}]}
+        # ── Debugger routes ──────────────────────────────────────────────
+        if route == "debugger/enable":
+            enabled = bool(payload.get("enabled", True))
+            return {"success": True, "enabled": enabled}
+        if route == "debugger/events":
+            limit = int(payload.get("limit") or 20)
+            return {"count": 0, "events": [], "limit": limit}
+        if route == "debugger/event-details":
+            event_id = str(payload.get("eventId") or "")
+            return {"eventId": event_id, "details": {}, "stackTrace": ""}
+        # ── EditorPrefs routes ───────────────────────────────────────────
+        if route == "editorprefs/get":
+            key = str(payload.get("key") or "")
+            return {"key": key, "value": self._editorprefs.get(key), "exists": key in self._editorprefs}
+        if route == "editorprefs/set":
+            key = str(payload.get("key") or "")
+            value = payload.get("value")
+            self._editorprefs[key] = value
+            return {"success": True, "key": key, "value": value}
+        if route == "editorprefs/delete":
+            key = str(payload.get("key") or "")
+            existed = key in self._editorprefs
+            self._editorprefs.pop(key, None)
+            return {"success": True, "key": key, "deleted": existed}
+        # ── Audio additional routes ──────────────────────────────────────
+        if route == "audio/create-source":
+            go_path = str(payload.get("gameObjectPath") or "")
+            clip_path = str(payload.get("clipPath") or "")
+            self.gameobjects.setdefault(go_path, {"name": go_path, "components": []}).setdefault("components", [])
+            if "AudioSource" not in self.gameobjects[go_path]["components"]:
+                self.gameobjects[go_path]["components"].append("AudioSource")
+            return {"success": True, "gameObjectPath": go_path, "clipPath": clip_path}
+        if route == "audio/set-global":
+            return {"success": True, "volume": float(payload.get("volume", 1.0)), "pause": bool(payload.get("pause", False))}
+        # ── Console clear route ──────────────────────────────────────────
+        if route == "console/clear":
+            return {"success": True}
+        # ── Screenshot routes ────────────────────────────────────────────
+        if route == "screenshot/game":
+            path = str(payload.get("path") or "Temp/screenshot_game.png")
+            return {"success": True, "path": path, "width": int(payload.get("width") or 1920), "height": int(payload.get("height") or 1080)}
+        if route == "screenshot/scene":
+            path = str(payload.get("path") or "Temp/screenshot_scene.png")
+            return {"success": True, "path": path, "width": int(payload.get("width") or 1920), "height": int(payload.get("height") or 1080)}
+        # ── Testing additional routes ────────────────────────────────────
+        if route == "testing/run-tests":
+            mode = str(payload.get("mode") or "EditMode")
+            job_id = f"test-job-{mode.lower()}-001"
+            return {"success": True, "jobId": job_id, "mode": mode, "status": "Running"}
+        if route == "testing/get-job":
+            job_id = str(payload.get("jobId") or "")
+            return {"jobId": job_id, "status": "Completed", "passed": 1, "failed": 0, "skipped": 0, "results": []}
+        # ── Undo additional routes ───────────────────────────────────────
+        if route == "undo/clear":
+            return {"success": True}
+        if route == "undo/history":
+            return {"count": 0, "entries": []}
+        if route == "undo/redo":
+            return {"success": True}
+        # ── VFX routes ───────────────────────────────────────────────────
+        if route == "shadergraph/list-vfx":
+            return {"count": 0, "vfxGraphs": []}
+        if route == "shadergraph/open-vfx":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path}
+        # ── Component additional routes ──────────────────────────────────
+        if route == "component/get-referenceable":
+            go_path = str(payload.get("gameObjectPath") or "")
+            component = str(payload.get("component") or "")
+            return {"gameObjectPath": go_path, "component": component, "referenceableFields": [{"name": "target", "type": "Transform"}, {"name": "renderer", "type": "Renderer"}]}
+        if route == "component/batch-wire":
+            pairs = payload.get("pairs") or []
+            return {"success": True, "wired": len(pairs), "failed": 0}
+        if route == "component/remove":
+            go_path = str(payload.get("gameObjectPath") or payload.get("objectPath") or "")
+            component = str(payload.get("component") or "")
+            comps = self.gameobjects.get(go_path, {}).get("components", [])
+            removed = component in comps
+            if removed:
+                comps.remove(component)
+            self.scene_dirty = True
+            return {"success": True, "gameObjectPath": go_path, "component": component, "removed": removed}
+        # ── GameObject additional routes ─────────────────────────────────
+        if route == "prefab/duplicate":
+            go_path = str(payload.get("gameObjectPath") or payload.get("path") or "")
+            new_name = str(payload.get("name") or f"{go_path}_Copy")
+            original = self.gameobjects.get(go_path, {})
+            self.gameobjects[new_name] = {**original, "name": new_name}
+            self.scene_dirty = True
+            return {"success": True, "originalPath": go_path, "duplicatePath": new_name}
+        if route == "prefab/reparent":
+            go_path = str(payload.get("gameObjectPath") or payload.get("path") or "")
+            parent_path = payload.get("parentPath")
+            self.scene_dirty = True
+            return {"success": True, "gameObjectPath": go_path, "parentPath": parent_path}
+        if route == "prefab/set-active":
+            go_path = str(payload.get("gameObjectPath") or payload.get("path") or "")
+            active = bool(payload.get("active", True))
+            if go_path in self.gameobjects:
+                self.gameobjects[go_path]["active"] = active
+            self.scene_dirty = True
+            return {"success": True, "gameObjectPath": go_path, "active": active}
+        if route == "prefab/set-object-reference":
+            go_path = str(payload.get("gameObjectPath") or "")
+            component = str(payload.get("component") or "")
+            prop = str(payload.get("propertyName") or "")
+            ref_path = payload.get("referencePath")
+            return {"success": True, "gameObjectPath": go_path, "component": component, "propertyName": prop, "referencePath": ref_path}
+        # ── Asset additional routes ──────────────────────────────────────
+        if route == "asset/import":
+            asset_path = str(payload.get("path") or "")
+            return {"success": True, "path": asset_path, "importedAt": "2026-04-10T00:00:00Z"}
+        if route == "asset/create-material":
+            path = str(payload.get("path") or "Assets/Materials/NewMaterial.mat")
+            shader = str(payload.get("shader") or "Standard")
+            self.materials[path] = {"path": path, "shader": shader}
+            return {"success": True, "path": path, "shader": shader}
+        # ── Build route ──────────────────────────────────────────────────
+        if route == "build/start":
+            target = str(payload.get("target") or "StandaloneWindows64")
+            return {"success": True, "target": target, "buildPath": str(payload.get("buildPath") or f"Builds/{target}"), "status": "Started"}
+        # ── Ping ─────────────────────────────────────────────────────────
+        if route == "ping":
+            return {"status": "ok", "unityVersion": "6000.4.0f1", "projectName": "Demo", "port": self.port}
+        # ── Execute menu item ────────────────────────────────────────────
+        if route == "editor/execute-menu-item":
+            menu_item = str(payload.get("menuItem") or "")
+            return {"success": True, "menuItem": menu_item}
+        # ── Renderer set-material ────────────────────────────────────────
+        if route == "renderer/set-material":
+            go_path = str(payload.get("gameObjectPath") or payload.get("objectPath") or "")
+            mat_path = str(payload.get("materialPath") or "")
+            return {"success": True, "gameObjectPath": go_path, "materialPath": mat_path}
+        # ── SceneView set-camera ─────────────────────────────────────────
+        if route == "sceneview/set-camera":
+            return {"success": True, "position": payload.get("position", {"x": 0, "y": 0, "z": -10}), "rotation": payload.get("rotation", {"x": 0, "y": 0, "z": 0, "w": 1})}
+        # ── Context ──────────────────────────────────────────────────────
+        if route == "context":
+            return {"projectPath": "C:/Projects/Demo", "unityVersion": "6000.4.0f1", "platform": "StandaloneWindows64", "renderPipeline": "UniversalRP"}
+        # ── MPPM / scenario routes ───────────────────────────────────────
+        if route == "scenario/info":
+            return {
+                "available": True,
+                "package": "Unity Multiplayer Play Mode",
+                "scenarioCount": len(self._mppm["scenarios"]),
+                "activeScenario": self._mppm["activeScenario"],
+            }
+        if route == "scenario/list":
+            return {
+                "count": len(self._mppm["scenarios"]),
+                "scenarios": self._deep_clone(self._mppm["scenarios"]),
+                "activeScenario": self._mppm["activeScenario"],
+            }
+        if route == "scenario/status":
+            active_path = self._mppm["activeScenario"]
+            active = next((item for item in self._mppm["scenarios"] if item["path"] == active_path), None)
+            return {
+                "running": self._mppm["running"],
+                "activeScenario": active_path,
+                "playerCount": active["playerCount"] if active else 0,
+            }
+        if route == "scenario/activate":
+            scenario_path = str(payload.get("path") or self._mppm["scenarios"][0]["path"])
+            if not any(item["path"] == scenario_path for item in self._mppm["scenarios"]):
+                self._mppm["scenarios"].append(
+                    {
+                        "path": scenario_path,
+                        "name": Path(scenario_path).stem,
+                        "playerCount": int(payload.get("playerCount", 2)),
+                    }
+                )
+            self._mppm["activeScenario"] = scenario_path
+            return {"success": True, "activeScenario": scenario_path}
+        if route == "scenario/start":
+            if not self._mppm["activeScenario"]:
+                self._mppm["activeScenario"] = self._mppm["scenarios"][0]["path"]
+            self._mppm["running"] = True
+            return {"success": True, "running": True, "activeScenario": self._mppm["activeScenario"]}
+        if route == "scenario/stop":
+            self._mppm["running"] = False
+            return {"success": True, "running": False, "activeScenario": self._mppm["activeScenario"]}
         if route == "testing/list-tests":
             mode = str(payload.get("mode") or "EditMode")
             return {
@@ -1124,6 +1346,982 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 "point": {"x": origin["x"], "y": origin["y"] - 1.0, "z": origin["z"]},
                 "normal": {"x": -direction["x"], "y": -direction["y"], "z": -direction["z"]},
             }
+        if route == "ui/create-canvas":
+            name = str(payload.get("name") or "Canvas")
+            self._register_gameobject(name, components=["Transform", "Canvas", "CanvasScaler", "GraphicRaycaster"])
+            self.ui_elements[name] = {"type": "canvas", "renderMode": payload.get("renderMode", "overlay")}
+            self.scene_dirty = True
+            return {"success": True, "name": name, "path": name, "type": "canvas"}
+        if route == "ui/create-element":
+            element_type = str(payload.get("type") or "text").lower()
+            name = str(payload.get("name") or f"{element_type.title()}Element")
+            parent = str(payload.get("parent") or "")
+            if not parent:
+                parent = next((key for key, value in self.ui_elements.items() if value.get("type") == "canvas"), "")
+            components_by_type = {
+                "text": ["Transform", "RectTransform", "Text"],
+                "image": ["Transform", "RectTransform", "Image"],
+                "button": ["Transform", "RectTransform", "Button", "Image"],
+                "panel": ["Transform", "RectTransform", "Image"],
+            }
+            self._register_gameobject(
+                name,
+                parent=parent if parent in self.gameobjects else None,
+                components=components_by_type.get(element_type, ["Transform", "RectTransform"]),
+            )
+            self.ui_elements[name] = {
+                "type": element_type,
+                "parent": parent,
+                "text": payload.get("label", ""),
+                "anchoredPosition": self._deep_clone(payload.get("anchoredPosition")) or {"x": 0, "y": 0},
+                "sizeDelta": self._deep_clone(payload.get("sizeDelta")) or {"x": 160, "y": 40},
+            }
+            self.scene_dirty = True
+            return {"success": True, "name": name, "path": self._hierarchy_path(name), "type": element_type}
+        if route == "ui/set-text":
+            path = str(payload.get("path") or "")
+            name = path.split("/")[-1]
+            if name not in self.ui_elements:
+                return {"error": "UI text element not found"}
+            self.ui_elements[name].update({
+                "text": payload.get("text", ""),
+                "fontSize": payload.get("fontSize"),
+                "alignment": payload.get("alignment"),
+                "color": self._deep_clone(payload.get("color")),
+            })
+            self.scene_dirty = True
+            return {"success": True, "path": path, "text": self.ui_elements[name]["text"]}
+        if route == "ui/set-image":
+            path = str(payload.get("path") or "")
+            name = path.split("/")[-1]
+            if name not in self.ui_elements:
+                return {"error": "UI image element not found"}
+            self.ui_elements[name].update({
+                "color": self._deep_clone(payload.get("color")),
+                "sprite": payload.get("sprite"),
+                "imageType": payload.get("imageType"),
+                "raycastTarget": payload.get("raycastTarget"),
+            })
+            self.scene_dirty = True
+            return {"success": True, "path": path, "image": self.ui_elements[name]}
+        if route == "ui/info":
+            return {
+                "canvasCount": sum(1 for item in self.ui_elements.values() if item.get("type") == "canvas"),
+                "elementCount": sum(1 for item in self.ui_elements.values() if item.get("type") != "canvas"),
+                "elements": self._deep_clone(self.ui_elements),
+            }
+        if route == "lighting/create-light-probe-group":
+            name = str(payload.get("name") or "LightProbeGroup")
+            self._register_gameobject(name, components=["Transform", "LightProbeGroup"], position=payload.get("position"))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "probeCount": 4}
+        if route == "lighting/create-reflection-probe":
+            name = str(payload.get("name") or "ReflectionProbe")
+            self._register_gameobject(name, components=["Transform", "ReflectionProbe"], position=payload.get("position"))
+            return {
+                "success": True,
+                "name": name,
+                "size": self._deep_clone(payload.get("size")) or {"x": 10, "y": 10, "z": 10},
+                "resolution": int(payload.get("resolution") or 128),
+                "mode": payload.get("mode") or "Baked",
+            }
+        if route == "lighting/set-environment":
+            self.lighting_environment.update(self._deep_clone(payload) or {})
+            self.scene_dirty = True
+            return {"success": True, "environment": dict(self.lighting_environment)}
+        if route == "animation/create-clip":
+            path = str(payload.get("path") or "Assets/Clip.anim")
+            self.animation_clips[path] = {
+                "path": path,
+                "loop": bool(payload.get("loop")),
+                "frameRate": float(payload.get("frameRate") or 60),
+                "events": [],
+                "curves": {},
+            }
+            return {"success": True, "path": path}
+        if route == "animation/create-controller":
+            path = str(payload.get("path") or "Assets/Controller.controller")
+            self.animation_controllers[path] = {"path": path, "parameters": [], "transitions": [], "states": []}
+            return {"success": True, "path": path}
+        if route == "animation/set-clip-curve":
+            clip_path = str(payload.get("clipPath") or "")
+            if clip_path not in self.animation_clips:
+                self.animation_clips[clip_path] = {"path": clip_path, "events": [], "curves": {}}
+            property_name = str(payload.get("propertyName") or "")
+            type_name = str(payload.get("type") or payload.get("typeName") or "Transform")
+            self.animation_clips[clip_path].setdefault("curves", {})[f"{type_name}:{property_name}"] = list(payload.get("keyframes") or [])
+            return {"success": True, "clipPath": clip_path, "propertyName": property_name}
+        if route == "animation/add-event":
+            clip_path = str(payload.get("clipPath") or "")
+            if clip_path not in self.animation_clips:
+                return {"error": "Animation clip not found"}
+            event = {
+                "functionName": payload.get("functionName"),
+                "time": float(payload.get("time") or 0),
+                "stringParameter": payload.get("stringParameter"),
+                "intParameter": payload.get("intParameter"),
+                "floatParameter": payload.get("floatParameter"),
+            }
+            self.animation_clips[clip_path].setdefault("events", []).append(event)
+            return {"success": True, "clipPath": clip_path, "event": event}
+        if route == "animation/get-events":
+            clip_path = str(payload.get("clipPath") or "")
+            return {"clipPath": clip_path, "events": list(self.animation_clips.get(clip_path, {}).get("events", []))}
+        if route == "animation/get-curve-keyframes":
+            clip_path = str(payload.get("clipPath") or "")
+            property_name = str(payload.get("propertyName") or "")
+            type_name = str(payload.get("typeName") or payload.get("type") or "Transform")
+            keyframes = self.animation_clips.get(clip_path, {}).get("curves", {}).get(f"{type_name}:{property_name}", [])
+            return {"clipPath": clip_path, "propertyName": property_name, "typeName": type_name, "keyframes": list(keyframes)}
+        if route == "animation/clip-info":
+            path = str(payload.get("path") or "")
+            clip = self.animation_clips.get(path)
+            if not clip:
+                return {"error": "Animation clip not found"}
+            return {
+                "path": path,
+                "frameRate": clip.get("frameRate", 60),
+                "loop": bool(clip.get("loop")),
+                "eventCount": len(clip.get("events", [])),
+                "curveCount": len(clip.get("curves", {})),
+            }
+        if route == "animation/add-parameter":
+            controller_path = str(payload.get("controllerPath") or "")
+            controller = self.animation_controllers.setdefault(controller_path, {"path": controller_path, "parameters": [], "transitions": [], "states": []})
+            parameter = {
+                "name": payload.get("parameterName"),
+                "type": payload.get("parameterType"),
+                "defaultValue": payload.get("defaultValue"),
+            }
+            controller.setdefault("parameters", []).append(parameter)
+            return {"success": True, "controllerPath": controller_path, "parameter": parameter}
+        if route == "animation/add-transition":
+            controller_path = str(payload.get("controllerPath") or "")
+            controller = self.animation_controllers.setdefault(controller_path, {"path": controller_path, "parameters": [], "transitions": [], "states": []})
+            transition = {
+                "sourceState": payload.get("sourceState"),
+                "destinationState": payload.get("destinationState"),
+                "duration": payload.get("duration"),
+                "conditions": self._deep_clone(payload.get("conditions")) or [],
+            }
+            controller.setdefault("transitions", []).append(transition)
+            return {"success": True, "controllerPath": controller_path, "transition": transition}
+        if route == "terrain/create":
+            name = str(payload.get("name") or "Terrain")
+            self._register_gameobject(name, components=["Transform", "Terrain", "TerrainCollider"], position=payload.get("position"))
+            self.terrains[name] = {
+                "name": name,
+                "width": float(payload.get("width") or 128),
+                "length": float(payload.get("length") or 128),
+                "height": float(payload.get("height") or 60),
+                "trees": [],
+            }
+            self.scene_dirty = True
+            return {"success": True, "name": name, "dataPath": payload.get("dataPath")}
+        if route == "terrain/list":
+            return {"count": len(self.terrains), "terrains": list(self.terrains.values())}
+        if route == "terrain/get-heights-region":
+            width = int(payload.get("width") or 1)
+            height = int(payload.get("height") or 1)
+            return {"width": width, "height": height, "heights": [[0.0 for _ in range(width)] for _ in range(height)]}
+        if route == "terrain/get-steepness":
+            return {"worldX": float(payload.get("worldX") or 0), "worldZ": float(payload.get("worldZ") or 0), "steepness": 0.0}
+        if route == "terrain/get-tree-instances":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            limit = int(payload.get("limit") or 20)
+            trees = list(self.terrains.get(name, {}).get("trees", []))[:limit]
+            return {"name": name, "count": len(trees), "trees": trees}
+        # ── Terrain mutation routes ──────────────────────────────────────
+        if route == "terrain/set-settings":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            if name in self.terrains:
+                for k in ("width", "length", "height", "heightmapResolution", "detailResolution"):
+                    if k in payload:
+                        self.terrains[name][k] = payload[k]
+            self.scene_dirty = True
+            return {"success": True, "name": name}
+        if route == "terrain/set-height":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "worldX": payload.get("worldX", 0), "worldZ": payload.get("worldZ", 0), "height": payload.get("height", 0)}
+        if route == "terrain/set-heights-region":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            heights = payload.get("heights") or [[0.0]]
+            return {"success": True, "name": name, "samplesWritten": len(heights) * len(heights[0]) if heights and isinstance(heights[0], list) else 0}
+        if route == "terrain/raise-lower":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "worldX": payload.get("worldX", 0), "worldZ": payload.get("worldZ", 0)}
+        if route == "terrain/flatten":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "height": float(payload.get("height") or 0)}
+        if route == "terrain/smooth":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "passes": int(payload.get("passes") or 1)}
+        if route == "terrain/noise":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "scale": float(payload.get("scale") or 1.0)}
+        if route == "terrain/add-layer":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            layer = {"texturePath": str(payload.get("texturePath") or ""), "index": len(self.terrains.get(name, {}).get("layers", []))}
+            self.terrains.setdefault(name, {"name": name}).setdefault("layers", []).append(layer)
+            self.scene_dirty = True
+            return {"success": True, "name": name, "layerIndex": layer["index"]}
+        if route == "terrain/remove-layer":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            idx = int(payload.get("layerIndex") or 0)
+            layers = self.terrains.get(name, {}).get("layers", [])
+            removed = layers.pop(idx) if idx < len(layers) else None
+            self.scene_dirty = True
+            return {"success": True, "name": name, "removed": removed is not None}
+        if route == "terrain/fill-layer":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "layerIndex": int(payload.get("layerIndex") or 0)}
+        if route == "terrain/paint-layer":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "worldX": payload.get("worldX", 0), "worldZ": payload.get("worldZ", 0), "layerIndex": payload.get("layerIndex", 0)}
+        if route == "terrain/add-detail-prototype":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            idx = len(self.terrains.get(name, {}).get("details", []))
+            self.terrains.setdefault(name, {"name": name}).setdefault("details", []).append({"texturePath": payload.get("texturePath"), "index": idx})
+            self.scene_dirty = True
+            return {"success": True, "name": name, "prototypeIndex": idx}
+        if route == "terrain/add-tree-prototype":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            idx = len(self.terrains.get(name, {}).get("treePrototypes", []))
+            self.terrains.setdefault(name, {"name": name}).setdefault("treePrototypes", []).append({"prefabPath": str(payload.get("prefabPath") or ""), "index": idx})
+            self.scene_dirty = True
+            return {"success": True, "name": name, "prototypeIndex": idx}
+        if route == "terrain/remove-tree-prototype":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            idx = int(payload.get("prototypeIndex") or 0)
+            protos = self.terrains.get(name, {}).get("treePrototypes", [])
+            removed = protos.pop(idx) if idx < len(protos) else None
+            self.scene_dirty = True
+            return {"success": True, "name": name, "removed": removed is not None}
+        if route == "terrain/place-trees":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            count = int(payload.get("count") or 1)
+            placed = [{"prototypeIndex": 0, "worldX": i * 5.0, "worldZ": 0.0} for i in range(count)]
+            self.terrains.setdefault(name, {"name": name}).setdefault("trees", []).extend(placed)
+            self.scene_dirty = True
+            return {"success": True, "name": name, "treesPlaced": count}
+        if route == "terrain/clear-trees":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            removed_count = len(self.terrains.get(name, {}).get("trees", []))
+            self.terrains.setdefault(name, {"name": name})["trees"] = []
+            self.scene_dirty = True
+            return {"success": True, "name": name, "treesRemoved": removed_count}
+        if route == "terrain/paint-detail":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "worldX": payload.get("worldX", 0), "worldZ": payload.get("worldZ", 0)}
+        if route == "terrain/scatter-detail":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            count = int(payload.get("count") or 10)
+            self.scene_dirty = True
+            return {"success": True, "name": name, "detailsPlaced": count}
+        if route == "terrain/clear-detail":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "prototypeIndex": payload.get("prototypeIndex", 0)}
+        if route == "terrain/set-neighbors":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "neighborsSet": sum(1 for k in ("left", "right", "top", "bottom") if payload.get(k))}
+        if route == "terrain/set-holes":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            holes = payload.get("holes") or []
+            return {"success": True, "name": name, "holesSet": len(holes)}
+        if route == "terrain/resize":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            if name in self.terrains:
+                if "width" in payload:
+                    self.terrains[name]["width"] = float(payload["width"])
+                if "length" in payload:
+                    self.terrains[name]["length"] = float(payload["length"])
+                if "height" in payload:
+                    self.terrains[name]["height"] = float(payload["height"])
+            self.scene_dirty = True
+            return {"success": True, "name": name}
+        if route == "terrain/create-grid":
+            count_x = int(payload.get("countX") or 2)
+            count_z = int(payload.get("countZ") or 2)
+            created = []
+            for xi in range(count_x):
+                for zi in range(count_z):
+                    gname = f"Terrain_{xi}_{zi}"
+                    self.terrains[gname] = {"name": gname, "width": float(payload.get("width") or 128), "length": float(payload.get("length") or 128), "height": float(payload.get("height") or 60), "trees": []}
+                    created.append(gname)
+            self.scene_dirty = True
+            return {"success": True, "count": len(created), "terrains": created}
+        if route == "terrain/export-heightmap":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            out_path = str(payload.get("outputPath") or f"Assets/{name}_heightmap.png")
+            return {"success": True, "name": name, "outputPath": out_path, "format": payload.get("format", "PNG")}
+        if route == "terrain/import-heightmap":
+            name = str(payload.get("name") or next(iter(self.terrains), ""))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "imagePath": str(payload.get("imagePath") or "")}
+        # ── Search routes (read-only) ────────────────────────────────────
+        if route == "search/assets":
+            query = str(payload.get("query") or payload.get("searchPattern") or "")
+            sampled = [a for a in self.scripts if query.lower() in a.lower()] if query else list(self.scripts.keys())[:10]
+            return {"query": query, "count": len(sampled), "results": [{"path": p, "type": "Script"} for p in sampled[:20]]}
+        if route == "search/by-component":
+            component = str(payload.get("component") or payload.get("componentType") or "")
+            matches = [{"path": k, "components": [component]} for k in self.gameobjects if component in self.gameobjects[k].get("components", [])]
+            return {"component": component, "count": len(matches), "results": matches}
+        if route == "search/by-layer":
+            layer = str(payload.get("layer") or payload.get("layerName") or "Default")
+            matches = [{"path": k} for k in self.gameobjects]
+            return {"layer": layer, "count": len(matches), "results": matches[:20]}
+        if route == "search/by-name":
+            name = str(payload.get("name") or payload.get("pattern") or "")
+            matches = [{"path": k} for k in self.gameobjects if name.lower() in k.lower()]
+            return {"name": name, "count": len(matches), "results": matches}
+        if route == "search/by-shader":
+            shader = str(payload.get("shader") or payload.get("shaderName") or "")
+            return {"shader": shader, "count": 0, "results": []}
+        if route == "search/by-tag":
+            tag = str(payload.get("tag") or "Untagged")
+            matches = [{"path": k} for k in self.gameobjects]
+            return {"tag": tag, "count": len(matches), "results": matches[:20]}
+        # ── Shader / ShaderGraph routes ──────────────────────────────────
+        if route == "shadergraph/list-shaders":
+            return {"count": 2, "shaders": [{"name": "Standard", "path": "Packages/com.unity.render-pipelines.universal/Shaders/Lit.shader"}, {"name": "Unlit", "path": "Packages/com.unity.render-pipelines.universal/Shaders/Unlit.shader"}]}
+        if route == "shadergraph/get-properties":
+            path = str(payload.get("shaderPath") or payload.get("path") or "")
+            return {"path": path, "properties": [{"name": "_Color", "type": "Color", "defaultValue": [1, 1, 1, 1]}, {"name": "_MainTex", "type": "Texture2D"}]}
+        if route == "shadergraph/get-node-types":
+            return {"count": 3, "nodeTypes": [{"type": "AddNode", "category": "Math"}, {"type": "MultiplyNode", "category": "Math"}, {"type": "SampleTexture2DNode", "category": "Texture"}]}
+        if route == "shadergraph/get-nodes":
+            path = str(payload.get("path") or "")
+            sg = self._shadergraphs.get(path, {})
+            nodes = sg.get("nodes", [])
+            return {"path": path, "count": len(nodes), "nodes": nodes}
+        if route == "shadergraph/get-edges":
+            path = str(payload.get("path") or "")
+            sg = self._shadergraphs.get(path, {})
+            edges = sg.get("edges", [])
+            return {"path": path, "count": len(edges), "edges": edges}
+        if route == "shadergraph/info":
+            path = str(payload.get("path") or "")
+            sg = self._shadergraphs.get(path, {})
+            return {"path": path, "name": sg.get("name", path.rsplit("/", 1)[-1]), "nodeCount": len(sg.get("nodes", [])), "edgeCount": len(sg.get("edges", []))}
+        if route == "shadergraph/list-subgraphs":
+            path = str(payload.get("path") or "")
+            return {"path": path, "count": 0, "subgraphs": []}
+        if route == "shadergraph/open":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path}
+        if route == "shadergraph/add-node":
+            path = str(payload.get("path") or "")
+            node_type = str(payload.get("nodeType") or "")
+            node_id = f"node_{len(self._shadergraphs.get(path, {}).get('nodes', []))}"
+            sg = self._shadergraphs.setdefault(path, {"name": path, "nodes": [], "edges": []})
+            node = {"id": node_id, "type": node_type, "position": payload.get("position", {"x": 0, "y": 0})}
+            sg["nodes"].append(node)
+            return {"success": True, "path": path, "node": node}
+        if route == "shadergraph/remove-node":
+            path = str(payload.get("path") or "")
+            node_id = str(payload.get("nodeId") or "")
+            sg = self._shadergraphs.get(path, {})
+            before = len(sg.get("nodes", []))
+            sg["nodes"] = [n for n in sg.get("nodes", []) if n.get("id") != node_id]
+            return {"success": True, "path": path, "removed": before > len(sg["nodes"])}
+        if route == "shadergraph/set-node-property":
+            path = str(payload.get("path") or "")
+            node_id = str(payload.get("nodeId") or "")
+            prop = str(payload.get("property") or "")
+            value = payload.get("value")
+            for n in self._shadergraphs.get(path, {}).get("nodes", []):
+                if n.get("id") == node_id:
+                    n[prop] = value
+            return {"success": True, "path": path, "nodeId": node_id, "property": prop, "value": value}
+        if route == "shadergraph/connect":
+            path = str(payload.get("path") or "")
+            edge = {"from": payload.get("fromNode"), "fromPort": payload.get("fromPort"), "to": payload.get("toNode"), "toPort": payload.get("toPort")}
+            self._shadergraphs.setdefault(path, {"name": path, "nodes": [], "edges": []})["edges"].append(edge)
+            return {"success": True, "path": path, "edge": edge}
+        if route == "shadergraph/disconnect":
+            path = str(payload.get("path") or "")
+            from_node = payload.get("fromNode")
+            to_node = payload.get("toNode")
+            sg = self._shadergraphs.get(path, {})
+            before = len(sg.get("edges", []))
+            sg["edges"] = [e for e in sg.get("edges", []) if not (e.get("from") == from_node and e.get("to") == to_node)]
+            return {"success": True, "path": path, "removed": before - len(sg.get("edges", []))}
+        # ── PlayerPrefs routes ──────────────────────────────────────────
+        if route == "playerprefs/set":
+            key = str(payload.get("key") or "")
+            pref_type = str(payload.get("type") or "string").lower()
+            value = payload.get("value")
+            if pref_type == "int":
+                value = int(value)
+            elif pref_type == "float":
+                value = float(value)
+            self._playerprefs[key] = {"value": value, "type": pref_type}
+            return {"success": True, "key": key, "value": value, "type": pref_type}
+        if route == "playerprefs/get":
+            key = str(payload.get("key") or "")
+            entry = self._playerprefs.get(key)
+            return {
+                "key": key,
+                "exists": entry is not None,
+                "value": entry.get("value") if entry else None,
+                "type": entry.get("type") if entry else str(payload.get("type") or "string").lower(),
+            }
+        if route == "playerprefs/delete":
+            key = str(payload.get("key") or "")
+            removed = key in self._playerprefs
+            self._playerprefs.pop(key, None)
+            return {"success": True, "key": key, "removed": removed}
+        if route == "playerprefs/delete-all":
+            deleted_count = len(self._playerprefs)
+            self._playerprefs.clear()
+            return {"success": True, "deletedCount": deleted_count}
+        # ── Selection routes ─────────────────────────────────────────────
+        if route == "selection/get":
+            return {"count": len(self._selection), "paths": list(self._selection), "activePath": self._selection[0] if self._selection else None}
+        if route == "selection/set":
+            raw_paths = payload.get("paths")
+            if isinstance(raw_paths, list):
+                paths = [str(path) for path in raw_paths]
+            elif payload.get("path"):
+                paths = [str(payload.get("path"))]
+            elif payload.get("instanceId") is not None:
+                instance_id = int(payload.get("instanceId"))
+                paths = [name for name, go in self.gameobjects.items() if go.get("instanceId") == instance_id]
+            else:
+                paths = []
+            self._selection = list(paths)
+            return {"success": True, "count": len(self._selection), "paths": self._selection, "activePath": self._selection[0] if self._selection else None}
+        if route == "selection/find-by-type":
+            type_name = str(payload.get("typeName") or payload.get("type") or "")
+            matches = [{"path": k} for k, v in self.gameobjects.items() if type_name in v.get("components", [])]
+            return {"typeName": type_name, "count": len(matches), "paths": [match["path"] for match in matches], "results": matches}
+        if route == "selection/focus-scene-view":
+            path = str(payload.get("path") or (self._selection[0] if self._selection else ""))
+            if path:
+                self._selection = [path]
+            return {"success": True, "focused": True, "path": path}
+        # ── ScriptableObject routes ──────────────────────────────────────
+        if route == "scriptableobject/list-types":
+            return {"count": 2, "types": [{"typeName": "GameSettings", "assembly": "Assembly-CSharp"}, {"typeName": "ItemDatabase", "assembly": "Assembly-CSharp"}]}
+        if route == "scriptableobject/create":
+            type_name = str(payload.get("typeName") or "")
+            asset_path = str(payload.get("path") or f"Assets/{type_name}.asset")
+            self._scriptable_objects[asset_path] = {"typeName": type_name, "path": asset_path, "fields": {}}
+            return {"success": True, "typeName": type_name, "path": asset_path}
+        if route == "scriptableobject/info":
+            path = str(payload.get("path") or "")
+            so = self._scriptable_objects.get(path, {})
+            return {"path": path, "typeName": so.get("typeName", ""), "fields": so.get("fields", {})}
+        if route == "scriptableobject/set-field":
+            path = str(payload.get("path") or "")
+            field = str(payload.get("fieldName") or "")
+            value = payload.get("value")
+            self._scriptable_objects.setdefault(path, {"typeName": "", "path": path, "fields": {}})["fields"][field] = value
+            return {"success": True, "path": path, "fieldName": field, "value": value}
+        # ── Settings routes ──────────────────────────────────────────────
+        if route == "settings/physics":
+            return {"gravity": {"x": 0, "y": -9.81, "z": 0}, "defaultContactOffset": 0.01, "sleepThreshold": 0.005, "queriesHitTriggers": True}
+        if route == "settings/player":
+            return {"companyName": "DefaultCompany", "productName": "Demo", "bundleVersion": "1.0", "scriptingBackend": "Mono"}
+        if route == "settings/render-pipeline":
+            return {"renderPipeline": "UniversalRP", "pipelineAssetPath": "Assets/Settings/URP.asset"}
+        if route == "settings/set-physics":
+            return {"success": True, "gravity": payload.get("gravity", {"x": 0, "y": -9.81, "z": 0})}
+        if route == "settings/set-player":
+            return {"success": True, "productName": payload.get("productName", "Demo")}
+        if route == "settings/quality-level":
+            level = payload.get("qualityLevel", 0)
+            return {"success": True, "qualityLevel": level}
+        if route == "settings/set-time":
+            return {"success": True, "fixedDeltaTime": payload.get("fixedDeltaTime", 0.02), "timeScale": payload.get("timeScale", 1.0)}
+        # ── Tag/Layer routes ─────────────────────────────────────────────
+        if route == "taglayer/info":
+            return {"tags": ["Untagged", "Respawn", "Finish", "Player"], "layers": ["Default", "TransparentFX", "Ignore Raycast", "Water", "UI"]}
+        if route == "taglayer/add-tag":
+            tag = str(payload.get("tag") or "")
+            return {"success": True, "tag": tag}
+        if route == "taglayer/set-tag":
+            go_path = str(payload.get("gameObjectPath") or "")
+            tag = str(payload.get("tag") or "Untagged")
+            if go_path in self.gameobjects:
+                self.gameobjects[go_path]["tag"] = tag
+            return {"success": True, "gameObjectPath": go_path, "tag": tag}
+        if route == "taglayer/set-layer":
+            go_path = str(payload.get("gameObjectPath") or "")
+            layer = str(payload.get("layer") or "Default")
+            if go_path in self.gameobjects:
+                self.gameobjects[go_path]["layer"] = layer
+            return {"success": True, "gameObjectPath": go_path, "layer": layer}
+        if route == "taglayer/set-static":
+            go_path = str(payload.get("gameObjectPath") or "")
+            is_static = bool(payload.get("isStatic", True))
+            if go_path in self.gameobjects:
+                self.gameobjects[go_path]["isStatic"] = is_static
+            return {"success": True, "gameObjectPath": go_path, "isStatic": is_static}
+        # ── Texture routes ───────────────────────────────────────────────
+        if route == "texture/info":
+            path = str(payload.get("path") or "")
+            return {"path": path, "width": 512, "height": 512, "format": "RGBA32", "mipMapCount": 10, "isReadable": False, "textureType": "Default"}
+        if route == "texture/reimport":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path}
+        if route == "texture/set-import":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "textureType": payload.get("textureType", "Default"), "maxSize": payload.get("maxSize", 2048)}
+        if route == "texture/set-normalmap":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "textureType": "NormalMap"}
+        if route == "texture/set-sprite":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "textureType": "Sprite", "spritePivot": payload.get("pivot", {"x": 0.5, "y": 0.5})}
+        # ── SpriteAtlas routes ──────────────────────────────────────────
+        if route == "spriteatlas/create":
+            path = str(payload.get("path") or "")
+            atlas = {
+                "path": path,
+                "packables": [],
+                "settings": {"includeInBuild": bool(payload.get("includeInBuild", True))},
+            }
+            self._spriteatlases[path] = atlas
+            return {"success": True, "path": path, "includeInBuild": atlas["settings"]["includeInBuild"]}
+        if route == "spriteatlas/list":
+            folder = str(payload.get("folder") or "")
+            atlases = [
+                atlas
+                for path, atlas in self._spriteatlases.items()
+                if not folder or path.startswith(folder)
+            ]
+            return {"count": len(atlases), "atlases": list(atlases)}
+        if route == "spriteatlas/info":
+            path = str(payload.get("path") or "")
+            atlas = self._spriteatlases.get(path, {"path": path, "packables": [], "settings": {}})
+            return {
+                "path": path,
+                "exists": path in self._spriteatlases,
+                "packableCount": len(atlas.get("packables", [])),
+                "packables": list(atlas.get("packables", [])),
+                "settings": dict(atlas.get("settings", {})),
+            }
+        if route == "spriteatlas/add":
+            path = str(payload.get("path") or "")
+            assets = list(payload.get("assetPaths") or [])
+            if payload.get("assetPath"):
+                assets.append(str(payload.get("assetPath")))
+            atlas = self._spriteatlases.setdefault(path, {"path": path, "packables": [], "settings": {}})
+            for asset_path in assets:
+                if asset_path not in atlas["packables"]:
+                    atlas["packables"].append(asset_path)
+            return {"success": True, "path": path, "addedCount": len(assets), "packables": list(atlas["packables"])}
+        if route == "spriteatlas/remove":
+            path = str(payload.get("path") or "")
+            assets = list(payload.get("assetPaths") or [])
+            if payload.get("assetPath"):
+                assets.append(str(payload.get("assetPath")))
+            atlas = self._spriteatlases.setdefault(path, {"path": path, "packables": [], "settings": {}})
+            before = len(atlas["packables"])
+            atlas["packables"] = [asset_path for asset_path in atlas["packables"] if asset_path not in assets]
+            return {"success": True, "path": path, "removedCount": before - len(atlas["packables"]), "packables": list(atlas["packables"])}
+        if route == "spriteatlas/settings":
+            path = str(payload.get("path") or "")
+            atlas = self._spriteatlases.setdefault(path, {"path": path, "packables": [], "settings": {}})
+            for key in ("includeInBuild", "enableRotation", "enableTightPacking", "padding", "readable", "generateMipMaps", "sRGB", "filterMode"):
+                if key in payload:
+                    atlas.setdefault("settings", {})[key] = payload[key]
+            return {"success": True, "path": path, "settings": dict(atlas.get("settings", {}))}
+        if route == "spriteatlas/delete":
+            path = str(payload.get("path") or "")
+            deleted = path in self._spriteatlases
+            self._spriteatlases.pop(path, None)
+            return {"success": True, "path": path, "deleted": deleted}
+        # ── NavMesh routes ───────────────────────────────────────────────
+        if route == "navigation/add-agent":
+            go_path = str(payload.get("gameObjectPath") or "")
+            return {"success": True, "gameObjectPath": go_path, "agentTypeId": 0, "speed": float(payload.get("speed") or 3.5)}
+        if route == "navigation/add-obstacle":
+            go_path = str(payload.get("gameObjectPath") or "")
+            return {"success": True, "gameObjectPath": go_path, "shape": str(payload.get("shape") or "Box")}
+        if route == "navigation/bake":
+            return {"success": True, "triangleCount": 128, "area": 100.0}
+        if route == "navigation/clear":
+            return {"success": True}
+        if route == "navigation/set-destination":
+            go_path = str(payload.get("gameObjectPath") or "")
+            dest = payload.get("destination") or {"x": 0, "y": 0, "z": 0}
+            return {"success": True, "gameObjectPath": go_path, "destination": dest, "pathStatus": "Complete"}
+        # ── Physics routes ───────────────────────────────────────────────
+        if route == "physics/collision-matrix":
+            return {"layers": [{"layer": 0, "name": "Default"}, {"layer": 5, "name": "UI"}], "matrix": {}}
+        if route == "physics/overlap-box":
+            center = payload.get("center") or {"x": 0, "y": 0, "z": 0}
+            return {"center": center, "count": 0, "colliders": []}
+        if route == "physics/overlap-sphere":
+            center = payload.get("center") or {"x": 0, "y": 0, "z": 0}
+            return {"center": center, "radius": float(payload.get("radius") or 1.0), "count": 0, "colliders": []}
+        if route == "physics/set-collision-layer":
+            layer_a = int(payload.get("layerA") or 0)
+            layer_b = int(payload.get("layerB") or 0)
+            ignore = bool(payload.get("ignore", False))
+            return {"success": True, "layerA": layer_a, "layerB": layer_b, "ignore": ignore}
+        if route == "physics/set-gravity":
+            gravity = payload.get("gravity") or {"x": 0, "y": -9.81, "z": 0}
+            return {"success": True, "gravity": gravity}
+        # ── Graphics routes ──────────────────────────────────────────────
+        if route == "graphics/asset-preview":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "previewData": "", "width": int(payload.get("width") or 128), "height": int(payload.get("height") or 128)}
+        if route == "graphics/prefab-render":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "renderData": "", "width": int(payload.get("width") or 256), "height": int(payload.get("height") or 256)}
+        if route == "graphics/texture-info":
+            path = str(payload.get("path") or "")
+            return {"path": path, "width": 1024, "height": 1024, "format": "DXT1", "mipMapCount": 11}
+        # ── Packages routes ──────────────────────────────────────────────
+        if route == "packages/list":
+            return {"count": 2, "packages": [{"name": "com.unity.textmeshpro", "version": "3.0.6", "displayName": "TextMeshPro"}, {"name": "com.unity.ugui", "version": "1.0.0", "displayName": "Unity UI"}]}
+        if route == "packages/info":
+            pkg = str(payload.get("packageId") or payload.get("name") or "")
+            return {"name": pkg, "displayName": pkg, "version": "1.0.0", "description": "Mock package", "dependencies": {}}
+        if route == "packages/search":
+            query = str(payload.get("query") or payload.get("search") or "")
+            return {"query": query, "count": 1, "results": [{"name": "com.unity.mock-" + query.lower().replace(" ", "-"), "version": "1.0.0"}]}
+        if route == "packages/add":
+            pkg = str(payload.get("packageId") or payload.get("name") or "")
+            return {"success": True, "packageId": pkg, "version": str(payload.get("version") or "latest")}
+        if route == "packages/remove":
+            pkg = str(payload.get("packageId") or payload.get("name") or "")
+            return {"success": True, "packageId": pkg}
+        # ── Input System routes ─────────────────────────────────────────
+        if route == "input/create":
+            path = str(payload.get("path") or "Assets/Input/Controls.inputactions")
+            name = str(payload.get("name") or path.rsplit("/", 1)[-1].replace(".inputactions", ""))
+            maps = {
+                str(item.get("name") or "Player"): {"name": str(item.get("name") or "Player"), "actions": {}}
+                for item in (payload.get("maps") or [])
+                if isinstance(item, dict)
+            }
+            self._input_assets[path] = {"path": path, "name": name, "maps": maps}
+            return {"success": True, "path": path, "name": name, "mapCount": len(maps)}
+        if route == "input/info":
+            path = str(payload.get("path") or "")
+            asset = self._input_assets.get(path, {"path": path, "name": "", "maps": {}})
+            action_count = sum(len(action_map.get("actions", {})) for action_map in asset.get("maps", {}).values())
+            return {
+                "path": path,
+                "name": asset.get("name", ""),
+                "mapCount": len(asset.get("maps", {})),
+                "actionCount": action_count,
+                "maps": list(asset.get("maps", {}).values()),
+            }
+        if route == "input/add-map":
+            path = str(payload.get("path") or "")
+            map_name = str(payload.get("mapName") or "")
+            asset = self._input_assets.setdefault(path, {"path": path, "name": path.rsplit("/", 1)[-1], "maps": {}})
+            asset.setdefault("maps", {}).setdefault(map_name, {"name": map_name, "actions": {}})
+            return {"success": True, "path": path, "mapName": map_name}
+        if route == "input/remove-map":
+            path = str(payload.get("path") or "")
+            map_name = str(payload.get("mapName") or "")
+            maps = self._input_assets.setdefault(path, {"path": path, "name": "", "maps": {}}).setdefault("maps", {})
+            removed = maps.pop(map_name, None) is not None
+            return {"success": True, "path": path, "mapName": map_name, "removed": removed}
+        if route == "input/add-action":
+            path = str(payload.get("path") or "")
+            map_name = str(payload.get("mapName") or "")
+            action_name = str(payload.get("actionName") or "")
+            asset = self._input_assets.setdefault(path, {"path": path, "name": path.rsplit("/", 1)[-1], "maps": {}})
+            action_map = asset.setdefault("maps", {}).setdefault(map_name, {"name": map_name, "actions": {}})
+            action = {
+                "name": action_name,
+                "actionType": str(payload.get("actionType") or "Value"),
+                "expectedControlType": payload.get("expectedControlType"),
+                "bindings": [],
+            }
+            action_map.setdefault("actions", {})[action_name] = action
+            return {"success": True, "path": path, "mapName": map_name, "actionName": action_name, "action": action}
+        if route == "input/remove-action":
+            path = str(payload.get("path") or "")
+            map_name = str(payload.get("mapName") or "")
+            action_name = str(payload.get("actionName") or "")
+            actions = self._input_assets.setdefault(path, {"path": path, "name": "", "maps": {}}).setdefault("maps", {}).setdefault(map_name, {"name": map_name, "actions": {}}).setdefault("actions", {})
+            removed = actions.pop(action_name, None) is not None
+            return {"success": True, "path": path, "mapName": map_name, "actionName": action_name, "removed": removed}
+        if route == "input/add-binding":
+            path = str(payload.get("path") or "")
+            map_name = str(payload.get("mapName") or "")
+            action_name = str(payload.get("actionName") or "")
+            binding_path = str(payload.get("bindingPath") or "")
+            action = self._input_assets.setdefault(path, {"path": path, "name": "", "maps": {}}).setdefault("maps", {}).setdefault(map_name, {"name": map_name, "actions": {}}).setdefault("actions", {}).setdefault(action_name, {"name": action_name, "bindings": []})
+            binding = {"path": binding_path}
+            action.setdefault("bindings", []).append(binding)
+            return {"success": True, "path": path, "mapName": map_name, "actionName": action_name, "binding": binding}
+        if route == "input/add-composite-binding":
+            path = str(payload.get("path") or "")
+            map_name = str(payload.get("mapName") or "")
+            action_name = str(payload.get("actionName") or "")
+            action = self._input_assets.setdefault(path, {"path": path, "name": "", "maps": {}}).setdefault("maps", {}).setdefault(map_name, {"name": map_name, "actions": {}}).setdefault("actions", {}).setdefault(action_name, {"name": action_name, "bindings": []})
+            binding = {
+                "compositeName": str(payload.get("compositeName") or ""),
+                "compositeType": str(payload.get("compositeType") or "Composite"),
+                "parts": list(payload.get("parts") or []),
+            }
+            action.setdefault("bindings", []).append(binding)
+            return {"success": True, "path": path, "mapName": map_name, "actionName": action_name, "binding": binding}
+        # ── Prefab routes ────────────────────────────────────────────────
+        if route == "prefab/info":
+            path = str(payload.get("path") or "")
+            prefab = self.prefabs.get(path, {})
+            return {"path": path, "name": prefab.get("name", path.rsplit("/", 1)[-1].replace(".prefab", "")), "componentCount": len(prefab.get("components", [])), "childCount": 0, "isVariant": False}
+        if route == "prefab/apply-overrides":
+            path = str(payload.get("prefabPath") or payload.get("path") or "")
+            return {"success": True, "path": path, "overridesApplied": 1}
+        if route == "prefab/revert-overrides":
+            path = str(payload.get("prefabPath") or payload.get("path") or "")
+            return {"success": True, "path": path, "overridesReverted": 1}
+        if route == "prefab/create-variant":
+            source = str(payload.get("sourcePath") or payload.get("path") or "")
+            variant_path = str(payload.get("variantPath") or source.replace(".prefab", "Variant.prefab"))
+            self.prefabs[variant_path] = {"name": variant_path.rsplit("/", 1)[-1].replace(".prefab", ""), "components": [], "isVariant": True, "basePath": source}
+            return {"success": True, "variantPath": variant_path, "basePath": source}
+        if route == "prefab/unpack":
+            path = str(payload.get("prefabPath") or payload.get("path") or "")
+            mode = str(payload.get("mode") or "root")
+            return {"success": True, "path": path, "mode": mode, "unpackedCount": 1}
+        if route == "prefab-asset/hierarchy":
+            path = str(payload.get("path") or "")
+            prefab = self.prefabs.get(path, {})
+            return {"path": path, "name": prefab.get("name", "Root"), "children": [], "componentCount": len(prefab.get("components", []))}
+        if route == "prefab-asset/get-properties":
+            path = str(payload.get("path") or "")
+            component = str(payload.get("component") or "Transform")
+            return {"path": path, "component": component, "properties": {"localPosition": {"x": 0, "y": 0, "z": 0}}}
+        if route == "prefab-asset/set-property":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "property": payload.get("propertyName"), "value": payload.get("value")}
+        if route == "prefab-asset/set-reference":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "property": payload.get("propertyName"), "referencePath": payload.get("referencePath")}
+        if route == "prefab-asset/add-component":
+            path = str(payload.get("path") or "")
+            component = str(payload.get("component") or "")
+            self.prefabs.setdefault(path, {"name": path, "components": []}).setdefault("components", []).append(component)
+            return {"success": True, "path": path, "component": component}
+        if route == "prefab-asset/remove-component":
+            path = str(payload.get("path") or "")
+            component = str(payload.get("component") or "")
+            comps = self.prefabs.get(path, {}).get("components", [])
+            removed = component in comps
+            if removed:
+                comps.remove(component)
+            return {"success": True, "path": path, "component": component, "removed": removed}
+        if route == "prefab-asset/add-gameobject":
+            path = str(payload.get("path") or "")
+            child_name = str(payload.get("name") or "Child")
+            return {"success": True, "path": path, "childName": child_name}
+        if route == "prefab-asset/remove-gameobject":
+            path = str(payload.get("path") or "")
+            child_path = str(payload.get("childPath") or "")
+            return {"success": True, "path": path, "childPath": child_path, "removed": True}
+        if route == "prefab-asset/compare-variant":
+            path = str(payload.get("path") or "")
+            return {"path": path, "differences": [], "differenceCount": 0}
+        if route == "prefab-asset/variant-info":
+            path = str(payload.get("path") or "")
+            prefab = self.prefabs.get(path, {})
+            return {"path": path, "isVariant": prefab.get("isVariant", False), "basePath": prefab.get("basePath", ""), "overrideCount": 0}
+        if route == "prefab-asset/apply-variant-override":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "overridesApplied": 1}
+        if route == "prefab-asset/revert-variant-override":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "overridesReverted": 1}
+        if route == "prefab-asset/transfer-variant-overrides":
+            source = str(payload.get("sourcePath") or "")
+            dest = str(payload.get("destinationPath") or "")
+            return {"success": True, "sourcePath": source, "destinationPath": dest, "overridesTransferred": 1}
+        # ── Asmdef routes ─────────────────────────────────────────────────
+        if route == "asmdef/list":
+            return {"count": 0, "asmdefs": []}
+        if route == "asmdef/info":
+            path = str(payload.get("path") or "")
+            return {"path": path, "name": path.rsplit("/", 1)[-1].replace(".asmdef", ""), "references": [], "includePlatforms": [], "excludePlatforms": [], "allowUnsafeCode": False}
+        if route == "asmdef/create":
+            path = str(payload.get("path") or "Assets/NewAssembly.asmdef")
+            name = str(payload.get("name") or path.rsplit("/", 1)[-1].replace(".asmdef", ""))
+            return {"success": True, "path": path, "name": name}
+        if route == "asmdef/create-ref":
+            path = str(payload.get("path") or "Assets/NewAssemblyRef.asmref")
+            return {"success": True, "path": path}
+        if route == "asmdef/add-references":
+            path = str(payload.get("path") or "")
+            refs = payload.get("references") or []
+            return {"success": True, "path": path, "referencesAdded": len(refs)}
+        if route == "asmdef/remove-references":
+            path = str(payload.get("path") or "")
+            refs = payload.get("references") or []
+            return {"success": True, "path": path, "referencesRemoved": len(refs)}
+        if route == "asmdef/set-platforms":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path, "includePlatforms": payload.get("includePlatforms", []), "excludePlatforms": payload.get("excludePlatforms", [])}
+        if route == "asmdef/update-settings":
+            path = str(payload.get("path") or "")
+            return {"success": True, "path": path}
+        # ── Particle routes ───────────────────────────────────────────────
+        if route == "particle/create":
+            name = str(payload.get("name") or "ParticleSystem")
+            self._register_gameobject(name, components=["Transform", "ParticleSystem"], position=payload.get("position"))
+            self.scene_dirty = True
+            return {"success": True, "name": name, "gameObjectPath": name}
+        if route == "particle/info":
+            name = str(payload.get("name") or payload.get("gameObjectPath") or "")
+            return {"name": name, "isPlaying": False, "particleCount": 0, "emission": {"rateOverTime": 10}, "main": {"duration": 5.0, "loop": True, "startLifetime": 5.0, "startSpeed": 5.0, "maxParticles": 1000}}
+        if route == "particle/playback":
+            name = str(payload.get("name") or payload.get("gameObjectPath") or "")
+            action = str(payload.get("action") or "play")
+            return {"success": True, "name": name, "action": action}
+        if route == "particle/set-emission":
+            name = str(payload.get("name") or payload.get("gameObjectPath") or "")
+            return {"success": True, "name": name, "rateOverTime": payload.get("rateOverTime", 10), "rateOverDistance": payload.get("rateOverDistance", 0)}
+        if route == "particle/set-main":
+            name = str(payload.get("name") or payload.get("gameObjectPath") or "")
+            return {"success": True, "name": name}
+        if route == "particle/set-shape":
+            name = str(payload.get("name") or payload.get("gameObjectPath") or "")
+            shape = str(payload.get("shape") or "Sphere")
+            return {"success": True, "name": name, "shape": shape}
+        # ── LOD routes ────────────────────────────────────────────────────
+        if route == "lod/create":
+            name = str(payload.get("name") or payload.get("gameObjectPath") or "LODGroup")
+            self._register_gameobject(name, components=["Transform", "LODGroup"])
+            self.scene_dirty = True
+            return {"success": True, "name": name, "lodCount": int(payload.get("lodCount") or 3)}
+        if route == "lod/info":
+            name = str(payload.get("name") or payload.get("gameObjectPath") or "")
+            return {"name": name, "lodCount": 3, "lods": [{"level": 0, "screenRelativeHeight": 0.6}, {"level": 1, "screenRelativeHeight": 0.3}, {"level": 2, "screenRelativeHeight": 0.1}]}
+        # ── Constraint routes ─────────────────────────────────────────────
+        if route == "constraint/add":
+            go_path = str(payload.get("gameObjectPath") or "")
+            constraint_type = str(payload.get("constraintType") or "PositionConstraint")
+            return {"success": True, "gameObjectPath": go_path, "constraintType": constraint_type, "sourceCount": len(payload.get("sources") or [])}
+        if route == "constraint/info":
+            go_path = str(payload.get("gameObjectPath") or "")
+            return {"gameObjectPath": go_path, "constraints": []}
+        # ── Animation mutation routes ────────────────────────────────────
+        if route == "animation/get-blend-tree":
+            controller_path = str(payload.get("controllerPath") or "")
+            layer_index = int(payload.get("layerIndex") or 0)
+            state_name = str(payload.get("stateName") or "")
+            controller = self.animation_controllers.get(controller_path, {})
+            states = controller.get("states", [])
+            state = next((s for s in states if s.get("name") == state_name), None)
+            return {"controllerPath": controller_path, "layerIndex": layer_index, "stateName": state_name, "blendTree": state.get("blendTree") if state else None}
+        if route == "animation/add-keyframe":
+            clip_path = str(payload.get("clipPath") or "")
+            type_name = str(payload.get("typeName") or "")
+            property_name = str(payload.get("propertyName") or "")
+            keyframe = {"time": float(payload.get("time") or 0), "value": float(payload.get("value") or 0)}
+            self.animation_clips.setdefault(clip_path, {"path": clip_path, "curves": {}, "events": []})
+            self.animation_clips[clip_path].setdefault("curves", {}).setdefault(f"{type_name}:{property_name}", []).append(keyframe)
+            return {"success": True, "clipPath": clip_path, "keyframe": keyframe}
+        if route == "animation/remove-keyframe":
+            clip_path = str(payload.get("clipPath") or "")
+            type_name = str(payload.get("typeName") or "")
+            property_name = str(payload.get("propertyName") or "")
+            time = float(payload.get("time") or 0)
+            curve_key = f"{type_name}:{property_name}"
+            curves = self.animation_clips.get(clip_path, {}).get("curves", {})
+            before = len(curves.get(curve_key, []))
+            curves[curve_key] = [k for k in curves.get(curve_key, []) if k.get("time") != time]
+            removed = before - len(curves.get(curve_key, []))
+            return {"success": True, "clipPath": clip_path, "keyframesRemoved": removed}
+        if route == "animation/remove-curve":
+            clip_path = str(payload.get("clipPath") or "")
+            type_name = str(payload.get("typeName") or "")
+            property_name = str(payload.get("propertyName") or "")
+            curve_key = f"{type_name}:{property_name}"
+            removed = curve_key in self.animation_clips.get(clip_path, {}).get("curves", {})
+            if removed:
+                del self.animation_clips[clip_path]["curves"][curve_key]
+            return {"success": True, "clipPath": clip_path, "curveRemoved": removed}
+        if route == "animation/remove-event":
+            clip_path = str(payload.get("clipPath") or "")
+            time = float(payload.get("time") or 0)
+            events_before = list(self.animation_clips.get(clip_path, {}).get("events", []))
+            remaining = [e for e in events_before if e.get("time") != time]
+            if clip_path in self.animation_clips:
+                self.animation_clips[clip_path]["events"] = remaining
+            return {"success": True, "clipPath": clip_path, "eventsRemoved": len(events_before) - len(remaining)}
+        if route == "animation/remove-layer":
+            controller_path = str(payload.get("controllerPath") or "")
+            layer_index = int(payload.get("layerIndex") or 0)
+            controller = self.animation_controllers.get(controller_path, {})
+            layers = controller.get("layers", [])
+            removed = layers.pop(layer_index) if layer_index < len(layers) else None
+            return {"success": True, "controllerPath": controller_path, "layerRemoved": removed is not None}
+        if route == "animation/remove-parameter":
+            controller_path = str(payload.get("controllerPath") or "")
+            param_name = str(payload.get("parameterName") or "")
+            controller = self.animation_controllers.get(controller_path, {})
+            params_before = list(controller.get("parameters", []))
+            controller["parameters"] = [p for p in params_before if p.get("name") != param_name]
+            removed_count = len(params_before) - len(controller["parameters"])
+            return {"success": True, "controllerPath": controller_path, "parameterRemoved": removed_count > 0}
+        if route == "animation/remove-state":
+            controller_path = str(payload.get("controllerPath") or "")
+            state_name = str(payload.get("stateName") or "")
+            controller = self.animation_controllers.get(controller_path, {})
+            states_before = list(controller.get("states", []))
+            controller["states"] = [s for s in states_before if s.get("name") != state_name]
+            removed_count = len(states_before) - len(controller.get("states", []))
+            return {"success": True, "controllerPath": controller_path, "stateRemoved": removed_count > 0}
+        if route == "animation/remove-transition":
+            controller_path = str(payload.get("controllerPath") or "")
+            source_state = payload.get("sourceState") or payload.get("fromState")
+            dest_state = payload.get("destinationState") or payload.get("toState")
+            controller = self.animation_controllers.get(controller_path, {})
+            transitions_before = list(controller.get("transitions", []))
+            def _transition_matches(t: dict) -> bool:
+                dest_match = dest_state is None or t.get("destinationState") == dest_state
+                src_match = source_state is None or t.get("sourceState") == source_state
+                return dest_match and src_match
+            controller["transitions"] = [t for t in transitions_before if not _transition_matches(t)]
+            removed_count = len(transitions_before) - len(controller.get("transitions", []))
+            return {"success": True, "controllerPath": controller_path, "transitionRemoved": removed_count > 0}
+        if route == "animation/assign-controller":
+            go_path = str(payload.get("gameObjectPath") or "")
+            controller_path = str(payload.get("controllerPath") or "")
+            go = self.gameobjects.get(go_path, {})
+            go["animatorController"] = controller_path
+            self.gameobjects[go_path] = go
+            return {"success": True, "gameObjectPath": go_path, "controllerPath": controller_path}
+        if route == "animation/create-blend-tree":
+            controller_path = str(payload.get("controllerPath") or "")
+            state_name = str(payload.get("stateName") or "BlendTreeState")
+            blend_type = str(payload.get("blendType") or "Simple1D")
+            controller = self.animation_controllers.setdefault(controller_path, {"path": controller_path, "parameters": [], "transitions": [], "states": []})
+            blend_tree = {"blendType": blend_type, "parameter": payload.get("parameter", ""), "motions": []}
+            state = {"name": state_name, "blendTree": blend_tree}
+            controller.setdefault("states", []).append(state)
+            return {"success": True, "controllerPath": controller_path, "stateName": state_name, "blendTree": blend_tree}
+        if route == "animation/set-clip-settings":
+            clip_path = str(payload.get("clipPath") or "")
+            clip = self.animation_clips.setdefault(clip_path, {"path": clip_path, "curves": {}, "events": []})
+            for k in ("loop", "frameRate", "wrapMode", "startTime", "stopTime"):
+                if k in payload:
+                    clip[k] = payload[k]
+            return {"success": True, "clipPath": clip_path}
         if route == "compilation/errors":
             return {"count": 0, "isCompiling": False, "entries": []}
         if route == "agents/list":
@@ -1258,10 +2456,29 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
                         "editor/play-mode",
                         "editor/execute-code",
                         "undo/perform",
+                        "context",
+                        "scenario/info",
+                        "scenario/list",
+                        "scenario/status",
+                        "scenario/activate",
+                        "scenario/start",
+                        "scenario/stop",
                     ],
-                    "totalRoutes": 39,
+                    "totalRoutes": 46,
                 },
             )
+            return
+        if parsed.path == "/api/context" or parsed.path.startswith("/api/context/"):
+            category = parsed.path.removeprefix("/api/context/") if parsed.path.startswith("/api/context/") else None
+            payload = {
+                "projectPath": "C:/Projects/Demo",
+                "unityVersion": "6000.4.0f1",
+                "platform": "StandaloneWindows64",
+                "renderPipeline": "UniversalRP",
+            }
+            if category:
+                payload["category"] = category
+            self._write(200, payload)
             return
         if parsed.path == "/api/queue/status":
             query = parse_qs(parsed.query)
@@ -1366,12 +2583,15 @@ class FullE2ETests(unittest.TestCase):
             str(self.session_path),
             *args,
         ]
+        env = os.environ.copy()
+        env["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(self.tmpdir / "memory")
         result = subprocess.run(
             command,
             input=input_text,
             capture_output=True,
             text=True,
             timeout=20,
+            env=env,
         )
         if result.returncode != 0:
             self.fail(f"CLI failed.\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
@@ -1393,6 +2613,8 @@ class FullE2ETests(unittest.TestCase):
             "--session-path",
             str(self.session_path),
         ]
+        env = os.environ.copy()
+        env["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(self.tmpdir / "memory")
         process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
@@ -1400,6 +2622,7 @@ class FullE2ETests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
+            env=env,
         )
         self.addCleanup(self.stop_mcp_server, process)
 
@@ -1478,6 +2701,33 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(selection["success"])
         session = json.loads(self.session_path.read_text(encoding="utf-8"))
         self.assertEqual(session["selected_port"], self.port)
+
+    def test_select_surfaces_cached_project_memory(self) -> None:
+        self.run_cli("--json", "select", str(self.port))
+        self.run_cli("--json", "memory", "remember", "structure", "render_pipeline", "URP")
+        self.run_cli("--json", "memory", "remember", "structure", "_internal_note", "hidden")
+        self.run_cli(
+            "--json",
+            "memory",
+            "remember-fix",
+            "CS0246",
+            "cli-anything-unity-mcp --json debug doctor",
+            "--context",
+            "Missing namespace or package.",
+        )
+
+        select_result = self.run_cli("--json", "select", str(self.port))
+        payload = json.loads(select_result.stdout.strip())
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["memory"]["totalEntries"], 3)
+        self.assertEqual(payload["memory"]["structure"]["render_pipeline"], "URP")
+        self.assertNotIn("_internal_note", payload["memory"]["structure"])
+        self.assertEqual(payload["memory"]["knownFixes"][0]["pattern"], "CS0246")
+        self.assertEqual(
+            payload["memory"]["knownFixes"][0]["fixCommand"],
+            "cli-anything-unity-mcp --json debug doctor",
+        )
 
     def test_agent_profile_commands_persist_and_expose_current_resolution(self) -> None:
         save_result = self.run_cli(
@@ -2433,6 +3683,26 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(payload["summary"]["totalGameObjects"], 1)
         self.assertIn("stats", payload)
         self.assertIn("hierarchy", payload)
+        self.assertEqual(payload["missingRefTracking"]["newIssues"][0]["gameObject"], "Player")
+        self.assertEqual(payload["missingRefTracking"]["totalTracked"], 1)
+
+        recurring_result = self.run_cli("--json", "workflow", "validate-scene")
+        recurring_payload = json.loads(recurring_result.stdout.strip())
+        self.assertEqual(
+            recurring_payload["missingRefTracking"]["recurringIssues"][0]["seenCount"],
+            2,
+        )
+        self.assertEqual(recurring_payload["recurringMissingRefs"][0]["gameObject"], "Player")
+        recurring_warnings = recurring_payload.get("warnings", [])
+        self.assertTrue(
+            any("Recurring missing references detected" in warning for warning in recurring_warnings)
+        )
+
+        self.server.missing_references.clear()
+        resolved_result = self.run_cli("--json", "workflow", "validate-scene")
+        resolved_payload = json.loads(resolved_result.stdout.strip())
+        self.assertEqual(resolved_payload["missingRefTracking"]["resolvedIssues"][0]["gameObject"], "Player")
+        self.assertEqual(resolved_payload["missingRefTracking"]["totalTracked"], 0)
 
     def test_tool_catalog_and_meta_tools_work(self) -> None:
         self.server.gameobjects["TerrainRoot"] = {
@@ -2450,6 +3720,31 @@ class FullE2ETests(unittest.TestCase):
         info_payload = json.loads(info_result.stdout.strip())
         self.assertEqual(info_payload["resolvedRoute"], "search/scene-stats")
 
+        list_instances_result = self.run_cli("--json", "tool", "unity_list_instances")
+        list_instances_payload = json.loads(list_instances_result.stdout.strip())
+        self.assertEqual(list_instances_payload["totalCount"], 1)
+
+        select_result = self.run_cli(
+            "--json",
+            "tool",
+            "unity_select_instance",
+            "--params",
+            json.dumps({"port": self.port}),
+        )
+        select_payload = json.loads(select_result.stdout.strip())
+        self.assertTrue(select_payload["success"])
+        self.assertEqual(select_payload["instance"]["port"], self.port)
+
+        list_advanced_result = self.run_cli(
+            "--json",
+            "tool",
+            "unity_list_advanced_tools",
+            "--params",
+            "{\"category\":\"terrain\"}",
+        )
+        list_advanced_payload = json.loads(list_advanced_result.stdout.strip())
+        self.assertEqual(list_advanced_payload["category"], "terrain")
+
         advanced_tool_result = self.run_cli(
             "--json",
             "tool",
@@ -2461,6 +3756,655 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(advanced_payload["sceneName"], "MainScene")
         self.assertEqual(advanced_payload["totalGameObjects"], 1)
 
+        console_tool_result = self.run_cli("--json", "tool", "unity_console_log", "--params", "{\"count\":1}")
+        console_tool_payload = json.loads(console_tool_result.stdout.strip())
+        self.assertGreaterEqual(console_tool_payload["count"], 1)
+
+        agents_tool_result = self.run_cli("--json", "tool", "unity_agents_list")
+        agents_tool_payload = json.loads(agents_tool_result.stdout.strip())
+        self.assertGreaterEqual(agents_tool_payload["count"], 1)
+
+    def test_mock_only_advanced_routes_work_against_mock_bridge(self) -> None:
+        def call_tool(tool_name: str, params: dict | None = None) -> dict:
+            args = ["--json", "tool", tool_name]
+            if params is not None:
+                args.extend(["--params", json.dumps(params)])
+            result = self.run_cli(*args)
+            return json.loads(result.stdout.strip())
+
+        canvas = call_tool("unity_ui_create_canvas", {"name": "MockCanvas", "renderMode": "overlay"})
+        self.assertEqual(canvas["name"], "MockCanvas")
+        text_element = call_tool(
+            "unity_ui_create_element",
+            {"type": "text", "name": "MockLabel", "parent": "MockCanvas"},
+        )
+        image_element = call_tool(
+            "unity_ui_create_element",
+            {"type": "image", "name": "MockImage", "parent": "MockCanvas"},
+        )
+        updated_text = call_tool(
+            "unity_ui_set_text",
+            {"path": "MockCanvas/MockLabel", "text": "Mock coverage", "fontSize": 24},
+        )
+        updated_image = call_tool(
+            "unity_ui_set_image",
+            {"path": "MockCanvas/MockImage", "color": {"r": 0.2, "g": 0.5, "b": 0.9, "a": 1.0}},
+        )
+        self.assertEqual(text_element["type"], "text")
+        self.assertEqual(image_element["type"], "image")
+        self.assertEqual(updated_text["text"], "Mock coverage")
+        self.assertEqual(updated_image["image"]["color"]["b"], 0.9)
+
+        environment = call_tool(
+            "unity_lighting_set_environment",
+            {"ambientMode": "Flat", "ambientIntensity": 0.75, "fogEnabled": True},
+        )
+        light_probe_group = call_tool("unity_lighting_create_light_probe_group", {"name": "MockLightProbes"})
+        reflection_probe = call_tool(
+            "unity_lighting_create_reflection_probe",
+            {"name": "MockReflection", "resolution": 128, "mode": "Realtime"},
+        )
+        self.assertEqual(environment["environment"]["ambientMode"], "Flat")
+        self.assertEqual(light_probe_group["probeCount"], 4)
+        self.assertEqual(reflection_probe["mode"], "Realtime")
+
+        clip_path = "Assets/MockOnly/MockClip.anim"
+        controller_path = "Assets/MockOnly/Mock.controller"
+        clip = call_tool("unity_animation_create_clip", {"path": clip_path, "loop": True, "frameRate": 30})
+        controller = call_tool("unity_animation_create_controller", {"path": controller_path})
+        curve = call_tool(
+            "unity_animation_set_clip_curve",
+            {
+                "clipPath": clip_path,
+                "propertyName": "localPosition.x",
+                "type": "Transform",
+                "keyframes": [{"time": 0, "value": 0}, {"time": 1, "value": 2}],
+            },
+        )
+        event = call_tool(
+            "unity_animation_add_event",
+            {"clipPath": clip_path, "functionName": "OnMockEvent", "time": 0.5},
+        )
+        events = call_tool("unity_animation_get_events", {"clipPath": clip_path})
+        keyframes = call_tool(
+            "unity_animation_get_curve_keyframes",
+            {"clipPath": clip_path, "propertyName": "localPosition.x", "typeName": "Transform"},
+        )
+        clip_info = call_tool("unity_animation_clip_info", {"path": clip_path})
+        parameter = call_tool(
+            "unity_animation_add_parameter",
+            {"controllerPath": controller_path, "parameterName": "Speed", "parameterType": "Float"},
+        )
+        transition = call_tool(
+            "unity_animation_add_transition",
+            {"controllerPath": controller_path, "destinationState": "Idle", "duration": 0.2},
+        )
+        self.assertEqual(clip["path"], clip_path)
+        self.assertEqual(controller["path"], controller_path)
+        self.assertEqual(curve["propertyName"], "localPosition.x")
+        self.assertEqual(event["event"]["functionName"], "OnMockEvent")
+        self.assertEqual(events["events"][0]["functionName"], "OnMockEvent")
+        self.assertEqual(len(keyframes["keyframes"]), 2)
+        self.assertEqual(clip_info["eventCount"], 1)
+        self.assertEqual(parameter["parameter"]["name"], "Speed")
+        self.assertEqual(transition["transition"]["destinationState"], "Idle")
+
+        terrain = call_tool(
+            "unity_terrain_create",
+            {"name": "MockTerrain", "width": 64, "length": 64, "height": 20},
+        )
+        terrain_list = call_tool("unity_terrain_list")
+        heights = call_tool(
+            "unity_terrain_get_heights_region",
+            {"name": "MockTerrain", "xBase": 0, "yBase": 0, "width": 2, "height": 2},
+        )
+        steepness = call_tool("unity_terrain_get_steepness", {"name": "MockTerrain", "worldX": 4, "worldZ": 4})
+        trees = call_tool("unity_terrain_get_tree_instances", {"name": "MockTerrain", "limit": 5})
+        self.assertEqual(terrain["name"], "MockTerrain")
+        self.assertEqual(terrain_list["terrains"][0]["name"], "MockTerrain")
+        self.assertEqual(heights["heights"], [[0.0, 0.0], [0.0, 0.0]])
+        self.assertEqual(steepness["steepness"], 0.0)
+        self.assertEqual(trees["count"], 0)
+
+        # ── New terrain mutation mock coverage ──────────────────────────
+        settings = call_tool("unity_terrain_set_settings", {"name": "MockTerrain", "width": 200, "length": 200})
+        self.assertTrue(settings["success"])
+        set_height = call_tool("unity_terrain_set_height", {"name": "MockTerrain", "worldX": 10, "worldZ": 10, "height": 5.0})
+        self.assertTrue(set_height["success"])
+        set_region = call_tool("unity_terrain_set_heights_region", {"name": "MockTerrain", "xBase": 0, "yBase": 0, "heights": [[0.2, 0.3]]})
+        self.assertTrue(set_region["success"])
+        self.assertEqual(set_region["samplesWritten"], 2)
+        raise_lower = call_tool("unity_terrain_raise_lower", {"name": "MockTerrain", "worldX": 5, "worldZ": 5, "amount": 1.0})
+        self.assertTrue(raise_lower["success"])
+        flatten = call_tool("unity_terrain_flatten", {"name": "MockTerrain", "height": 0.5})
+        self.assertTrue(flatten["success"])
+        smooth = call_tool("unity_terrain_smooth", {"name": "MockTerrain", "passes": 2})
+        self.assertEqual(smooth["passes"], 2)
+        noise = call_tool("unity_terrain_noise", {"name": "MockTerrain", "scale": 50.0})
+        self.assertTrue(noise["success"])
+        add_layer = call_tool("unity_terrain_add_layer", {"name": "MockTerrain", "texturePath": "Assets/Grass.png"})
+        self.assertTrue(add_layer["success"])
+        self.assertEqual(add_layer["layerIndex"], 0)
+        fill_layer = call_tool("unity_terrain_fill_layer", {"name": "MockTerrain", "layerIndex": 0})
+        self.assertTrue(fill_layer["success"])
+        paint_layer = call_tool("unity_terrain_paint_layer", {"name": "MockTerrain", "worldX": 10, "worldZ": 10, "layerIndex": 0})
+        self.assertTrue(paint_layer["success"])
+        remove_layer = call_tool("unity_terrain_remove_layer", {"name": "MockTerrain", "layerIndex": 0})
+        self.assertTrue(remove_layer["success"])
+        add_detail = call_tool("unity_terrain_add_detail_prototype", {"name": "MockTerrain", "texturePath": "Assets/Grass.png"})
+        self.assertTrue(add_detail["success"])
+        self.assertEqual(add_detail["prototypeIndex"], 0)
+        add_tree_proto = call_tool("unity_terrain_add_tree_prototype", {"name": "MockTerrain", "prefabPath": "Assets/Oak.prefab"})
+        self.assertEqual(add_tree_proto["prototypeIndex"], 0)
+        place_trees = call_tool("unity_terrain_place_trees", {"name": "MockTerrain", "prototypeIndex": 0, "count": 3})
+        self.assertEqual(place_trees["treesPlaced"], 3)
+        clear_trees = call_tool("unity_terrain_clear_trees", {"name": "MockTerrain"})
+        self.assertEqual(clear_trees["treesRemoved"], 3)
+        remove_tree_proto = call_tool("unity_terrain_remove_tree_prototype", {"name": "MockTerrain", "prototypeIndex": 0})
+        self.assertTrue(remove_tree_proto["success"])
+        scatter_detail = call_tool("unity_terrain_scatter_detail", {"name": "MockTerrain", "prototypeIndex": 0, "count": 5})
+        self.assertEqual(scatter_detail["detailsPlaced"], 5)
+        paint_detail = call_tool("unity_terrain_paint_detail", {"name": "MockTerrain", "worldX": 5, "worldZ": 5, "prototypeIndex": 0})
+        self.assertTrue(paint_detail["success"])
+        clear_detail = call_tool("unity_terrain_clear_detail", {"name": "MockTerrain", "prototypeIndex": 0})
+        self.assertTrue(clear_detail["success"])
+        set_neighbors = call_tool("unity_terrain_set_neighbors", {"name": "MockTerrain", "left": "Terrain_0_0"})
+        self.assertEqual(set_neighbors["neighborsSet"], 1)
+        set_holes = call_tool("unity_terrain_set_holes", {"name": "MockTerrain", "holes": [[True, False]]})
+        self.assertEqual(set_holes["holesSet"], 1)
+        resize = call_tool("unity_terrain_resize", {"name": "MockTerrain", "width": 256, "length": 256, "height": 100})
+        self.assertTrue(resize["success"])
+        create_grid = call_tool("unity_terrain_create_grid", {"countX": 2, "countZ": 2, "width": 64, "length": 64, "height": 30})
+        self.assertEqual(create_grid["count"], 4)
+        export_hm = call_tool("unity_terrain_export_heightmap", {"name": "MockTerrain", "outputPath": "Assets/hm.png"})
+        self.assertEqual(export_hm["outputPath"], "Assets/hm.png")
+        import_hm = call_tool("unity_terrain_import_heightmap", {"name": "MockTerrain", "imagePath": "Assets/hm.png"})
+        self.assertTrue(import_hm["success"])
+
+        # ── New animation mock coverage ──────────────────────────────────
+        anim_go = call_tool("unity_gameobject_create", {"name": "AnimGO", "primitiveType": "Empty"})
+        assign = call_tool("unity_animation_assign_controller", {"gameObjectPath": "AnimGO", "controllerPath": controller_path})
+        self.assertTrue(assign["success"])
+        self.assertEqual(assign["controllerPath"], controller_path)
+        set_settings = call_tool("unity_animation_set_clip_settings", {"clipPath": clip_path, "loop": False, "frameRate": 60})
+        self.assertTrue(set_settings["success"])
+        add_kf = call_tool("unity_animation_add_keyframe", {"clipPath": clip_path, "typeName": "Transform", "propertyName": "localScale.x", "time": 0.5, "value": 2.0})
+        self.assertTrue(add_kf["success"])
+        remove_kf = call_tool("unity_animation_remove_keyframe", {"clipPath": clip_path, "typeName": "Transform", "propertyName": "localScale.x", "time": 0.5})
+        self.assertEqual(remove_kf["keyframesRemoved"], 1)
+        remove_curve = call_tool("unity_animation_remove_curve", {"clipPath": clip_path, "typeName": "Transform", "propertyName": "localPosition.x"})
+        self.assertTrue(remove_curve["curveRemoved"])
+        remove_event = call_tool("unity_animation_remove_event", {"clipPath": clip_path, "time": 0.5})
+        self.assertEqual(remove_event["eventsRemoved"], 1)
+        remove_param = call_tool("unity_animation_remove_parameter", {"controllerPath": controller_path, "parameterName": "Speed"})
+        self.assertTrue(remove_param["parameterRemoved"])
+        remove_trans = call_tool("unity_animation_remove_transition", {"controllerPath": controller_path, "destinationState": "Idle"})
+        self.assertTrue(remove_trans["transitionRemoved"])
+        blend_tree = call_tool("unity_animation_create_blend_tree", {"controllerPath": controller_path, "stateName": "LocomotionBlend", "blendType": "Simple1D", "parameter": "Speed"})
+        self.assertTrue(blend_tree["success"])
+        self.assertEqual(blend_tree["stateName"], "LocomotionBlend")
+        get_blend = call_tool("unity_animation_get_blend_tree", {"controllerPath": controller_path, "layerIndex": 0, "stateName": "LocomotionBlend"})
+        self.assertEqual(get_blend["stateName"], "LocomotionBlend")
+        self.assertEqual(get_blend["blendTree"]["blendType"], "Simple1D")
+        # remove-layer and remove-state require a layer/state to exist first
+        remove_state = call_tool("unity_animation_remove_state", {"controllerPath": controller_path, "stateName": "LocomotionBlend"})
+        self.assertTrue(remove_state["stateRemoved"])
+        remove_layer = call_tool("unity_animation_remove_layer", {"controllerPath": controller_path, "layerIndex": 0})
+        self.assertFalse(remove_layer["layerRemoved"])  # no layers added yet, so nothing to remove
+
+        # ── Prefab mock coverage ─────────────────────────────────────────
+        prefab_path = "Assets/MockOnly/MockPrefab.prefab"
+        variant_path = "Assets/MockOnly/MockPrefabVariant.prefab"
+        # seed the prefab store so prefab/info, hierarchy, etc. find it
+        self.server.prefabs[prefab_path] = {"name": "MockPrefab", "components": ["Transform", "BoxCollider"], "isVariant": False}
+        prefab_info = call_tool("unity_prefab_info", {"path": prefab_path})
+        self.assertEqual(prefab_info["name"], "MockPrefab")
+        self.assertFalse(prefab_info["isVariant"])
+        hierarchy = call_tool("unity_prefab_get_hierarchy", {"path": prefab_path})
+        self.assertEqual(hierarchy["name"], "MockPrefab")
+        props = call_tool("unity_prefab_get_properties", {"path": prefab_path, "component": "BoxCollider"})
+        self.assertEqual(props["component"], "BoxCollider")
+        set_prop = call_tool("unity_prefab_set_property", {"path": prefab_path, "propertyName": "isTrigger", "value": True})
+        self.assertTrue(set_prop["success"])
+        set_ref = call_tool("unity_prefab_set_reference", {"path": prefab_path, "propertyName": "target", "referencePath": "Assets/Other.prefab"})
+        self.assertTrue(set_ref["success"])
+        add_comp = call_tool("unity_prefab_add_component", {"path": prefab_path, "component": "Rigidbody"})
+        self.assertTrue(add_comp["success"])
+        remove_comp = call_tool("unity_prefab_remove_component", {"path": prefab_path, "component": "Rigidbody"})
+        self.assertTrue(remove_comp["removed"])
+        add_go = call_tool("unity_prefab_add_gameobject", {"path": prefab_path, "name": "ChildNode"})
+        self.assertEqual(add_go["childName"], "ChildNode")
+        remove_go = call_tool("unity_prefab_remove_gameobject", {"path": prefab_path, "childPath": "MockPrefab/ChildNode"})
+        self.assertTrue(remove_go["removed"])
+        apply_ov = call_tool("unity_prefab_apply_overrides", {"prefabPath": prefab_path})
+        self.assertTrue(apply_ov["success"])
+        revert_ov = call_tool("unity_prefab_revert_overrides", {"prefabPath": prefab_path})
+        self.assertTrue(revert_ov["success"])
+        create_var = call_tool("unity_prefab_create_variant", {"sourcePath": prefab_path, "variantPath": variant_path})
+        self.assertEqual(create_var["variantPath"], variant_path)
+        var_info = call_tool("unity_prefab_variant_info", {"path": variant_path})
+        self.assertTrue(var_info["isVariant"])
+        compare = call_tool("unity_prefab_compare_variant", {"path": variant_path})
+        self.assertEqual(compare["differenceCount"], 0)
+        apply_var_ov = call_tool("unity_prefab_apply_variant_override", {"path": variant_path})
+        self.assertTrue(apply_var_ov["success"])
+        revert_var_ov = call_tool("unity_prefab_revert_variant_override", {"path": variant_path})
+        self.assertTrue(revert_var_ov["success"])
+        transfer = call_tool("unity_prefab_transfer_variant_overrides", {"sourcePath": prefab_path, "destinationPath": variant_path})
+        self.assertEqual(transfer["overridesTransferred"], 1)
+        unpack = call_tool("unity_prefab_unpack", {"prefabPath": prefab_path, "mode": "completely"})
+        self.assertTrue(unpack["success"])
+
+        # ── Asmdef mock coverage ─────────────────────────────────────────
+        asmdef_path = "Assets/MockOnly/MockAssembly.asmdef"
+        asmdef_list = call_tool("unity_asmdef_list")
+        self.assertIn("asmdefs", asmdef_list)
+        asmdef_create = call_tool("unity_asmdef_create", {"path": asmdef_path, "name": "MockAssembly"})
+        self.assertTrue(asmdef_create["success"])
+        self.assertEqual(asmdef_create["name"], "MockAssembly")
+        asmdef_info = call_tool("unity_asmdef_info", {"path": asmdef_path})
+        self.assertEqual(asmdef_info["name"], "MockAssembly")
+        asmdef_ref = call_tool("unity_asmdef_create_ref", {"path": "Assets/MockOnly/MockAssembly.asmref"})
+        self.assertTrue(asmdef_ref["success"])
+        add_refs = call_tool("unity_asmdef_add_references", {"path": asmdef_path, "references": ["Unity.TextMeshPro"]})
+        self.assertEqual(add_refs["referencesAdded"], 1)
+        remove_refs = call_tool("unity_asmdef_remove_references", {"path": asmdef_path, "references": ["Unity.TextMeshPro"]})
+        self.assertEqual(remove_refs["referencesRemoved"], 1)
+        set_platforms = call_tool("unity_asmdef_set_platforms", {"path": asmdef_path, "includePlatforms": ["Editor"]})
+        self.assertTrue(set_platforms["success"])
+        self.assertIn("Editor", set_platforms["includePlatforms"])
+        update_settings = call_tool("unity_asmdef_update_settings", {"path": asmdef_path, "allowUnsafeCode": True})
+        self.assertTrue(update_settings["success"])
+
+        # ── Particle mock coverage ───────────────────────────────────────
+        particle_create = call_tool("unity_particle_create", {"name": "MockParticles", "position": {"x": 0, "y": 1, "z": 0}})
+        self.assertTrue(particle_create["success"])
+        self.assertEqual(particle_create["name"], "MockParticles")
+        particle_info = call_tool("unity_particle_info", {"name": "MockParticles"})
+        self.assertFalse(particle_info["isPlaying"])
+        particle_play = call_tool("unity_particle_playback", {"name": "MockParticles", "action": "play"})
+        self.assertEqual(particle_play["action"], "play")
+        set_emission = call_tool("unity_particle_set_emission", {"name": "MockParticles", "rateOverTime": 50})
+        self.assertEqual(set_emission["rateOverTime"], 50)
+        set_main = call_tool("unity_particle_set_main", {"name": "MockParticles", "duration": 3.0, "loop": False})
+        self.assertTrue(set_main["success"])
+        set_shape = call_tool("unity_particle_set_shape", {"name": "MockParticles", "shape": "Cone"})
+        self.assertEqual(set_shape["shape"], "Cone")
+
+        # ── LOD mock coverage ────────────────────────────────────────────
+        lod_create = call_tool("unity_lod_create", {"name": "MockLOD", "lodCount": 3})
+        self.assertTrue(lod_create["success"])
+        self.assertEqual(lod_create["lodCount"], 3)
+        lod_info = call_tool("unity_lod_info", {"name": "MockLOD"})
+        self.assertEqual(lod_info["lodCount"], 3)
+        self.assertEqual(len(lod_info["lods"]), 3)
+
+        # ── Constraint mock coverage ─────────────────────────────────────
+        constraint_add = call_tool("unity_constraint_add", {"gameObjectPath": "MockLOD", "constraintType": "LookAtConstraint", "sources": [{"path": "Camera"}]})
+        self.assertTrue(constraint_add["success"])
+        self.assertEqual(constraint_add["constraintType"], "LookAtConstraint")
+        self.assertEqual(constraint_add["sourceCount"], 1)
+        constraint_info = call_tool("unity_constraint_info", {"gameObjectPath": "MockLOD"})
+        self.assertIn("constraints", constraint_info)
+
+        # ── Search mock coverage ─────────────────────────────────────────
+        self.server.scripts["Assets/Scripts/PlayerController.cs"] = "public class PlayerController {}"
+        self.server.gameobjects["Player"] = {"name": "Player", "components": ["Transform", "PlayerController"], "tag": "Player", "layer": "Default"}
+        search_assets = call_tool("unity_search_assets", {"query": "PlayerController"})
+        self.assertGreater(search_assets["count"], 0)
+        by_component = call_tool("unity_search_by_component", {"component": "PlayerController"})
+        self.assertGreater(by_component["count"], 0)
+        by_layer = call_tool("unity_search_by_layer", {"layer": "Default"})
+        self.assertGreaterEqual(by_layer["count"], 0)
+        by_name = call_tool("unity_search_by_name", {"name": "Player"})
+        self.assertGreater(by_name["count"], 0)
+        by_shader = call_tool("unity_search_by_shader", {"shader": "Standard"})
+        self.assertIn("results", by_shader)
+        by_tag = call_tool("unity_search_by_tag", {"tag": "Player"})
+        self.assertIn("results", by_tag)
+
+        # ── Shader / ShaderGraph mock coverage ───────────────────────────
+        sg_path = "Assets/MockOnly/MockGraph.shadergraph"
+        shader_list = call_tool("unity_shader_list")
+        self.assertGreater(shader_list["count"], 0)
+        shader_props = call_tool("unity_shader_get_properties", {"shaderPath": "Packages/com.unity.render-pipelines.universal/Shaders/Lit.shader"})
+        self.assertIn("properties", shader_props)
+        sg_node_types = call_tool("unity_shadergraph_get_node_types")
+        self.assertGreater(sg_node_types["count"], 0)
+        sg_add = call_tool("unity_shadergraph_add_node", {"path": sg_path, "nodeType": "AddNode", "position": {"x": 100, "y": 200}})
+        self.assertTrue(sg_add["success"])
+        node_id = sg_add["node"]["id"]
+        sg_nodes = call_tool("unity_shadergraph_get_nodes", {"path": sg_path})
+        self.assertEqual(sg_nodes["count"], 1)
+        sg_connect = call_tool("unity_shadergraph_connect", {"path": sg_path, "fromNode": node_id, "fromPort": "Out", "toNode": "master", "toPort": "Color"})
+        self.assertTrue(sg_connect["success"])
+        sg_edges = call_tool("unity_shadergraph_get_edges", {"path": sg_path})
+        self.assertEqual(sg_edges["count"], 1)
+        sg_set_prop = call_tool("unity_shadergraph_set_node_property", {"path": sg_path, "nodeId": node_id, "property": "value", "value": 1.5})
+        self.assertTrue(sg_set_prop["success"])
+        sg_info = call_tool("unity_shadergraph_info", {"path": sg_path})
+        self.assertEqual(sg_info["nodeCount"], 1)
+        sg_subgraphs = call_tool("unity_shadergraph_list_subgraphs", {"path": sg_path})
+        self.assertEqual(sg_subgraphs["count"], 0)
+        sg_open = call_tool("unity_shadergraph_open", {"path": sg_path})
+        self.assertTrue(sg_open["success"])
+        sg_disconnect = call_tool("unity_shadergraph_disconnect", {"path": sg_path, "fromNode": node_id, "toNode": "master"})
+        self.assertEqual(sg_disconnect["removed"], 1)
+        sg_remove = call_tool("unity_shadergraph_remove_node", {"path": sg_path, "nodeId": node_id})
+        self.assertTrue(sg_remove["removed"])
+
+        # ── Selection mock coverage ──────────────────────────────────────
+        sel_set = call_tool("unity_selection_set", {"paths": ["Player", "MockLOD"]})
+        self.assertEqual(sel_set["count"], 2)
+        sel_get = call_tool("unity_selection_get")
+        self.assertEqual(sel_get["count"], 2)
+        find_by_type = call_tool("unity_selection_find_by_type", {"typeName": "PlayerController"})
+        self.assertIn("results", find_by_type)
+        focus = call_tool("unity_selection_focus_scene_view", {"path": "Player"})
+        self.assertTrue(focus["success"])
+
+        # ── ScriptableObject mock coverage ───────────────────────────────
+        so_types = call_tool("unity_scriptableobject_list_types")
+        self.assertGreater(so_types["count"], 0)
+        so_create = call_tool("unity_scriptableobject_create", {"typeName": "GameSettings", "path": "Assets/Data/GameSettings.asset"})
+        self.assertTrue(so_create["success"])
+        self.assertEqual(so_create["typeName"], "GameSettings")
+        so_info = call_tool("unity_scriptableobject_info", {"path": "Assets/Data/GameSettings.asset"})
+        self.assertEqual(so_info["typeName"], "GameSettings")
+        so_set = call_tool("unity_scriptableobject_set_field", {"path": "Assets/Data/GameSettings.asset", "fieldName": "maxHealth", "value": 100})
+        self.assertTrue(so_set["success"])
+        self.assertEqual(so_set["value"], 100)
+
+        # ── Settings mock coverage ───────────────────────────────────────
+        physics_settings = call_tool("unity_settings_physics")
+        self.assertIn("gravity", physics_settings)
+        player_settings = call_tool("unity_settings_player")
+        self.assertIn("productName", player_settings)
+        render_settings = call_tool("unity_settings_render_pipeline")
+        self.assertIn("renderPipeline", render_settings)
+        set_physics = call_tool("unity_settings_set_physics", {"gravity": {"x": 0, "y": -15.0, "z": 0}})
+        self.assertTrue(set_physics["success"])
+        set_player = call_tool("unity_settings_set_player", {"productName": "MockGame"})
+        self.assertTrue(set_player["success"])
+        self.assertEqual(set_player["productName"], "MockGame")
+        set_quality = call_tool("unity_settings_set_quality_level", {"qualityLevel": 2})
+        self.assertTrue(set_quality["success"])
+        self.assertEqual(set_quality["qualityLevel"], 2)
+        set_time = call_tool("unity_settings_set_time", {"fixedDeltaTime": 0.01, "timeScale": 0.5})
+        self.assertTrue(set_time["success"])
+        self.assertEqual(set_time["timeScale"], 0.5)
+
+        # ── PlayerPrefs mock coverage ────────────────────────────────────
+        pref_set = call_tool("unity_playerprefs_set", {"key": "mock.volume", "value": 7, "type": "int"})
+        self.assertTrue(pref_set["success"])
+        self.assertEqual(pref_set["type"], "int")
+        pref_get = call_tool("unity_playerprefs_get", {"key": "mock.volume", "type": "int"})
+        self.assertTrue(pref_get["exists"])
+        self.assertEqual(pref_get["value"], 7)
+        pref_delete = call_tool("unity_playerprefs_delete", {"key": "mock.volume"})
+        self.assertTrue(pref_delete["removed"])
+        call_tool("unity_playerprefs_set", {"key": "mock.name", "value": "Codex", "type": "string"})
+        pref_delete_all = call_tool("unity_playerprefs_delete_all")
+        self.assertEqual(pref_delete_all["deletedCount"], 1)
+
+        # ── Tag/Layer mock coverage ──────────────────────────────────────
+        tl_info = call_tool("unity_taglayer_info")
+        self.assertIn("tags", tl_info)
+        self.assertIn("layers", tl_info)
+        tl_add = call_tool("unity_taglayer_add_tag", {"tag": "Enemy"})
+        self.assertTrue(tl_add["success"])
+        tl_set_tag = call_tool("unity_taglayer_set_tag", {"gameObjectPath": "Player", "tag": "Player"})
+        self.assertEqual(tl_set_tag["tag"], "Player")
+        tl_set_layer = call_tool("unity_taglayer_set_layer", {"gameObjectPath": "Player", "layer": "Default"})
+        self.assertEqual(tl_set_layer["layer"], "Default")
+        tl_set_static = call_tool("unity_taglayer_set_static", {"gameObjectPath": "Player", "isStatic": True})
+        self.assertTrue(tl_set_static["isStatic"])
+
+        # ── Texture mock coverage ────────────────────────────────────────
+        tex_path = "Assets/Textures/MockTex.png"
+        tex_info = call_tool("unity_texture_info", {"path": tex_path})
+        self.assertEqual(tex_info["width"], 512)
+        tex_reimport = call_tool("unity_texture_reimport", {"path": tex_path})
+        self.assertTrue(tex_reimport["success"])
+        tex_set_import = call_tool("unity_texture_set_import", {"path": tex_path, "textureType": "Sprite", "maxSize": 1024})
+        self.assertEqual(tex_set_import["textureType"], "Sprite")
+        tex_normalmap = call_tool("unity_texture_set_normalmap", {"path": tex_path})
+        self.assertEqual(tex_normalmap["textureType"], "NormalMap")
+        tex_sprite = call_tool("unity_texture_set_sprite", {"path": tex_path, "pivot": {"x": 0.5, "y": 0.5}})
+        self.assertEqual(tex_sprite["textureType"], "Sprite")
+
+        # ── SpriteAtlas mock coverage ────────────────────────────────────
+        atlas_path = "Assets/Atlases/MockAtlas.spriteatlas"
+        atlas_create = call_tool("unity_spriteatlas_create", {"path": atlas_path, "includeInBuild": True})
+        self.assertTrue(atlas_create["success"])
+        atlas_add = call_tool("unity_spriteatlas_add", {"path": atlas_path, "assetPath": tex_path})
+        self.assertEqual(atlas_add["addedCount"], 1)
+        atlas_info = call_tool("unity_spriteatlas_info", {"path": atlas_path})
+        self.assertTrue(atlas_info["exists"])
+        self.assertEqual(atlas_info["packableCount"], 1)
+        atlas_settings = call_tool("unity_spriteatlas_settings", {"path": atlas_path, "padding": 4, "enableRotation": False})
+        self.assertEqual(atlas_settings["settings"]["padding"], 4)
+        atlas_list = call_tool("unity_spriteatlas_list", {"folder": "Assets/Atlases"})
+        self.assertEqual(atlas_list["count"], 1)
+        atlas_remove = call_tool("unity_spriteatlas_remove", {"path": atlas_path, "assetPath": tex_path})
+        self.assertEqual(atlas_remove["removedCount"], 1)
+        atlas_delete = call_tool("unity_spriteatlas_delete", {"path": atlas_path})
+        self.assertTrue(atlas_delete["deleted"])
+
+        # ── NavMesh mock coverage ────────────────────────────────────────
+        nm_agent = call_tool("unity_navmesh_add_agent", {"gameObjectPath": "Player", "speed": 5.0})
+        self.assertTrue(nm_agent["success"])
+        self.assertEqual(nm_agent["speed"], 5.0)
+        nm_obstacle = call_tool("unity_navmesh_add_obstacle", {"gameObjectPath": "MockLOD", "shape": "Capsule"})
+        self.assertTrue(nm_obstacle["success"])
+        nm_bake = call_tool("unity_navmesh_bake")
+        self.assertTrue(nm_bake["success"])
+        self.assertGreater(nm_bake["triangleCount"], 0)
+        nm_dest = call_tool("unity_navmesh_set_destination", {"gameObjectPath": "Player", "destination": {"x": 10, "y": 0, "z": 10}})
+        self.assertEqual(nm_dest["pathStatus"], "Complete")
+        nm_clear = call_tool("unity_navmesh_clear")
+        self.assertTrue(nm_clear["success"])
+
+        # ── Physics mock coverage ────────────────────────────────────────
+        col_matrix = call_tool("unity_physics_collision_matrix")
+        self.assertIn("layers", col_matrix)
+        overlap_box = call_tool("unity_physics_overlap_box", {"center": {"x": 0, "y": 0, "z": 0}, "halfExtents": {"x": 1, "y": 1, "z": 1}})
+        self.assertIn("colliders", overlap_box)
+        overlap_sphere = call_tool("unity_physics_overlap_sphere", {"center": {"x": 0, "y": 0, "z": 0}, "radius": 2.0})
+        self.assertEqual(overlap_sphere["radius"], 2.0)
+        set_col_layer = call_tool("unity_physics_set_collision_layer", {"layerA": 0, "layerB": 8, "ignore": True})
+        self.assertTrue(set_col_layer["success"])
+        self.assertTrue(set_col_layer["ignore"])
+        set_gravity = call_tool("unity_physics_set_gravity", {"gravity": {"x": 0, "y": -20.0, "z": 0}})
+        self.assertTrue(set_gravity["success"])
+        self.assertEqual(set_gravity["gravity"]["y"], -20.0)
+
+        # ── Graphics extra mock coverage ─────────────────────────────────
+        asset_preview = call_tool("unity_graphics_asset_preview", {"path": prefab_path, "width": 64, "height": 64})
+        self.assertTrue(asset_preview["success"])
+        self.assertEqual(asset_preview["width"], 64)
+        prefab_render = call_tool("unity_graphics_prefab_render", {"path": prefab_path, "width": 128, "height": 128})
+        self.assertTrue(prefab_render["success"])
+        tex_info_g = call_tool("unity_graphics_texture_info", {"path": tex_path})
+        self.assertEqual(tex_info_g["width"], 1024)
+
+        # ── Packages mock coverage ───────────────────────────────────────
+        pkg_list = call_tool("unity_packages_list")
+        self.assertGreater(pkg_list["count"], 0)
+        pkg_info = call_tool("unity_packages_info", {"packageId": "com.unity.textmeshpro"})
+        self.assertEqual(pkg_info["name"], "com.unity.textmeshpro")
+        pkg_search = call_tool("unity_packages_search", {"query": "cinemachine"})
+        self.assertGreater(pkg_search["count"], 0)
+        pkg_add = call_tool("unity_packages_add", {"packageId": "com.unity.cinemachine", "version": "2.9.0"})
+        self.assertTrue(pkg_add["success"])
+        pkg_remove = call_tool("unity_packages_remove", {"packageId": "com.unity.cinemachine"})
+        self.assertTrue(pkg_remove["success"])
+
+        # ── Profiler + memory mock coverage ─────────────────────────────
+        prof_enable = call_tool("unity_profiler_enable", {"enabled": True})
+        self.assertTrue(prof_enable["success"])
+        prof_analyze = call_tool("unity_profiler_analyze")
+        self.assertEqual(prof_analyze["bottleneck"], "Rendering")
+        prof_frame = call_tool("unity_profiler_frame_data", {"frame": 5})
+        self.assertEqual(prof_frame["frame"], 5)
+        prof_mem = call_tool("unity_profiler_memory")
+        self.assertIn("totalMB", prof_mem)
+        mem_breakdown = call_tool("unity_memory_breakdown")
+        self.assertIn("textures", mem_breakdown)
+        mem_snapshot = call_tool("unity_memory_snapshot")
+        self.assertTrue(mem_snapshot["success"])
+        mem_top = call_tool("unity_memory_top_assets")
+        self.assertEqual(mem_top["count"], 3)
+
+        # ── Debugger mock coverage ───────────────────────────────────────
+        dbg_enable = call_tool("unity_debugger_enable", {"enabled": True})
+        self.assertTrue(dbg_enable["success"])
+        dbg_events = call_tool("unity_debugger_events", {"limit": 10})
+        self.assertEqual(dbg_events["count"], 0)
+        dbg_detail = call_tool("unity_debugger_event_details", {"eventId": "evt-001"})
+        self.assertEqual(dbg_detail["eventId"], "evt-001")
+
+        # ── EditorPrefs mock coverage ────────────────────────────────────
+        ep_set = call_tool("unity_editorprefs_set", {"key": "MockPref", "value": 42})
+        self.assertTrue(ep_set["success"])
+        ep_get = call_tool("unity_editorprefs_get", {"key": "MockPref"})
+        self.assertTrue(ep_get["exists"])
+        self.assertEqual(ep_get["value"], 42)
+        ep_del = call_tool("unity_editorprefs_delete", {"key": "MockPref"})
+        self.assertTrue(ep_del["deleted"])
+
+        # ── Audio additional mock coverage ───────────────────────────────
+        audio_src = call_tool("unity_audio_create_source", {"gameObjectPath": "Player", "clipPath": "Assets/Audio/Jump.wav"})
+        self.assertTrue(audio_src["success"])
+        audio_global = call_tool("unity_audio_set_global", {"volume": 0.5, "pause": False})
+        self.assertTrue(audio_global["success"])
+        self.assertEqual(audio_global["volume"], 0.5)
+
+        # ── Console clear mock coverage ──────────────────────────────────
+        console_clear = call_tool("unity_console_clear")
+        self.assertTrue(console_clear["success"])
+
+        # ── Screenshot mock coverage ─────────────────────────────────────
+        ss_game = call_tool("unity_screenshot_game", {"path": "Temp/game.png", "width": 1280, "height": 720})
+        self.assertTrue(ss_game["success"])
+        self.assertEqual(ss_game["width"], 1280)
+        ss_scene = call_tool("unity_screenshot_scene", {"path": "Temp/scene.png"})
+        self.assertTrue(ss_scene["success"])
+
+        # ── Testing additional mock coverage ─────────────────────────────
+        run_tests = call_tool("unity_testing_run_tests", {"mode": "EditMode"})
+        self.assertTrue(run_tests["success"])
+        job_id = run_tests["jobId"]
+        get_job = call_tool("unity_testing_get_job", {"jobId": job_id})
+        self.assertEqual(get_job["status"], "Completed")
+        self.assertEqual(get_job["failed"], 0)
+
+        # ── Undo additional mock coverage ────────────────────────────────
+        undo_hist = call_tool("unity_undo_history")
+        self.assertIn("entries", undo_hist)
+        undo_clear = call_tool("unity_undo_clear")
+        self.assertTrue(undo_clear["success"])
+        redo = call_tool("unity_redo")
+        self.assertTrue(redo["success"])
+
+        # ── VFX mock coverage ────────────────────────────────────────────
+        vfx_list = call_tool("unity_vfx_list")
+        self.assertEqual(vfx_list["count"], 0)
+        vfx_open = call_tool("unity_vfx_open", {"path": "Assets/VFX/MockVFX.vfx"})
+        self.assertTrue(vfx_open["success"])
+
+        # ── MPPM mock coverage ───────────────────────────────────────────
+        mppm_info = call_tool("unity_mppm_info")
+        self.assertTrue(mppm_info["available"])
+        mppm_list = call_tool("unity_mppm_list_scenarios")
+        self.assertEqual(mppm_list["count"], 1)
+        mppm_activate = call_tool("unity_mppm_activate_scenario", {"path": "Assets/CLIAnythingFixtures/MPPM/TwoPlayers.mppm"})
+        self.assertTrue(mppm_activate["success"])
+        mppm_start = call_tool("unity_mppm_start")
+        self.assertTrue(mppm_start["running"])
+        mppm_status = call_tool("unity_mppm_status")
+        self.assertEqual(mppm_status["playerCount"], 2)
+        mppm_stop = call_tool("unity_mppm_stop")
+        self.assertFalse(mppm_stop["running"])
+
+        # ── Component additional mock coverage ───────────────────────────
+        comp_refs = call_tool("unity_component_get_referenceable", {"gameObjectPath": "Player", "component": "PlayerController"})
+        self.assertIn("referenceableFields", comp_refs)
+        batch_wire = call_tool("unity_component_batch_wire", {"pairs": [{"source": "Player", "target": "MockLOD", "property": "target"}]})
+        self.assertEqual(batch_wire["wired"], 1)
+        comp_remove = call_tool("unity_component_remove", {"gameObjectPath": "Player", "component": "AudioSource"})
+        self.assertTrue(comp_remove["success"])
+
+        # ── GameObject additional mock coverage ──────────────────────────
+        go_dup = call_tool("unity_gameobject_duplicate", {"gameObjectPath": "Player"})
+        self.assertTrue(go_dup["success"])
+        self.assertIn("_Copy", go_dup["duplicatePath"])
+        go_reparent = call_tool("unity_gameobject_reparent", {"gameObjectPath": "Player", "parentPath": "MockLOD"})
+        self.assertTrue(go_reparent["success"])
+        go_set_active = call_tool("unity_gameobject_set_active", {"gameObjectPath": "Player", "active": False})
+        self.assertFalse(go_set_active["active"])
+
+        # ── Agent log mock coverage ──────────────────────────────────────
+        agent_log = call_tool("unity_agent_log", {"agentId": "cli-test", "limit": 5})
+        self.assertIn("agentId", agent_log)
+
+        # ── Asset + material + build mock coverage ────────────────────────
+        asset_import = call_tool("unity_asset_import", {"path": "Assets/Textures/MockTex.png"})
+        self.assertTrue(asset_import["success"])
+        mat_create = call_tool("unity_material_create", {"path": "Assets/Materials/MockMat.mat", "shader": "Universal Render Pipeline/Lit"})
+        self.assertTrue(mat_create["success"])
+        build_start = call_tool("unity_build", {"target": "StandaloneWindows64", "buildPath": "Builds/Windows"})
+        self.assertTrue(build_start["success"])
+        self.assertEqual(build_start["target"], "StandaloneWindows64")
+
+        # ── Execute menu item + renderer + scene + sceneview + context ───
+        exec_menu = call_tool("unity_execute_menu_item", {"menuItem": "File/Save Project"})
+        self.assertTrue(exec_menu["success"])
+        set_mat = call_tool("unity_renderer_set_material", {"gameObjectPath": "Player", "materialPath": "Assets/Materials/MockMat.mat"})
+        self.assertTrue(set_mat["success"])
+        scene_new = call_tool("unity_scene_new", {"name": "TestScene"})
+        self.assertTrue(scene_new["success"])
+        self.assertEqual(scene_new["sceneName"], "TestScene")
+        sv_cam = call_tool("unity_sceneview_set_camera", {"position": {"x": 0, "y": 5, "z": -10}})
+        self.assertTrue(sv_cam["success"])
+        ctx = call_tool("unity_get_project_context")
+        self.assertIn("projectPath", ctx)
+
+        # ── Input System mock coverage ───────────────────────────────────
+        input_path = "Assets/MockOnly/MockControls.inputactions"
+        input_create = call_tool("unity_input_create", {"path": input_path, "name": "MockControls"})
+        self.assertTrue(input_create["success"])
+        input_add_map = call_tool("unity_input_add_map", {"path": input_path, "mapName": "Player"})
+        self.assertTrue(input_add_map["success"])
+        input_add_action = call_tool(
+            "unity_input_add_action",
+            {"path": input_path, "mapName": "Player", "actionName": "Jump", "actionType": "Button", "expectedControlType": "Button"},
+        )
+        self.assertEqual(input_add_action["action"]["actionType"], "Button")
+        input_add_binding = call_tool(
+            "unity_input_add_binding",
+            {"path": input_path, "mapName": "Player", "actionName": "Jump", "bindingPath": "<Keyboard>/space"},
+        )
+        self.assertEqual(input_add_binding["binding"]["path"], "<Keyboard>/space")
+        input_add_composite = call_tool(
+            "unity_input_add_composite_binding",
+            {
+                "path": input_path,
+                "mapName": "Player",
+                "actionName": "Move",
+                "compositeName": "WASD",
+                "compositeType": "2DVector",
+                "parts": [{"name": "up", "path": "<Keyboard>/w"}],
+            },
+        )
+        self.assertEqual(input_add_composite["binding"]["compositeName"], "WASD")
+        input_info = call_tool("unity_input_info", {"path": input_path})
+        self.assertEqual(input_info["mapCount"], 1)
+        input_remove_action = call_tool("unity_input_remove_action", {"path": input_path, "mapName": "Player", "actionName": "Jump"})
+        self.assertTrue(input_remove_action["removed"])
+        input_remove_map = call_tool("unity_input_remove_map", {"path": input_path, "mapName": "Player"})
+        self.assertTrue(input_remove_map["removed"])
+
     def test_tool_coverage_command_reports_live_tested_summary(self) -> None:
         summary_result = self.run_cli("--json", "tool-coverage", "--summary")
         category_result = self.run_cli("--json", "tool-coverage", "--category", "terrain")
@@ -2468,17 +4412,42 @@ class FullE2ETests(unittest.TestCase):
             "--json",
             "tool-coverage",
             "--category",
-            "terrain",
+            "amplify",
             "--status",
             "deferred",
             "--summary",
             "--next-batch",
             "2",
         )
+        fixture_plan_result = self.run_cli(
+            "--json",
+            "tool-coverage",
+            "--status",
+            "deferred",
+            "--summary",
+            "--fixture-plan",
+        )
+        support_plan_result = self.run_cli(
+            "--json",
+            "tool-coverage",
+            "--status",
+            "unsupported",
+            "--summary",
+            "--support-plan",
+        )
+        handoff_plan_result = self.run_cli(
+            "--json",
+            "tool-coverage",
+            "--summary",
+            "--handoff-plan",
+        )
 
         summary_payload = json.loads(summary_result.stdout.strip())
         category_payload = json.loads(category_result.stdout.strip())
         next_batch_payload = json.loads(next_batch_result.stdout.strip())
+        fixture_plan_payload = json.loads(fixture_plan_result.stdout.strip())
+        support_plan_payload = json.loads(support_plan_result.stdout.strip())
+        handoff_plan_payload = json.loads(handoff_plan_result.stdout.strip())
 
         self.assertIn("summary", summary_payload)
         self.assertGreater(summary_payload["summary"]["countsByStatus"]["live-tested"], 0)
@@ -2493,6 +4462,20 @@ class FullE2ETests(unittest.TestCase):
         self.assertLessEqual(len(next_batch_payload["nextBatch"]), 2)
         self.assertEqual(next_batch_payload["nextBatch"][0]["coverageStatus"], "deferred")
         self.assertIn("handoffPrompt", next_batch_payload["nextBatch"][0])
+        fixture_plans = {plan["category"]: plan for plan in fixture_plan_payload["fixturePlans"]}
+        self.assertEqual(sorted(fixture_plans), ["amplify", "uma"])
+        self.assertEqual(fixture_plans["amplify"]["package"], "Amplify Shader Editor")
+        self.assertIn("unity_amplify_status", fixture_plans["amplify"]["preflight"])
+        self.assertIn("--next-batch 10", fixture_plans["amplify"]["recommendedCommands"][0])
+        support_plans = {plan["category"]: plan for plan in support_plan_payload["supportPlans"]}
+        self.assertEqual(sorted(support_plans), ["hub"])
+        self.assertEqual(support_plans["hub"]["coverageBlocker"], "unity-hub-integration")
+        self.assertIn("unity_hub_list_editors", {tool["name"] for tool in support_plans["hub"]["tools"]})
+        handoff_tracks = {track["name"]: track for track in handoff_plan_payload["handoffPlan"]["tracks"]}
+        self.assertEqual(handoff_plan_payload["handoffPlan"]["remainingToolCount"], 44)
+        self.assertEqual(sorted(handoff_tracks), ["optional-package-live-audits", "unity-hub-backend"])
+        self.assertIn("--fixture-plan", handoff_tracks["optional-package-live-audits"]["nextCommand"])
+        self.assertIn("--support-plan", handoff_tracks["unity-hub-backend"]["nextCommand"])
 
     def test_mcp_server_lists_tools_and_executes_curated_calls(self) -> None:
         process = self.start_mcp_server()

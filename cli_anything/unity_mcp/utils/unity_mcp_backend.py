@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import quote
 
-from ..core.client import UnityMCPClient, UnityMCPClientError, UnityMCPConnectionError
+from ..core.client import UnityMCPClient, UnityMCPClientError, UnityMCPConnectionError, UnityMCPHTTPError
+from ..core.file_ipc import FileIPCClient, FileIPCError, FileIPCConnectionError, FileIPCTimeoutError
 from ..core.routes import iter_known_tools, route_to_tool_name, tool_name_to_route
 from ..core.schema_templates import summarize_schema
 from ..core.session import SessionState, SessionStore, normalize_debug_preferences
@@ -54,6 +55,8 @@ class UnityMCPBackend:
         default_port: int = 7890,
         port_range_start: int = 7890,
         port_range_end: int = 7899,
+        transport: str = "auto",
+        file_ipc_paths: List[str | Path] | None = None,
     ) -> None:
         self.client = client or UnityMCPClient()
         self.session_store = session_store or SessionStore()
@@ -61,6 +64,9 @@ class UnityMCPBackend:
         self.default_port = default_port
         self.port_range_start = port_range_start
         self.port_range_end = port_range_end
+        self.transport = transport  # "auto", "http", "file"
+        self.file_ipc_paths: List[Path] = [Path(p) for p in (file_ipc_paths or [])]
+        self._file_ipc_clients: Dict[str, FileIPCClient] = {}
         self.runtime_agent_id: str | None = None
         self.runtime_agent_profile: str | None = None
         self.runtime_command_path: str | None = None
@@ -215,6 +221,13 @@ class UnityMCPBackend:
         }
 
     def ping(self, port: Optional[int] = None) -> Dict[str, Any]:
+        file_client = self._resolve_file_ipc_client() if port is None else None
+        if file_client is not None:
+            payload = file_client.ping(timeout=3.0)
+            payload["port"] = None
+            payload["transport"] = "file-ipc"
+            return payload
+
         resolved_port = self.resolve_port(explicit_port=port, allow_default=True)
         payload = self.client.ping(resolved_port, timeout=3.0)
         payload["port"] = resolved_port
@@ -247,6 +260,70 @@ class UnityMCPBackend:
 
     def get_context(self, category: str | None = None, port: Optional[int] = None) -> Dict[str, Any]:
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
+        params = {"category": category} if category else {}
+        try:
+            # Context can touch Unity APIs, so prefer the bridge queue/main-thread path.
+            queued = self.call_route("context", params=params, port=resolved_port, use_queue=True)
+        except UnityMCPHTTPError as exc:
+            if exc.status_code != 404:
+                raise
+        else:
+            if not self._is_unknown_api_endpoint(queued, route="context"):
+                return queued
+
+        try:
+            return self._get_context_via_execute_code(category=category, port=resolved_port)
+        except UnityMCPHTTPError as exc:
+            if exc.status_code != 404:
+                raise
+            return self._get_context_direct(category=category, port=resolved_port)
+        except UnityMCPClientError as exc:
+            if not self._is_unknown_api_endpoint_text(str(exc), route="editor/execute-code"):
+                raise
+            return self._get_context_direct(category=category, port=resolved_port)
+
+    @staticmethod
+    def _is_unknown_api_endpoint(payload: Any, route: str | None = None) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        error = payload.get("error")
+        if isinstance(error, str) and UnityMCPBackend._is_unknown_api_endpoint_text(error, route=route):
+            return True
+        nested = payload.get("result")
+        return UnityMCPBackend._is_unknown_api_endpoint(nested, route=route)
+
+    @staticmethod
+    def _is_unknown_api_endpoint_text(message: str, route: str | None = None) -> bool:
+        normalized = str(message or "")
+        if "Unknown API endpoint" not in normalized:
+            return False
+        if route is None:
+            return True
+        return route in normalized
+
+    def _get_context_via_execute_code(self, category: str | None = None, port: Optional[int] = None) -> Dict[str, Any]:
+        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
+        category_literal = "null" if category is None else json.dumps(category, ensure_ascii=True)
+        result = self.call_route(
+            tool_name_to_route("unity_execute_code"),
+            params={
+                "code": (
+                    "return UnityMCP.Editor.MCPContextManager.GetContextResponse("
+                    f"{category_literal}"
+                    ");"
+                )
+            },
+            port=resolved_port,
+            use_queue=True,
+        )
+        if self._is_unknown_api_endpoint(result, route=tool_name_to_route("unity_execute_code")):
+            raise UnityMCPHTTPError(404, "Unknown API endpoint: editor/execute-code", result)
+        if isinstance(result, dict) and result.get("success") is True and isinstance(result.get("result"), dict):
+            return result["result"]
+        return result
+
+    def _get_context_direct(self, category: str | None = None, port: Optional[int] = None) -> Dict[str, Any]:
+        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         api_path = "context"
         if category:
             api_path = f"context/{quote(category)}"
@@ -274,6 +351,31 @@ class UnityMCPBackend:
         return payload
 
     def get_queue_info(self, port: Optional[int] = None) -> Dict[str, Any]:
+        file_client = self._resolve_file_ipc_client() if port is None else None
+        if file_client is not None:
+            try:
+                queue_payload = file_client.call_route("queue/info", timeout=1.0)
+            except FileIPCError:
+                queue_payload = None
+            if isinstance(queue_payload, dict):
+                queue_payload.setdefault("transport", "file-ipc")
+                queue_payload.setdefault("queueSupported", False)
+                queue_payload.setdefault(
+                    "message",
+                    "File IPC executes each request on Unity's main thread from .umcp/inbox; no Unity queue is required.",
+                )
+                return queue_payload
+            return {
+                "transport": "file-ipc",
+                "queueSupported": False,
+                "activeAgents": 0,
+                "executingCount": 0,
+                "totalQueued": 0,
+                "queued": 0,
+                "agentId": self.runtime_agent_id or getattr(self.client, "agent_id", None),
+                "message": "File IPC executes each request on Unity's main thread from .umcp/inbox; no Unity queue is required.",
+            }
+
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         started_at = time.monotonic()
         try:
@@ -346,7 +448,8 @@ class UnityMCPBackend:
         issue_limit: int = 20,
         include_hierarchy: bool = False,
     ) -> Dict[str, Any]:
-        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
+        file_client = self._resolve_file_ipc_client() if port is None else None
+        resolved_port = None if file_client is not None else self.resolve_port(explicit_port=port, allow_default=False)
         ping = self.ping(port=resolved_port)
         editor_state = self.call_route_with_recovery(
             "editor/state",
@@ -1218,6 +1321,9 @@ class UnityMCPBackend:
         include_unsupported: bool = True,
         summary_only: bool = False,
         next_batch_limit: int = 0,
+        fixture_plan: bool = False,
+        support_plan: bool = False,
+        handoff_plan: bool = False,
     ) -> Dict[str, Any]:
         return build_tool_coverage_matrix(
             category=category,
@@ -1226,6 +1332,9 @@ class UnityMCPBackend:
             include_unsupported=include_unsupported,
             summary_only=summary_only,
             next_batch_limit=next_batch_limit,
+            fixture_plan=fixture_plan,
+            support_plan=support_plan,
+            handoff_plan=handoff_plan,
         )
 
     def call_route_with_recovery(
@@ -1267,6 +1376,19 @@ class UnityMCPBackend:
             except BackendSelectionError:
                 continue
 
+    def _resolve_file_ipc_client(self) -> FileIPCClient | None:
+        """If the selected instance uses file IPC, return its client."""
+        state = self.session_store.load()
+        inst = state.selected_instance
+        if not inst:
+            return None
+        if inst.get("transport") != "file-ipc":
+            return None
+        project_path = inst.get("projectPath")
+        if not project_path:
+            return None
+        return self._get_file_ipc_client(project_path)
+
     def call_route(
         self,
         route: str,
@@ -1276,6 +1398,11 @@ class UnityMCPBackend:
         use_queue: Optional[bool] = None,
         record_history: bool = True,
     ) -> Any:
+        # Check if the selected instance uses file IPC
+        file_client = self._resolve_file_ipc_client() if port is None else None
+        if file_client is not None:
+            return self._call_route_file_ipc(file_client, route, params, record_history)
+
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         payload = params or {}
         transport = "get" if use_get else ("queue" if use_queue or (use_queue is None and self.client.use_queue) else "post")
@@ -1307,6 +1434,40 @@ class UnityMCPBackend:
                 resolved_port,
                 duration_ms=self._elapsed_ms(started_at),
                 transport=transport,
+            )
+        return result
+
+    def _call_route_file_ipc(
+        self,
+        file_client: FileIPCClient,
+        route: str,
+        params: Optional[Dict[str, Any]],
+        record_history: bool,
+    ) -> Any:
+        """Execute a route via file IPC transport."""
+        payload = params or {}
+        started_at = time.monotonic()
+        try:
+            result = file_client.call_route(route, params=payload)
+        except FileIPCError as exc:
+            if record_history and route not in self.NON_HISTORY_ROUTES:
+                self._record_history(
+                    route,
+                    payload,
+                    None,
+                    status="error",
+                    duration_ms=self._elapsed_ms(started_at),
+                    error=str(exc),
+                    transport="file-ipc",
+                )
+            raise UnityMCPClientError(str(exc)) from exc
+        if record_history and route not in self.NON_HISTORY_ROUTES:
+            self._record_history(
+                route,
+                payload,
+                None,
+                duration_ms=self._elapsed_ms(started_at),
+                transport="file-ipc",
             )
         return result
 
@@ -1359,7 +1520,7 @@ class UnityMCPBackend:
             return self.call_tool(str(nested_tool), params=nested_params, port=port)
 
         route = tool_name_to_route(tool_name)
-        use_get = route in {"context", "queue/status"}
+        use_get = route in {"queue/status"}
         return self.call_route(route, params=payload, port=port, use_get=use_get, use_queue=use_queue)
 
     def known_tools(
@@ -1412,6 +1573,13 @@ class UnityMCPBackend:
         instances = self._reconcile_selection(state, instances)
         state = self.session_store.load()
 
+        # If a file-IPC instance is selected (no port), the caller should have
+        # used _resolve_file_ipc_client() before calling resolve_port().
+        # But we still return a sentinel to avoid crashing.
+        if state.selected_instance and state.selected_instance.get("transport") == "file-ipc":
+            # Return 0 as sentinel — call_route already bypasses this path for file IPC
+            return 0
+
         if state.selected_port and any(inst["port"] == state.selected_port for inst in instances):
             return state.selected_port
 
@@ -1421,7 +1589,7 @@ class UnityMCPBackend:
 
         if len(instances) > 1:
             labels = ", ".join(
-                f"{instance['projectName']}:{instance['port']}" for instance in instances
+                f"{instance['projectName']}:{instance.get('port') or 'file-ipc'}" for instance in instances
             )
             raise BackendSelectionError(
                 "Multiple Unity instances are running. Use `instances` and then `select <port>` first. "
@@ -1489,38 +1657,111 @@ class UnityMCPBackend:
             + (f" Available later: {labels}" if labels else "")
         )
 
+    def _get_file_ipc_client(self, project_path: str | Path) -> FileIPCClient:
+        """Get or create a FileIPCClient for a Unity project path."""
+        key = str(project_path)
+        if key not in self._file_ipc_clients:
+            agent_id = getattr(self.client, "agent_id", "cli-anything-unity-mcp")
+            self._file_ipc_clients[key] = FileIPCClient(
+                project_path,
+                agent_id=agent_id,
+            )
+        return self._file_ipc_clients[key]
+
+    def _get_file_ipc_search_paths(self) -> List[Path]:
+        """Build the list of project paths to check for file IPC bridges."""
+        paths = list(self.file_ipc_paths)
+
+        # Also check registry entries for project paths
+        for entry in self._read_registry_entries():
+            project_path = entry.get("projectPath")
+            if project_path:
+                p = Path(project_path)
+                if p not in paths:
+                    paths.append(p)
+
+        # Check the selected instance's project path
+        state = self.session_store.load()
+        if state.selected_instance:
+            project_path = state.selected_instance.get("projectPath")
+            if project_path:
+                p = Path(project_path)
+                if p not in paths:
+                    paths.append(p)
+
+        return paths
+
+    def _discover_file_ipc_instances(self) -> List[Dict[str, Any]]:
+        """Discover Unity projects that have an active file IPC bridge."""
+        if self.transport == "http":
+            return []
+
+        instances: List[Dict[str, Any]] = []
+        for project_path in self._get_file_ipc_search_paths():
+            ipc_client = self._get_file_ipc_client(project_path)
+            try:
+                ping_data = ipc_client.ping()
+            except FileIPCError:
+                continue
+
+            instance = self._normalize_instance({
+                **ping_data,
+                "port": None,
+                "source": "file-ipc",
+                "transport": "file-ipc",
+            })
+            instance["transport"] = "file-ipc"
+            instances.append(instance)
+
+        return instances
+
     def discover_instances(self) -> List[Dict[str, Any]]:
         instances_by_port: Dict[int, Dict[str, Any]] = {}
+        file_ipc_instances: List[Dict[str, Any]] = []
 
-        for entry in self._read_registry_entries():
-            port = self._coerce_int(entry.get("port"))
-            if not port:
-                continue
-            info = self._safe_ping(port)
-            if not info:
-                continue
-            instances_by_port[port] = self._normalize_instance(
-                {**entry, **info, "port": port, "source": "registry"}
-            )
-
-        for port in range(self.port_range_start, self.port_range_end + 1):
-            if port in instances_by_port:
-                continue
-            info = self._safe_ping(port)
-            if not info:
-                continue
-            instances_by_port[port] = self._normalize_instance(
-                {**info, "port": port, "source": "portscan"}
-            )
-
-        if self.default_port not in instances_by_port:
-            info = self._safe_ping(self.default_port)
-            if info:
-                instances_by_port[self.default_port] = self._normalize_instance(
-                    {**info, "port": self.default_port, "source": "default"}
+        # HTTP discovery (skip if transport is "file")
+        if self.transport != "file":
+            for entry in self._read_registry_entries():
+                port = self._coerce_int(entry.get("port"))
+                if not port:
+                    continue
+                info = self._safe_ping(port)
+                if not info:
+                    continue
+                instances_by_port[port] = self._normalize_instance(
+                    {**entry, **info, "port": port, "source": "registry"}
                 )
 
-        return [instances_by_port[port] for port in sorted(instances_by_port)]
+            for port in range(self.port_range_start, self.port_range_end + 1):
+                if port in instances_by_port:
+                    continue
+                info = self._safe_ping(port)
+                if not info:
+                    continue
+                instances_by_port[port] = self._normalize_instance(
+                    {**info, "port": port, "source": "portscan"}
+                )
+
+            if self.default_port not in instances_by_port:
+                info = self._safe_ping(self.default_port)
+                if info:
+                    instances_by_port[self.default_port] = self._normalize_instance(
+                        {**info, "port": self.default_port, "source": "default"}
+                    )
+
+        # File IPC discovery
+        file_ipc_instances = self._discover_file_ipc_instances()
+
+        # Merge — HTTP instances keyed by port, file IPC instances keyed by projectPath
+        http_instances = [instances_by_port[port] for port in sorted(instances_by_port)]
+
+        # Deduplicate: if a project is reachable via both HTTP and file IPC, prefer HTTP
+        http_project_paths = {inst.get("projectPath") for inst in http_instances if inst.get("projectPath")}
+        for ipc_inst in file_ipc_instances:
+            if ipc_inst.get("projectPath") not in http_project_paths:
+                http_instances.append(ipc_inst)
+
+        return http_instances
 
     def _reconcile_selection(
         self,
@@ -1596,11 +1837,15 @@ class UnityMCPBackend:
     def _normalize_instance(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         port = self._coerce_int(payload.get("port")) or self.default_port
         clone_index = self._coerce_int(payload.get("cloneIndex"), default=-1)
-        return {
-            "port": port,
-            "projectName": payload.get("projectName")
+        transport = payload.get("transport") or "http"
+        label = (
+            payload.get("projectName")
             or payload.get("project")
-            or f"Unity Editor ({port})",
+            or (f"Unity Editor ({port})" if port else "Unity Editor (file-ipc)")
+        )
+        result: Dict[str, Any] = {
+            "port": port,
+            "projectName": label,
             "projectPath": payload.get("projectPath") or "",
             "unityVersion": payload.get("unityVersion") or payload.get("version") or "",
             "platform": payload.get("platform") or "",
@@ -1609,6 +1854,9 @@ class UnityMCPBackend:
             "processId": self._coerce_int(payload.get("processId")),
             "source": payload.get("source") or "unknown",
         }
+        if transport != "http":
+            result["transport"] = transport
+        return result
 
     @staticmethod
     def _coerce_int(value: Any, default: int | None = None) -> int | None:

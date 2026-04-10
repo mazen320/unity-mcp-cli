@@ -1,39 +1,39 @@
 {
   "summary": {
     "catalogVersion": "unknown",
-    "generatedAt": "2026-04-09T03:25:03.120237+00:00",
+    "generatedAt": "2026-04-10T08:44:31.005887+00:00",
     "totalTools": 328,
     "countsByStatus": {
-      "live-tested": 31,
-      "covered": 31,
-      "mock-only": 0,
+      "live-tested": 32,
+      "covered": 37,
+      "mock-only": 215,
       "unsupported": 6,
-      "deferred": 260
+      "deferred": 38
     },
     "countsByCategory": {
       "meta": {
         "total": 2,
         "live-tested": 0,
-        "covered": 0,
+        "covered": 2,
         "mock-only": 0,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "agent": {
         "total": 1,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "agents": {
         "total": 1,
         "live-tested": 0,
-        "covered": 0,
+        "covered": 1,
         "mock-only": 0,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "amplify": {
         "total": 23,
@@ -47,105 +47,105 @@
         "total": 24,
         "live-tested": 6,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 18,
         "unsupported": 0,
-        "deferred": 18
+        "deferred": 0
       },
       "asmdef": {
         "total": 8,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 8,
         "unsupported": 0,
-        "deferred": 8
+        "deferred": 0
       },
       "asset": {
         "total": 5,
         "live-tested": 0,
         "covered": 4,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "audio": {
         "total": 3,
         "live-tested": 1,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "build": {
         "total": 1,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "component": {
         "total": 7,
         "live-tested": 0,
         "covered": 4,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "console": {
         "total": 2,
         "live-tested": 0,
-        "covered": 0,
-        "mock-only": 0,
+        "covered": 1,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "constraint": {
         "total": 2,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "debugger": {
         "total": 3,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "editor": {
         "total": 2,
         "live-tested": 0,
         "covered": 1,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "editorprefs": {
         "total": 3,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "execute": {
         "total": 2,
         "live-tested": 0,
         "covered": 1,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "gameobject": {
         "total": 7,
         "live-tested": 0,
         "covered": 4,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "get": {
         "total": 1,
@@ -157,19 +157,19 @@
       },
       "context": {
         "total": 1,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 0,
         "mock-only": 0,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "graphics": {
         "total": 9,
         "live-tested": 4,
         "covered": 2,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "hub": {
         "total": 6,
@@ -183,89 +183,89 @@
         "total": 8,
         "live-tested": 2,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 6,
         "unsupported": 0,
-        "deferred": 6
+        "deferred": 0
       },
       "lighting": {
         "total": 5,
         "live-tested": 2,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "list": {
         "total": 1,
         "live-tested": 0,
-        "covered": 0,
+        "covered": 1,
         "mock-only": 0,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "lod": {
         "total": 2,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "material": {
         "total": 1,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "memory": {
         "total": 4,
         "live-tested": 1,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "mppm": {
         "total": 6,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 6,
         "unsupported": 0,
-        "deferred": 6
+        "deferred": 0
       },
       "navmesh": {
         "total": 6,
         "live-tested": 1,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 5,
         "unsupported": 0,
-        "deferred": 5
+        "deferred": 0
       },
       "packages": {
         "total": 5,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 5,
         "unsupported": 0,
-        "deferred": 5
+        "deferred": 0
       },
       "particle": {
         "total": 6,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 6,
         "unsupported": 0,
-        "deferred": 6
+        "deferred": 0
       },
       "physics": {
         "total": 6,
         "live-tested": 1,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 5,
         "unsupported": 0,
-        "deferred": 5
+        "deferred": 0
       },
       "play": {
         "total": 1,
@@ -279,25 +279,25 @@
         "total": 4,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 4,
         "unsupported": 0,
-        "deferred": 4
+        "deferred": 0
       },
       "prefab": {
         "total": 18,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 18,
         "unsupported": 0,
-        "deferred": 18
+        "deferred": 0
       },
       "profiler": {
         "total": 5,
         "live-tested": 1,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 4,
         "unsupported": 0,
-        "deferred": 4
+        "deferred": 0
       },
       "project": {
         "total": 1,
@@ -319,41 +319,41 @@
         "total": 1,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "renderer": {
         "total": 1,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "scene": {
         "total": 6,
         "live-tested": 0,
         "covered": 5,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "sceneview": {
         "total": 2,
         "live-tested": 1,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "screenshot": {
         "total": 2,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "script": {
         "total": 3,
@@ -367,113 +367,113 @@
         "total": 4,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 4,
         "unsupported": 0,
-        "deferred": 4
+        "deferred": 0
       },
       "search": {
         "total": 7,
         "live-tested": 0,
         "covered": 1,
-        "mock-only": 0,
+        "mock-only": 6,
         "unsupported": 0,
-        "deferred": 6
+        "deferred": 0
       },
       "select": {
         "total": 1,
         "live-tested": 0,
-        "covered": 0,
+        "covered": 1,
         "mock-only": 0,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "selection": {
         "total": 4,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 4,
         "unsupported": 0,
-        "deferred": 4
+        "deferred": 0
       },
       "set": {
         "total": 1,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 1,
         "unsupported": 0,
-        "deferred": 1
+        "deferred": 0
       },
       "settings": {
         "total": 9,
         "live-tested": 2,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 7,
         "unsupported": 0,
-        "deferred": 7
+        "deferred": 0
       },
       "shader": {
         "total": 2,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "shadergraph": {
         "total": 14,
         "live-tested": 3,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 11,
         "unsupported": 0,
-        "deferred": 11
+        "deferred": 0
       },
       "spriteatlas": {
         "total": 7,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 7,
         "unsupported": 0,
-        "deferred": 7
+        "deferred": 0
       },
       "taglayer": {
         "total": 5,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 5,
         "unsupported": 0,
-        "deferred": 5
+        "deferred": 0
       },
       "terrain": {
         "total": 32,
         "live-tested": 3,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 29,
         "unsupported": 0,
-        "deferred": 29
+        "deferred": 0
       },
       "testing": {
         "total": 3,
         "live-tested": 1,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "texture": {
         "total": 5,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 5,
         "unsupported": 0,
-        "deferred": 5
+        "deferred": 0
       },
       "ui": {
         "total": 5,
         "live-tested": 2,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 3,
         "unsupported": 0,
-        "deferred": 3
+        "deferred": 0
       },
       "uma": {
         "total": 15,
@@ -487,17 +487,17 @@
         "total": 3,
         "live-tested": 0,
         "covered": 1,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       },
       "vfx": {
         "total": 2,
         "live-tested": 0,
         "covered": 0,
-        "mock-only": 0,
+        "mock-only": 2,
         "unsupported": 0,
-        "deferred": 2
+        "deferred": 0
       }
     },
     "filters": {
@@ -505,7 +505,11 @@
       "status": null,
       "search": null,
       "includeUnsupported": true,
-      "summaryOnly": false
+      "summaryOnly": false,
+      "nextBatchLimit": 0,
+      "fixturePlan": false,
+      "supportPlan": false,
+      "handoffPlan": false
     }
   },
   "tools": [
@@ -535,9 +539,10 @@
           "tool"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream/meta surface, but the CLI-first equivalent has not been explicitly mapped into the coverage matrix yet.",
-      "coverageBlocker": "matrix-mapping-gap"
+      "resolvedRoute": "advanced/tool",
+      "coverageStatus": "covered",
+      "coverageNote": "Covered by automated tests through the CLI meta-tool dispatch path.",
+      "coverageBlocker": "verified-automated"
     },
     {
       "name": "unity_agent_log",
@@ -560,9 +565,9 @@
           "agentId"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream/meta surface, but the CLI-first equivalent has not been explicitly mapped into the coverage matrix yet.",
-      "coverageBlocker": "matrix-mapping-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_agents_list",
@@ -577,9 +582,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream/meta surface, but the CLI-first equivalent has not been explicitly mapped into the coverage matrix yet.",
-      "coverageBlocker": "matrix-mapping-gap"
+      "coverageStatus": "covered",
+      "coverageNote": "Covered by automated tests and higher-level agent-session workflows.",
+      "coverageBlocker": "verified-automated"
     },
     {
       "name": "unity_amplify_add_node",
@@ -1229,9 +1234,9 @@
           "time"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_add_keyframe",
@@ -1298,9 +1303,9 @@
           "value"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_add_layer",
@@ -1376,9 +1381,9 @@
           "parameterType"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_add_state",
@@ -1513,9 +1518,9 @@
           "destinationState"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_assign_controller",
@@ -1546,9 +1551,9 @@
           "controllerPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_clip_info",
@@ -1571,9 +1576,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_controller_info",
@@ -1672,9 +1677,9 @@
           "blendParameter"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_create_clip",
@@ -1764,9 +1769,9 @@
           "stateName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_get_curve_keyframes",
@@ -1803,9 +1808,9 @@
           "typeName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_get_events",
@@ -1828,9 +1833,9 @@
           "clipPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_remove_curve",
@@ -1867,9 +1872,9 @@
           "typeName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_remove_event",
@@ -1897,9 +1902,9 @@
           "eventIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_remove_keyframe",
@@ -1941,9 +1946,9 @@
           "keyframeIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_remove_layer",
@@ -1971,9 +1976,9 @@
           "layerIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_remove_parameter",
@@ -2001,9 +2006,9 @@
           "parameterName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_remove_state",
@@ -2035,9 +2040,9 @@
           "stateName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_remove_transition",
@@ -2077,9 +2082,9 @@
           "sourceState"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_animation_set_clip_curve",
@@ -2202,9 +2207,9 @@
           "clipPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_add_references",
@@ -2235,9 +2240,9 @@
           "references"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_create",
@@ -2319,9 +2324,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_create_ref",
@@ -2349,9 +2354,9 @@
           "reference"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_info",
@@ -2374,9 +2379,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_list",
@@ -2400,9 +2405,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_remove_references",
@@ -2433,9 +2438,9 @@
           "references"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_set_platforms",
@@ -2472,9 +2477,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asmdef_update_settings",
@@ -2535,9 +2540,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asset_create_prefab",
@@ -2620,9 +2625,9 @@
           "destinationPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_asset_instantiate_prefab",
@@ -2795,9 +2800,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_audio_info",
@@ -2838,9 +2843,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_build",
@@ -2887,9 +2892,9 @@
           "outputPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_component_add",
@@ -2986,9 +2991,9 @@
           "references"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_component_get_properties",
@@ -3057,9 +3062,9 @@
           "propertyName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_component_remove",
@@ -3091,9 +3096,9 @@
           "componentType"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_component_set_property",
@@ -3204,9 +3209,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_console_log",
@@ -3230,9 +3235,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "covered",
+      "coverageNote": "Covered by automated tests and higher-level debug snapshot workflows.",
+      "coverageBlocker": "verified-automated"
     },
     {
       "name": "unity_constraint_add",
@@ -3268,9 +3273,9 @@
           "type"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_constraint_info",
@@ -3293,9 +3298,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_debugger_enable",
@@ -3318,9 +3323,9 @@
           "enabled"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_debugger_event_details",
@@ -3343,9 +3348,9 @@
           "eventIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_debugger_events",
@@ -3360,9 +3365,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_editor_ping",
@@ -3377,9 +3382,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_editor_state",
@@ -3419,9 +3424,9 @@
           "key"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_editorprefs_get",
@@ -3448,9 +3453,9 @@
           "key"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_editorprefs_set",
@@ -3481,9 +3486,9 @@
           "value"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_execute_code",
@@ -3531,9 +3536,9 @@
           "menuPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_gameobject_create",
@@ -3671,9 +3676,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_gameobject_info",
@@ -3731,9 +3736,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_gameobject_set_active",
@@ -3764,9 +3769,9 @@
           "active"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_gameobject_set_transform",
@@ -3884,9 +3889,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream/meta surface, but the CLI-first equivalent has not been explicitly mapped into the coverage matrix yet.",
-      "coverageBlocker": "matrix-mapping-gap"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the CLI context command; now uses queued context with an execute-code main-thread fallback.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_graphics_asset_preview",
@@ -3917,9 +3922,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_graphics_game_capture",
@@ -4074,9 +4079,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_graphics_renderer_info",
@@ -4154,9 +4159,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_hub_available_releases",
@@ -4343,9 +4348,9 @@
           "actionName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_input_add_binding",
@@ -4383,9 +4388,9 @@
           "bindingPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_input_add_composite_binding",
@@ -4449,9 +4454,9 @@
           "parts"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_input_add_map",
@@ -4479,9 +4484,9 @@
           "mapName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_input_create",
@@ -4581,9 +4586,9 @@
           "actionName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_input_remove_map",
@@ -4611,9 +4616,9 @@
           "mapName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_lighting_create",
@@ -4746,9 +4751,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_lighting_create_reflection_probe",
@@ -4810,9 +4815,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_lighting_info",
@@ -4916,9 +4921,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_list_advanced_tools",
@@ -4938,9 +4943,10 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream/meta surface, but the CLI-first equivalent has not been explicitly mapped into the coverage matrix yet.",
-      "coverageBlocker": "matrix-mapping-gap"
+      "resolvedRoute": "list/advanced-tools",
+      "coverageStatus": "covered",
+      "coverageNote": "Covered by automated tests through the CLI advanced-tool listing path.",
+      "coverageBlocker": "verified-automated"
     },
     {
       "name": "unity_list_instances",
@@ -4960,9 +4966,10 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream/meta surface, but the CLI-first equivalent has not been explicitly mapped into the coverage matrix yet.",
-      "coverageBlocker": "matrix-mapping-gap"
+      "resolvedRoute": "list/instances",
+      "coverageStatus": "covered",
+      "coverageNote": "Covered by automated tests through the CLI instance discovery wrapper.",
+      "coverageBlocker": "verified-automated"
     },
     {
       "name": "unity_lod_create",
@@ -4989,9 +4996,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_lod_info",
@@ -5014,9 +5021,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_material_create",
@@ -5064,9 +5071,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_memory_breakdown",
@@ -5090,9 +5097,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_memory_snapshot",
@@ -5112,9 +5119,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_memory_status",
@@ -5155,9 +5162,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_mppm_activate_scenario",
@@ -5180,9 +5187,10 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "resolvedRoute": "scenario/activate",
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_mppm_info",
@@ -5197,9 +5205,10 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "resolvedRoute": "scenario/info",
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_mppm_list_scenarios",
@@ -5214,9 +5223,10 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "resolvedRoute": "scenario/list",
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_mppm_start",
@@ -5231,9 +5241,10 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "resolvedRoute": "scenario/start",
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_mppm_status",
@@ -5248,9 +5259,10 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "resolvedRoute": "scenario/status",
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_mppm_stop",
@@ -5265,9 +5277,10 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "resolvedRoute": "scenario/stop",
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_navmesh_add_agent",
@@ -5314,9 +5327,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_navmesh_add_obstacle",
@@ -5347,9 +5360,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_navmesh_bake",
@@ -5381,9 +5394,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_navmesh_clear",
@@ -5398,9 +5411,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_navmesh_info",
@@ -5456,9 +5469,9 @@
           "destination"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_packages_add",
@@ -5481,9 +5494,9 @@
           "identifier"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_packages_info",
@@ -5506,9 +5519,9 @@
           "name"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_packages_list",
@@ -5523,9 +5536,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_packages_remove",
@@ -5548,9 +5561,9 @@
           "name"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_packages_search",
@@ -5573,9 +5586,9 @@
           "query"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_particle_create",
@@ -5642,9 +5655,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_particle_info",
@@ -5668,9 +5681,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_particle_playback",
@@ -5701,9 +5714,9 @@
           "action"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_particle_set_emission",
@@ -5738,9 +5751,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_particle_set_main",
@@ -5795,9 +5808,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_particle_set_shape",
@@ -5841,9 +5854,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_physics_collision_matrix",
@@ -5858,9 +5871,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_physics_overlap_box",
@@ -5914,9 +5927,9 @@
           "halfExtents"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_physics_overlap_sphere",
@@ -5959,9 +5972,9 @@
           "radius"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_physics_raycast",
@@ -6061,9 +6074,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_physics_set_gravity",
@@ -6094,9 +6107,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_play_mode",
@@ -6149,9 +6162,9 @@
           "key"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_playerprefs_delete_all",
@@ -6166,9 +6179,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_playerprefs_get",
@@ -6195,9 +6208,9 @@
           "key"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_playerprefs_set",
@@ -6228,9 +6241,9 @@
           "value"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_add_component",
@@ -6262,9 +6275,9 @@
           "componentType"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_add_gameobject",
@@ -6353,9 +6366,9 @@
           "name"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_apply_overrides",
@@ -6379,9 +6392,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_apply_variant_override",
@@ -6416,9 +6429,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_compare_variant",
@@ -6441,9 +6454,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_create_variant",
@@ -6471,9 +6484,9 @@
           "variantPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_get_hierarchy",
@@ -6500,9 +6513,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_get_properties",
@@ -6534,9 +6547,9 @@
           "componentType"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_info",
@@ -6564,9 +6577,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_remove_component",
@@ -6602,9 +6615,9 @@
           "componentType"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_remove_gameobject",
@@ -6632,9 +6645,9 @@
           "prefabPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_revert_overrides",
@@ -6658,9 +6671,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_revert_variant_override",
@@ -6695,9 +6708,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_set_property",
@@ -6737,9 +6750,9 @@
           "propertyName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_set_reference",
@@ -6791,9 +6804,9 @@
           "propertyName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_transfer_variant_overrides",
@@ -6821,9 +6834,9 @@
           "targetAssetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_unpack",
@@ -6851,9 +6864,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_prefab_variant_info",
@@ -6876,9 +6889,9 @@
           "assetPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_profiler_analyze",
@@ -6893,9 +6906,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_profiler_enable",
@@ -6922,9 +6935,9 @@
           "enabled"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_profiler_frame_data",
@@ -6956,9 +6969,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_profiler_memory",
@@ -6973,9 +6986,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_profiler_stats",
@@ -7066,9 +7079,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_renderer_set_material",
@@ -7100,9 +7113,9 @@
           "materialPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_scene_hierarchy",
@@ -7164,9 +7177,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_scene_open",
@@ -7323,9 +7336,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_screenshot_game",
@@ -7349,9 +7362,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_screenshot_scene",
@@ -7379,9 +7392,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_script_create",
@@ -7497,9 +7510,9 @@
           "type"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_scriptableobject_info",
@@ -7522,9 +7535,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_scriptableobject_list_types",
@@ -7548,9 +7561,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_scriptableobject_set_field",
@@ -7582,9 +7595,9 @@
           "value"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_search_assets",
@@ -7616,9 +7629,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_search_by_component",
@@ -7649,9 +7662,9 @@
           "componentType"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_search_by_layer",
@@ -7678,9 +7691,9 @@
           "layer"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_search_by_name",
@@ -7715,9 +7728,9 @@
           "name"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_search_by_shader",
@@ -7744,9 +7757,9 @@
           "shader"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_search_by_tag",
@@ -7773,9 +7786,9 @@
           "tag"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_search_missing_references",
@@ -7824,9 +7837,10 @@
           "port"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream/meta surface, but the CLI-first equivalent has not been explicitly mapped into the coverage matrix yet.",
-      "coverageBlocker": "matrix-mapping-gap"
+      "resolvedRoute": "select/instance",
+      "coverageStatus": "covered",
+      "coverageNote": "Covered by automated tests through the CLI instance selection wrapper.",
+      "coverageBlocker": "verified-automated"
     },
     {
       "name": "unity_selection_find_by_type",
@@ -7849,9 +7863,9 @@
           "typeName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_selection_focus_scene_view",
@@ -7913,9 +7927,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_selection_get",
@@ -7930,9 +7944,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_selection_set",
@@ -7963,9 +7977,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_set_object_reference",
@@ -8008,9 +8022,9 @@
           "propertyName"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_physics",
@@ -8025,9 +8039,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_player",
@@ -8042,9 +8056,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_quality",
@@ -8076,9 +8090,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_set_physics",
@@ -8129,9 +8143,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_set_player",
@@ -8163,9 +8177,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_set_quality_level",
@@ -8188,9 +8202,9 @@
           "level"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_set_time",
@@ -8218,9 +8232,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_settings_time",
@@ -8261,9 +8275,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shader_list",
@@ -8291,9 +8305,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_add_node",
@@ -8329,9 +8343,9 @@
           "nodeType"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_connect",
@@ -8374,9 +8388,9 @@
           "inputSlotId"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_create",
@@ -8448,9 +8462,9 @@
           "inputSlotId"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_get_edges",
@@ -8473,9 +8487,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_get_node_types",
@@ -8490,9 +8504,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_get_nodes",
@@ -8515,9 +8529,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_info",
@@ -8540,9 +8554,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_list",
@@ -8583,9 +8597,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_open",
@@ -8608,9 +8622,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_remove_node",
@@ -8638,9 +8652,9 @@
           "nodeId"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_set_node_property",
@@ -8677,9 +8691,9 @@
           "value"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_shadergraph_status",
@@ -8730,9 +8744,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_spriteatlas_create",
@@ -8759,9 +8773,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_spriteatlas_delete",
@@ -8784,9 +8798,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_spriteatlas_info",
@@ -8809,9 +8823,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_spriteatlas_list",
@@ -8831,9 +8845,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_spriteatlas_remove",
@@ -8867,9 +8881,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_spriteatlas_settings",
@@ -8924,9 +8938,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
-      "coverageBlocker": "package-dependent-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_taglayer_add_tag",
@@ -8949,9 +8963,9 @@
           "tag"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_taglayer_info",
@@ -8966,9 +8980,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_taglayer_set_layer",
@@ -9004,9 +9018,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_taglayer_set_static",
@@ -9038,9 +9052,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_taglayer_set_tag",
@@ -9071,9 +9085,9 @@
           "tag"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known in the upstream catalog, but it has not been wrapped or verified deeply enough yet.",
-      "coverageBlocker": "wrapper-gap"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_add_detail_prototype",
@@ -9153,9 +9167,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_add_layer",
@@ -9194,9 +9208,9 @@
           "texturePath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_add_tree_prototype",
@@ -9227,9 +9241,9 @@
           "prefabPath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_clear_detail",
@@ -9253,9 +9267,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_clear_trees",
@@ -9279,9 +9293,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_create",
@@ -9401,9 +9415,9 @@
           "cols"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_export_heightmap",
@@ -9434,9 +9448,9 @@
           "filePath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_fill_layer",
@@ -9463,9 +9477,9 @@
           "layerIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_flatten",
@@ -9489,9 +9503,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_get_height",
@@ -9567,9 +9581,9 @@
           "height"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_get_steepness",
@@ -9601,9 +9615,9 @@
           "worldZ"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_get_tree_instances",
@@ -9627,9 +9641,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_import_heightmap",
@@ -9664,9 +9678,9 @@
           "filePath"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_info",
@@ -9703,9 +9717,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_noise",
@@ -9745,9 +9759,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_paint_detail",
@@ -9792,9 +9806,9 @@
           "detailIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_paint_layer",
@@ -9843,9 +9857,9 @@
           "layerIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_place_trees",
@@ -9941,9 +9955,9 @@
           "prototypeIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_raise_lower",
@@ -9988,9 +10002,9 @@
           "delta"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_remove_layer",
@@ -10017,9 +10031,9 @@
           "layerIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_remove_tree_prototype",
@@ -10046,9 +10060,9 @@
           "prototypeIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_resize",
@@ -10084,9 +10098,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_scatter_detail",
@@ -10125,9 +10139,9 @@
           "detailIndex"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_set_height",
@@ -10168,9 +10182,9 @@
           "height"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_set_heights_region",
@@ -10213,9 +10227,9 @@
           "heights"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_set_holes",
@@ -10258,9 +10272,9 @@
           "holes"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_set_neighbors",
@@ -10299,9 +10313,9 @@
           "terrain"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_set_settings",
@@ -10365,9 +10379,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_terrain_smooth",
@@ -10407,9 +10421,9 @@
           "z"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_testing_get_job",
@@ -10441,9 +10455,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_testing_list_tests",
@@ -10533,9 +10547,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it depends on machine/editor/runtime state that has not been fully wired into the automated coverage pass yet.",
-      "coverageBlocker": "environment-sensitive"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_texture_info",
@@ -10558,9 +10572,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_texture_reimport",
@@ -10583,9 +10597,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_texture_set_import",
@@ -10660,9 +10674,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_texture_set_normalmap",
@@ -10685,9 +10699,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_texture_set_sprite",
@@ -10718,9 +10732,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_ui_create_canvas",
@@ -10803,9 +10817,9 @@
           "type"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_ui_info",
@@ -10874,9 +10888,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_ui_set_text",
@@ -10928,9 +10942,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_uma_create_overlay",
@@ -10971,6 +10985,7 @@
           "textures"
         ]
       },
+      "resolvedRoute": "uma/create-overlay",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11069,6 +11084,7 @@
           "raceName"
         ]
       },
+      "resolvedRoute": "uma/create-race",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11118,6 +11134,7 @@
           "umaMaterialPath"
         ]
       },
+      "resolvedRoute": "uma/create-slot",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11191,6 +11208,7 @@
           "variants"
         ]
       },
+      "resolvedRoute": "uma/create-wardrobe-from-fbx",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11290,6 +11308,7 @@
           "slots"
         ]
       },
+      "resolvedRoute": "uma/create-wardrobe-recipe",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11399,6 +11418,7 @@
           }
         }
       },
+      "resolvedRoute": "uma/edit-race",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11416,6 +11436,7 @@
         "type": "object",
         "properties": {}
       },
+      "resolvedRoute": "uma/get-project-config",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11441,6 +11462,7 @@
           "fbxPath"
         ]
       },
+      "resolvedRoute": "uma/inspect-fbx",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11467,6 +11489,7 @@
           }
         }
       },
+      "resolvedRoute": "uma/list-global-library",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11484,6 +11507,7 @@
         "type": "object",
         "properties": {}
       },
+      "resolvedRoute": "uma/list-uma-materials",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11509,6 +11533,7 @@
           "raceName"
         ]
       },
+      "resolvedRoute": "uma/list-wardrobe-slots",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11536,6 +11561,7 @@
           }
         }
       },
+      "resolvedRoute": "uma/rebuild-global-library",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11565,6 +11591,7 @@
           }
         }
       },
+      "resolvedRoute": "uma/register-assets",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11590,6 +11617,7 @@
           "recipePath"
         ]
       },
+      "resolvedRoute": "uma/verify-recipe",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11627,6 +11655,7 @@
           "wardrobeSlot"
         ]
       },
+      "resolvedRoute": "uma/wardrobe-equip",
       "coverageStatus": "deferred",
       "coverageNote": "Known upstream tool, but it depends on optional packages/assets and still needs fixture-based live validation before promotion.",
       "coverageBlocker": "package-dependent-live-audit"
@@ -11666,9 +11695,9 @@
           }
         }
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_undo_history",
@@ -11683,9 +11712,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_vfx_list",
@@ -11700,9 +11729,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     },
     {
       "name": "unity_vfx_open",
@@ -11725,9 +11754,9 @@
           "path"
         ]
       },
-      "coverageStatus": "deferred",
-      "coverageNote": "Known upstream tool, but it performs stateful editor mutations. We need disposable fixtures and live audit coverage before promoting it.",
-      "coverageBlocker": "stateful-live-audit"
+      "coverageStatus": "mock-only",
+      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
+      "coverageBlocker": "verified-mock"
     }
   ]
 }

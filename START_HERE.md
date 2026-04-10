@@ -8,16 +8,16 @@ This CLI lets Codex control Unity without using MCP as the transport layer.
 
 Think of the system like this:
 
-1. Unity plugin:
-   This is the real backend. It runs inside the Unity Editor and actually edits scenes, scripts, components, assets, and build settings.
+1. Unity bridge:
+   This is the Unity-side code that actually edits scenes, scripts, components, assets, and build settings.
 
-2. Old MCP server:
-   This sits between the AI and the Unity plugin. It translates MCP tool calls into local HTTP requests to the plugin.
+2. Bridge choices:
+   The standalone File IPC bridge in this repo handles core local routes without the AnkleBreaker plugin. The AnkleBreaker plugin HTTP bridge handles the broader advanced route surface.
 
 3. This CLI repo:
-   This skips the MCP protocol layer and talks directly to the same Unity plugin over localhost.
+   This skips the MCP protocol layer and talks directly to whichever Unity bridge you choose.
 
-So this is not a clean-room rewrite of the Unity backend. It is a separate CLI/client layer that uses the same Unity-side bridge the MCP setup uses.
+So this is not a complete clean-room rewrite of the whole Unity backend yet. It is a separate CLI/client layer with a growing standalone File IPC bridge for core routes and compatibility with the full upstream plugin for advanced routes.
 
 ## Why Use This
 
@@ -27,7 +27,8 @@ Benefits:
 - lower overhead than a full MCP tool session
 - easier to debug because every action is just a command
 - works well with Codex because Codex can call shell commands directly
-- keeps most of the same Unity power because the upstream plugin backend is unchanged
+- can run core routes without the AnkleBreaker plugin through File IPC
+- can still use the upstream plugin backend when you need the full advanced surface
 
 Tradeoffs:
 - no native MCP tool registry inside the client
@@ -39,10 +40,14 @@ Tradeoffs:
 Before someone can use this setup, they need:
 
 - Python `3.11` or newer
-- the AnkleBreaker Unity MCP plugin installed in their Unity project
-- the Unity Editor running with the bridge server started
+- either the File IPC bridge scripts from this repo or the AnkleBreaker Unity MCP plugin installed in their Unity project
+- the Unity Editor running
 
-If they are not sure what that plugin is, or how to install it, send them here:
+If they want the no-AnkleBreaker-plugin core path, send them here:
+
+- [FILE_IPC.md](FILE_IPC.md)
+
+If they want the full advanced plugin path, send them here:
 
 - [PLUGIN_SETUP.md](PLUGIN_SETUP.md)
 
@@ -56,13 +61,14 @@ That dependency is listed in both `requirements.txt` and `setup.py`.
 
 For most people, this CLI repo is the real project.
 
-You need the Unity plugin installed inside the Unity project you want to control, but you do not need to actively maintain a separate plugin source fork unless you are changing Unity-side backend behavior.
+For the core route path, you only need the File IPC bridge scripts copied into the Unity project. For the full advanced route path, you need the AnkleBreaker Unity plugin installed inside the Unity project you want to control. You do not need to actively maintain a separate plugin source fork unless you are changing Unity-side backend behavior.
 
 Simple rule:
 
 - customize this CLI repo for your workflows
-- use the upstream plugin in Unity
-- only fork the plugin when a fix cannot be solved in the CLI layer
+- use File IPC when the core standalone route surface is enough
+- use the upstream plugin when you need advanced routes we have not rebuilt yet
+- only fork the plugin when a fix cannot be solved in this CLI or standalone bridge layer
 
 ## Installation
 
@@ -85,11 +91,41 @@ After installation, the command will be available as:
 cli-anything-unity-mcp
 ```
 
-## The Plugin Part
+## The Unity Bridge Part
 
-The CLI alone is not enough.
+The Python CLI alone is not enough. Unity needs a bridge inside the project.
 
-The Unity project still needs the upstream Unity plugin installed, because that plugin is the thing inside Unity that actually performs editor actions.
+You have two options.
+
+### Option A: Standalone File IPC
+
+This path does not require the AnkleBreaker plugin for core routes.
+
+Copy these files into your Unity project's `Assets/Editor/` folder:
+
+```text
+unity-scripts/Editor/FileIPCBridge.cs
+unity-scripts/Editor/StandaloneRouteHandler.cs
+```
+
+Wait for Unity to compile and look for:
+
+```text
+[FileIPC] Bridge initialized at .../.umcp
+```
+
+Then run:
+
+```powershell
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json state
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json scene-info
+```
+
+See [FILE_IPC.md](FILE_IPC.md) for the full standalone setup.
+
+### Option B: Full Plugin HTTP Bridge
+
+Use this when you need the full advanced route surface.
 
 Shortest setup:
 
@@ -115,7 +151,12 @@ That means the bridge is live.
 
 ## What It Can Do Right Now
 
-The CLI already supports:
+The CLI already supports the broad surface below when the matching Unity-side bridge supports the route. The standalone File IPC subset is listed in [FILE_IPC.md](FILE_IPC.md); the full advanced surface still uses the plugin HTTP bridge today.
+
+- standalone File IPC: core scene, hierarchy, editor, console, compilation, GameObject, component, asset, script, undo/redo, screenshot, and native panel routes
+- plugin HTTP bridge: the broader advanced route surface while we keep expanding standalone coverage
+
+Across the full CLI surface:
 - discovering running Unity instances
 - selecting the Unity instance to target
 - browsing a large local compatibility catalog generated from the upstream Unity MCP tool surface
@@ -178,7 +219,7 @@ That means the CLI is already capable of real authoring work in your project.
 
 It also now has a higher-level workflow layer so Codex does not need to manually stitch every low-level route together for common tasks.
 
-It does not mean the upstream Unity backend disappeared. This CLI still depends on the Unity plugin being present in the target project.
+It does not mean the whole upstream Unity backend disappeared. The core File IPC path works without the AnkleBreaker plugin, but the broad advanced surface still depends on the Unity plugin being present in the target project.
 
 ## Known Rough Edges
 
@@ -378,11 +419,12 @@ cli-anything-unity-mcp play stop --no-wait --port 7893
 
 Best practical setup today:
 
-1. Keep the Unity plugin running in the editor.
-2. Use this CLI as Codex's main Unity control path.
-3. Prefer `--json` when the result will be read by another tool or agent.
-4. Always pass `--port <port>` when you know the target instance.
-5. Prefer the `workflow` commands first, then fall back to `tool` or `route` only when needed.
+1. Use `--transport file` and the File IPC bridge for core standalone work.
+2. Keep the Unity plugin running only when you need advanced routes not yet supported by the standalone bridge.
+3. Use this CLI as Codex's main Unity control path.
+4. Prefer `--json` when the result will be read by another tool or agent.
+5. For File IPC, always pass `--transport file --file-ipc-path <project>`. For plugin HTTP, pass `--port <port>` when you know the target instance.
+6. Prefer the `workflow` commands first, then fall back to `tool` or `route` only when needed.
 
 For actual game work, the best pattern right now is:
 

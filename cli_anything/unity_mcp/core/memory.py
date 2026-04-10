@@ -61,9 +61,10 @@ class ProjectMemory:
     ) -> None:
         self.project_path = project_path
         self.project_id = _project_id(project_path)
+        env_override = os.environ.get("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR")
         self._root = Path(store_root) if store_root else _default_memory_root()
         self._fallback_root = _workspace_memory_root()
-        self._allow_fallback = allow_fallback
+        self._allow_fallback = allow_fallback and store_root is None and not env_override
         self._store_path = self._root / f"{self.project_id}.json"
         self._fallback_path = self._fallback_root / f"{self.project_id}.json"
         self._data: Dict[str, Any] | None = None  # lazy-loaded cache
@@ -213,6 +214,52 @@ class ProjectMemory:
             "storePath": str(self._store_path),
         }
 
+    def summarize_for_selection(self, max_fixes: int = 5, max_recurring: int = 5) -> Optional[Dict[str, Any]]:
+        """Return a compact, side-effect-free memory summary for `select` output."""
+        stats = self.stats()
+        total_entries = int(stats.get("totalEntries") or 0)
+        if total_entries <= 0:
+            return None
+
+        summary: Dict[str, Any] = {
+            "totalEntries": total_entries,
+            "byCategory": stats.get("byCategory", {}),
+        }
+
+        structure = {
+            key: value
+            for key, value in self.get_all_structure().items()
+            if key and not key.startswith("_")
+        }
+        if structure:
+            summary["structure"] = structure
+
+        data = self._load()
+        fixes = [
+            entry
+            for entry in data["entries"].values()
+            if entry.get("category") == CATEGORY_FIX
+        ]
+        fixes.sort(key=lambda entry: entry.get("updated", ""), reverse=True)
+        fix_limit = max(0, int(max_fixes))
+        if fix_limit and fixes:
+            summary["knownFixes"] = [
+                {
+                    "pattern": entry.get("key", ""),
+                    "fixCommand": entry.get("content", {}).get("fixCommand", ""),
+                    "context": entry.get("content", {}).get("context", ""),
+                }
+                for entry in fixes[:fix_limit]
+            ]
+
+        recurring_limit = max(0, int(max_recurring))
+        if recurring_limit:
+            recurring = self.get_recurring_missing_refs(min_seen=2)[:recurring_limit]
+            if recurring:
+                summary["recurringMissingRefs"] = recurring
+
+        return summary
+
     # ── Typed helpers ─────────────────────────────────────────────────────────
 
     def remember_fix(
@@ -286,6 +333,161 @@ class ProjectMemory:
     def get_last_doctor_state(self) -> Optional[Dict[str, Any]]:
         """Return the last saved doctor state, or None."""
         return self.get_structure("_last_doctor_state")
+
+    # ── Recurring issue tracking ─────────────────────────────────────────────
+
+    def record_missing_references(
+        self,
+        results: List[Dict[str, Any]],
+        scene_name: str,
+    ) -> Dict[str, Any]:
+        """Record missing references from a validate-scene run and flag repeat offenders.
+
+        Each missing-ref result is keyed by its GameObject path + issue text.
+        If the same issue appears across multiple runs, its ``seen_count``
+        increments and it gets flagged as ``recurring``.
+
+        Returns a summary dict with ``newIssues``, ``recurringIssues``, and
+        ``resolvedIssues`` (issues that were present last time but gone now).
+        """
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_missing_refs_tracker"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+
+        # Build a set of current issue keys.
+        current_issues: Dict[str, Dict[str, Any]] = {}
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            go_path = result.get("path") or result.get("gameObject") or "unknown"
+            issue = result.get("issue") or result.get("message") or "missing reference"
+            component = result.get("component") or ""
+            issue_key = f"{go_path}|{component}|{issue}"
+            current_issues[issue_key] = {
+                "gameObject": go_path,
+                "component": component,
+                "issue": issue,
+                "scene": scene_name,
+            }
+
+        new_issues: List[Dict[str, Any]] = []
+        recurring_issues: List[Dict[str, Any]] = []
+        resolved_issues: List[Dict[str, Any]] = []
+
+        # Classify current issues.
+        for issue_key, issue_info in current_issues.items():
+            prev = tracker.get(issue_key)
+            if prev:
+                seen_count = prev.get("seen_count", 1) + 1
+                first_seen = prev.get("first_seen", self._now_iso())
+                tracker[issue_key] = {
+                    **issue_info,
+                    "seen_count": seen_count,
+                    "first_seen": first_seen,
+                    "last_seen": self._now_iso(),
+                }
+                recurring_issues.append({**issue_info, "seenCount": seen_count, "firstSeen": first_seen})
+            else:
+                tracker[issue_key] = {
+                    **issue_info,
+                    "seen_count": 1,
+                    "first_seen": self._now_iso(),
+                    "last_seen": self._now_iso(),
+                }
+                new_issues.append(issue_info)
+
+        # Detect resolved issues (were tracked before but not in current set).
+        for issue_key, prev_info in list(tracker.items()):
+            if issue_key not in current_issues:
+                resolved_issues.append({
+                    "gameObject": prev_info.get("gameObject", ""),
+                    "component": prev_info.get("component", ""),
+                    "issue": prev_info.get("issue", ""),
+                    "scene": prev_info.get("scene", ""),
+                    "seenCount": prev_info.get("seen_count", 1),
+                })
+                del tracker[issue_key]
+
+        # Persist the updated tracker.
+        self.save(
+            CATEGORY_PATTERN,
+            "_missing_refs_tracker",
+            {"value": tracker},
+        )
+
+        return {
+            "newIssues": new_issues,
+            "recurringIssues": recurring_issues,
+            "resolvedIssues": resolved_issues,
+            "totalTracked": len(tracker),
+        }
+
+    def summarize_for_selection(
+        self,
+        max_fixes: int = 5,
+        max_recurring: int = 5,
+    ) -> Optional[Dict[str, Any]]:
+        """Build a compact memory summary suitable for the ``select`` command.
+
+        Args:
+            max_fixes: Maximum number of known fixes to include.
+            max_recurring: Maximum number of recurring missing refs to include.
+
+        Returns ``None`` if memory is empty so the caller can skip output.
+        """
+        stats = self.stats()
+        if stats.get("totalEntries", 0) == 0:
+            return None
+
+        summary: Dict[str, Any] = {
+            "totalEntries": stats["totalEntries"],
+            "byCategory": stats.get("byCategory", {}),
+        }
+
+        # Cached structure (skip internal keys).
+        structure = self.get_all_structure()
+        public_structure = {k: v for k, v in structure.items() if not k.startswith("_")}
+        if public_structure:
+            summary["structure"] = public_structure
+
+        # Known fixes.
+        fixes = self.recall(category=CATEGORY_FIX, limit=max_fixes)
+        if fixes:
+            summary["knownFixes"] = [
+                {
+                    "pattern": f.get("key", ""),
+                    "fixCommand": f.get("content", {}).get("fixCommand", ""),
+                    "context": f.get("content", {}).get("context", ""),
+                }
+                for f in fixes
+            ]
+
+        # Recurring missing refs.
+        recurring = self.get_recurring_missing_refs(min_seen=2)
+        if recurring:
+            summary["recurringMissingRefs"] = recurring[:max_recurring]
+
+        return summary
+
+    def get_recurring_missing_refs(self, min_seen: int = 2) -> List[Dict[str, Any]]:
+        """Return missing references that have been seen at least ``min_seen`` times."""
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_missing_refs_tracker"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+        results = []
+        for issue_key, info in tracker.items():
+            if info.get("seen_count", 1) >= min_seen:
+                results.append({
+                    "gameObject": info.get("gameObject", ""),
+                    "component": info.get("component", ""),
+                    "issue": info.get("issue", ""),
+                    "scene": info.get("scene", ""),
+                    "seenCount": info.get("seen_count", 1),
+                    "firstSeen": info.get("first_seen", ""),
+                    "lastSeen": info.get("last_seen", ""),
+                })
+        results.sort(key=lambda r: r["seenCount"], reverse=True)
+        return results
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
