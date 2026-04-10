@@ -14,13 +14,16 @@ As of 2026-04-09:
 
 - thin MCP adapter is working
 - upstream coverage matrix exists in code and JSON form
-- `37/37` automated tests are passing
+- `70/70` automated tests are passing
 - heavy live MCP pass is passing `15/15`
 - live debug reports can be written with `scripts/run_live_mcp_pass.py --debug --report-file ...`
+- live MCP pass text mode now summarizes counts, failures/timeouts, port hops, slowest steps, and first next commands for failed steps, with `--summary-only` for the failure-first view
 - advanced-tool audit now reaches UI, audio, lighting, animation, input, shadergraph, terrain, and navmesh
 - tool coverage is measurable: `31` live-tested, `31` covered, `260` deferred, `6` unsupported
 - `unsupported` currently maps to the Unity Hub surface only
 - deferred tools now carry blocker labels like `stateful-live-audit`, `package-dependent-live-audit`, and `unity-hub-integration`
+- `debug trace` now carries route/tool/category metadata, lightweight `--follow` mode, summary `problemGroups` with suggested next commands, and a readable plain terminal summary mode
+- `tool-coverage --next-batch` now generates prioritized deferred-tool handoffs for contributors and parallel agents
 
 That means the project is no longer blocked on basic transport.
 The next phase is coverage, reliability, observability, and eventually owning more of the backend.
@@ -82,7 +85,8 @@ We should consider the tool layer "done enough" when all of these are true:
   - `ui`
   - `terrain`
 - Save each run to a timestamped report file by default when `--debug` is enabled.
-- Add a summary mode that prints only failures, timeouts, and port hops.
+- Keep the live-pass summary mode focused on failures, timeouts, and bridge port hops.
+- Keep improving the failure-first text rendering for `debug trace --summary` so the plain CLI view stays easy to scan mid-conversation.
 
 ### P1
 
@@ -191,10 +195,21 @@ We should consider the tool layer "done enough" when all of these are true:
 These are the next best moves right now:
 
 1. Reduce the `deferred` count in the checked-in tool coverage matrix, starting with `terrain`, `ui`, `lighting`, and `animation`.
-2. Keep improving CLI-first debugging so the harness can explain Unity failures clearly.
-3. Add failure-focused live-pass summary output and port-hop reporting polish.
-4. Add automatic Scene/Game capture review to heavy workflows.
+2. Keep improving `debug trace` so it can filter by route/tool/category and show the exact path an agent took without extra Unity load.
+3. Keep polishing failure-focused live-pass output with more route/tool-specific next-step guidance.
+4. Add automatic Scene/Game capture review to heavy workflows, but keep it opt-in and lightweight.
 5. Turn the highest-value roadmap items into GitHub issues.
+
+## Short Todo List
+
+- `P0` Finish route/tool-aware trace filters and surface them clearly in docs.
+- `P0` Add a trace summary view so recent agent activity can be understood at a glance.
+- `P0` Expand tool coverage for the next four deferred categories: `terrain`, `ui`, `lighting`, `animation`.
+- `P0` Use `tool-coverage --next-batch` to assign safe live-audit slices to parallel contributors.
+- `P0` Keep bridge discovery/rebind reliable so stale selected ports do not confuse day-to-day use.
+- `P1` Add category-level live-pass presets that contributors can run without knowing the whole harness.
+- `P1` Improve error wording so route failures always mention route, tool, transport, and suggested next command.
+- `P2` Start separating future custom-backend work from current CLI-layer work in issues and docs.
 
 ## Notes
 

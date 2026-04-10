@@ -15,10 +15,12 @@ If you are a coding agent working in this repository, treat the CLI layer as the
 When helping a user with a Unity task, prefer this order:
 
 1. Discover and target the right Unity editor.
-2. Inspect the current state.
-3. Debug before guessing.
-4. Make the smallest useful change.
-5. Verify with logs, trace, and captures.
+2. Inspect the current state — this also caches project structure into memory automatically.
+3. Check memory for what the CLI already knows about this project.
+4. Debug before guessing.
+5. Make the smallest useful change.
+6. Verify with logs, trace, and captures.
+7. Run `debug doctor` again after a fix — if the issue is gone, the CLI auto-learns the fix.
 
 Use these commands first:
 
@@ -26,6 +28,8 @@ Use these commands first:
 cli-anything-unity-mcp instances
 cli-anything-unity-mcp select <port>
 cli-anything-unity-mcp --json workflow inspect --port <port>
+cli-anything-unity-mcp --json memory recall
+cli-anything-unity-mcp --json memory stats
 cli-anything-unity-mcp --json debug doctor --port <port>
 cli-anything-unity-mcp --json debug trace --tail 20
 cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port <port>
@@ -95,9 +99,64 @@ cli-anything-unity-mcp debug editor-log --contains "CLI-TRACE" --follow
 - Keep attribution honest.
 - Improve the CLI/debugging/tooling surface first.
 
+## Project Memory System
+
+The CLI has a persistent memory store that learns about each Unity project over time. Memory is keyed per project (by project path) and survives across sessions.
+
+### How it gets populated automatically
+
+- **`workflow inspect`** — caches render pipeline, Unity version, project name, installed packages, script directories, and last active scene every time it runs. No extra flags needed.
+- **`debug doctor` fix loops** — when an issue disappears between two doctor runs, the CLI credits the intervening commands and saves them as fixes automatically. The next doctor run that sees the same issue will show `pastFix.fixCommand`.
+
+### When to use memory explicitly
+
+Check memory early in a session, especially for a project you've worked on before:
+
+```powershell
+cli-anything-unity-mcp --json memory stats
+cli-anything-unity-mcp --json memory recall
+cli-anything-unity-mcp --json memory recall --category fix
+cli-anything-unity-mcp --json memory recall --category structure
+cli-anything-unity-mcp --json memory recall --search "CS0246"
+```
+
+Save a fix manually when you know what worked:
+
+```powershell
+cli-anything-unity-mcp memory remember-fix "CS0246" "cli-anything-unity-mcp script-update Assets/Foo.cs" --context "was a missing asmdef"
+cli-anything-unity-mcp memory remember structure render_pipeline URP
+cli-anything-unity-mcp memory remember pattern addressables "Project uses Addressables not Resources.Load"
+```
+
+### What `debug doctor` does with memory
+
+When memory exists for the active project, `debug doctor`:
+
+1. **Annotates findings** with `pastFix` — if a finding matches a known error pattern, the report includes the command that fixed it before.
+2. **Detects structure drift** — compares current snapshot against cached structure and flags changes: pipeline switch, Unity version change, missing packages referenced in code.
+3. **Auto-learns fixes** — after each run, saves the current finding set. If a problem disappears on the next run, credits the intervening CLI commands as fixes.
+
+### Memory categories
+
+| Category | What it stores | Example key |
+|----------|---------------|-------------|
+| `fix` | error pattern → fix command | `"Compilation Issues"` |
+| `structure` | project layout facts | `"render_pipeline"`, `"packages"`, `"unity_version"` |
+| `pattern` | recurring project behaviour | `"addressables"`, `"custom_shader_workflow"` |
+| `preference` | agent/user preferences for this project | `"preferred_scene_depth"` |
+
+### What NOT to store in memory
+
+- Transient runtime state (console messages, play mode status) — these change constantly
+- Full snapshots or hierarchy dumps — too large and go stale immediately
+- Things already visible in git or the project files
+
 ## What Not To Do
 
 - Do not present temporary probes or validation helpers as the main value of the project.
 - Do not skip logs and screenshots when debugging Unity visuals.
 - Do not jump straight to low-level route calls if a workflow or debug command already covers the job.
 - Do not push mixed CLI work and experimental fixture work together unless the user explicitly wants that.
+- Do not skip `memory recall` at the start of a session on a known project — past fixes and structure facts save bridge round-trips.
+- Do not manually save things to memory that `workflow inspect` already caches automatically (render pipeline, Unity version, packages).
+- Do not trust cached structure as ground truth without verifying against the current bridge state when something looks wrong.

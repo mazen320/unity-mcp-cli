@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **project memory system** — persistent per-project learning store in `core/memory.py`. Keyed by SHA256 hash of the project path. Survives across sessions. Storage at `%LOCALAPPDATA%/CLIAnything/memory/` on Windows with workspace fallback.
+- **four memory categories** — `fix` (error pattern → fix command), `structure` (render pipeline, packages, Unity version, script dirs, active scene), `pattern` (recurring project behaviour), `preference` (per-project agent preferences)
+- **`memory` command group** — `memory recall`, `memory remember-fix`, `memory remember`, `memory forget`, `memory stats` for manual memory management
+- **auto-learn from `workflow inspect`** — every inspect call silently caches render pipeline, Unity version, project name, installed packages, script directories, and active scene. No extra flags needed.
+- **auto-learn from fix loops** — when `debug doctor` finds an issue, then the issue is gone on the next doctor run, the CLI automatically credits the commands that ran in between and saves them as fixes. Reported in `report["autoLearnedFixes"]`.
+- **`debug doctor` past-fix annotations** — findings now include `pastFix.fixCommand` when a matching fix is in memory, with a note that it worked before
+- **`debug doctor` structure-drift detection** — three new findings powered by cached structure: `Render Pipeline Changed` (pipeline switch detected), `Unity Version Changed` (editor version differs from last inspect), `TextMeshPro Not Installed` (TMPro compilation error but package not in cached list)
+- **`ProjectMemory` typed helpers** — `remember_fix()`, `remember_structure()`, `remember_pattern()`, `suggest_fix()`, `get_structure()`, `get_all_structure()`, `save_doctor_state()`, `get_last_doctor_state()`
+- **`memory_for_session()` factory** — creates a `ProjectMemory` from the active session's selected instance without extra bridge calls
+
+### Improved
+
+- `debug doctor` now accepts a `memory` parameter and is smarter when project memory exists
+- `workflow inspect` now has a side effect: structure facts are silently cached after every successful run
 - local upstream tool-catalog snapshot and schema-aware discovery commands
 - generated tool coverage matrix JSON and a `tool-coverage` command for tracking live-tested, covered, unsupported, and deferred upstream tools
 - saved optional sidecar agent profiles plus CLI commands for `agent current`, `agent list`, `agent save`, `agent use`, `agent clear`, and `agent remove`

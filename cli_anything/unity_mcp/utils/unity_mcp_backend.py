@@ -489,6 +489,81 @@ class UnityMCPBackend:
             },
         }
 
+    def build_debug_dashboard_live_state(
+        self,
+        *,
+        port: Optional[int] = None,
+        console_count: int = 20,
+        message_type: str = "all",
+        trace_tail: int = 20,
+        history_formatter: Callable[[Dict[str, Any]], Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
+        active_port = self.resolve_port(explicit_port=port, allow_default=False)
+        ping = self.ping(port=active_port)
+        editor_state = self.call_route_with_recovery(
+            "editor/state",
+            port=active_port,
+            recovery_timeout=5.0,
+        )
+        console_params = {"count": console_count}
+        if message_type:
+            console_params["type"] = message_type
+        console = self.call_route_with_recovery(
+            "console/log",
+            params=console_params,
+            port=active_port,
+            recovery_timeout=5.0,
+        )
+        queue = self.get_queue_info(port=active_port)
+        console_entries = list(console.get("entries") or [])
+        console_summary = self._summarize_console_entries(console_entries)
+        raw_history = self.get_history()
+        recent_history = raw_history[-trace_tail:] if trace_tail > 0 else list(raw_history)
+        rendered_history = (
+            [history_formatter(entry) for entry in recent_history]
+            if history_formatter is not None
+            else list(recent_history)
+        )
+
+        snapshot = {
+            "summary": {
+                "port": active_port,
+                "projectName": ping.get("projectName"),
+                "activeScene": editor_state.get("activeScene"),
+                "sceneDirty": bool(editor_state.get("sceneDirty")),
+                "isPlaying": bool(editor_state.get("isPlaying")),
+                "isCompiling": bool(editor_state.get("isCompiling")),
+                "consoleEntryCount": int(console.get("count") or len(console_entries)),
+                "consoleHighestSeverity": console_summary["highestSeverity"],
+                "queueActiveAgents": int(queue.get("activeAgents") or queue.get("executingCount") or 0),
+                "queueQueuedRequests": int(queue.get("totalQueued") or queue.get("queued") or 0),
+            },
+            "ping": ping,
+            "editorState": editor_state,
+            "console": console,
+            "consoleSummary": console_summary,
+            "queue": queue,
+        }
+
+        return {
+            "title": "Unity Debug Dashboard",
+            "generatedAt": time.time(),
+            "preferences": normalize_debug_preferences(self.get_debug_preferences()),
+            "snapshot": snapshot,
+            "trace": {
+                "tail": trace_tail,
+                "entries": rendered_history,
+                "rawEntries": recent_history,
+            },
+            "request": {
+                "port": active_port,
+                "consoleCount": console_count,
+                "messageType": message_type,
+                "traceTail": trace_tail,
+                "mode": "live",
+            },
+        }
+
     def get_camera_diagnostics(
         self,
         port: Optional[int] = None,
@@ -770,16 +845,17 @@ class UnityMCPBackend:
                 record_history=False,
             )
         except Exception as exc:
-            self._record_history(
-                "debug/breadcrumb",
-                {"message": message, "level": normalized_level},
-                resolved_port,
-                status="error",
-                duration_ms=self._elapsed_ms(started_at),
-                error=str(exc),
-                transport="tool",
-                note="Emit Unity console breadcrumb",
-            )
+            if record_history:
+                self._record_history(
+                    "debug/breadcrumb",
+                    {"message": message, "level": normalized_level},
+                    resolved_port,
+                    status="error",
+                    duration_ms=self._elapsed_ms(started_at),
+                    error=str(exc),
+                    transport="tool",
+                    note="Emit Unity console breadcrumb",
+                )
             raise
 
         if record_history:
@@ -1141,6 +1217,7 @@ class UnityMCPBackend:
         search: str | None = None,
         include_unsupported: bool = True,
         summary_only: bool = False,
+        next_batch_limit: int = 0,
     ) -> Dict[str, Any]:
         return build_tool_coverage_matrix(
             category=category,
@@ -1148,6 +1225,7 @@ class UnityMCPBackend:
             search=search,
             include_unsupported=include_unsupported,
             summary_only=summary_only,
+            next_batch_limit=next_batch_limit,
         )
 
     def call_route_with_recovery(

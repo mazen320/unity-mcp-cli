@@ -97,6 +97,337 @@ def _default_report_file(runtime_dir: Path, profile: str, timestamp: str | None 
     return runtime_dir / f"live-pass-{profile}-{stamp}.json"
 
 
+def _compact_text(value: Any, limit: int = 220) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        try:
+            value = json.dumps(value, separators=(",", ":"), ensure_ascii=True)
+        except TypeError:
+            value = str(value)
+    text = " ".join(value.strip().split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3].rstrip()}..."
+
+
+def _truthy_nested_flag(value: Any, flag_name: str) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == flag_name and bool(item):
+                return True
+            if _truthy_nested_flag(item, flag_name):
+                return True
+    if isinstance(value, list):
+        return any(_truthy_nested_flag(item, flag_name) for item in value)
+    return False
+
+
+def _as_port(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _find_observed_port(value: Any) -> int | None:
+    if isinstance(value, dict):
+        for key in ("selectedPort", "activePort", "targetPort", "finalPort"):
+            port = _as_port(value.get(key))
+            if port is not None:
+                return port
+
+        for key in ("selectedInstance", "instance", "activeInstance"):
+            port = _find_observed_port(value.get(key))
+            if port is not None:
+                return port
+
+        instances = value.get("instances")
+        if isinstance(instances, list):
+            for instance in instances:
+                if isinstance(instance, dict) and bool(instance.get("isSelected")):
+                    port = _as_port(instance.get("port"))
+                    if port is not None:
+                        return port
+
+        for key in ("summary", "result"):
+            port = _find_observed_port(value.get(key))
+            if port is not None:
+                return port
+
+        port = _as_port(value.get("port"))
+        if port is not None:
+            return port
+
+    if isinstance(value, list):
+        for item in value:
+            port = _find_observed_port(item)
+            if port is not None:
+                return port
+    return None
+
+
+def _step_observed_port(step: dict[str, Any]) -> int | None:
+    for key in ("result", "raw"):
+        port = _find_observed_port(step.get(key))
+        if port is not None:
+            return port
+    return None
+
+
+def _step_timed_out(step: dict[str, Any]) -> bool:
+    return _truthy_nested_flag(step.get("result"), "timedOut") or _truthy_nested_flag(step.get("raw"), "timedOut")
+
+
+def _extract_failure_detail(step: dict[str, Any]) -> str:
+    result = step.get("result")
+    raw = step.get("raw")
+    for container in (result, raw):
+        if isinstance(container, dict):
+            for key in ("error", "message", "detail", "diagnosis"):
+                text = _compact_text(container.get(key))
+                if text:
+                    return text
+            content = container.get("content")
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        text = _compact_text(item.get("text"))
+                        if text:
+                            return text
+    if _step_timed_out(step):
+        return "Timed out."
+    return "Step reported failure without a structured error."
+
+
+def _summarize_console_snapshot(snapshot: dict[str, Any] | None) -> str | None:
+    if not snapshot:
+        return None
+    if snapshot.get("status") == "failed":
+        return _compact_text(snapshot.get("error") or "Console snapshot failed.")
+
+    result = snapshot.get("result")
+    if not isinstance(result, dict):
+        return None
+    entries = result.get("entries") or result.get("items") or result.get("messages") or result.get("logs")
+    if isinstance(entries, list) and entries:
+        first = entries[0]
+        if isinstance(first, dict):
+            level = _compact_text(first.get("type") or first.get("level") or first.get("logType"), limit=32)
+            message = _compact_text(first.get("message") or first.get("text") or first.get("condition"))
+            if level and message:
+                return f"{level}: {message}"
+            if message:
+                return message
+        return _compact_text(first)
+    for key in ("errorCount", "warningCount", "count"):
+        if key in result:
+            return f"console {key}: {result[key]}"
+    return None
+
+
+def _detect_port_hops(steps: list[dict[str, Any]], initial_port: int | None) -> list[dict[str, Any]]:
+    hops: list[dict[str, Any]] = []
+    previous = initial_port
+    for step in steps:
+        observed = _step_observed_port(step)
+        if observed is None:
+            continue
+        if previous is not None and observed != previous:
+            hops.append(
+                {
+                    "step": step.get("name"),
+                    "from": previous,
+                    "to": observed,
+                }
+            )
+        previous = observed
+    return hops
+
+
+def _port_option(port: int | None) -> str:
+    return f" --port {port}" if port is not None else " --port <port>"
+
+
+def _dedupe_commands(commands: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for command in commands:
+        if command in seen:
+            continue
+        seen.add(command)
+        unique.append(command)
+    return unique
+
+
+def _paren_value(step_name: str, prefix: str) -> str | None:
+    if not step_name.startswith(prefix) or not step_name.endswith(")"):
+        return None
+    value = step_name[len(prefix) : -1].strip()
+    return value or None
+
+
+def _recommend_live_pass_commands(step: dict[str, Any], port: int | None) -> list[str]:
+    step_name = str(step.get("name") or "")
+    port_suffix = _port_option(port)
+    commands: list[str] = []
+
+    tool_call_name = _paren_value(step_name, "unity_tool_call(")
+    tool_info_name = _paren_value(step_name, "unity_tool_info(")
+    advanced_category = _paren_value(step_name, "unity_advanced_tools(")
+    if step_name == "unity_inspect":
+        commands.append(f"cli-anything-unity-mcp --json workflow inspect{port_suffix}")
+    elif step_name == "unity_console":
+        commands.append(f"cli-anything-unity-mcp --json console --count 80 --type error{port_suffix}")
+    elif step_name == "unity_validate_scene":
+        commands.append(f"cli-anything-unity-mcp --json workflow validate-scene --include-hierarchy{port_suffix}")
+    elif step_name.startswith("unity_play("):
+        commands.append(f"cli-anything-unity-mcp --json play stop{port_suffix}")
+    elif step_name == "unity_reset_scene" or step_name.startswith("prepare_scene") or step_name == "prepare_audit_scene":
+        commands.append(f"cli-anything-unity-mcp --json workflow reset-scene --discard-unsaved{port_suffix}")
+    elif step_name.startswith("unity_audit_advanced"):
+        commands.append(f"cli-anything-unity-mcp --json workflow audit-advanced{port_suffix}")
+    elif tool_call_name:
+        commands.append(f"cli-anything-unity-mcp --json tool-info {tool_call_name}{port_suffix}")
+        commands.append(f"cli-anything-unity-mcp --json tool {tool_call_name}{port_suffix}")
+    elif tool_info_name:
+        commands.append(f"cli-anything-unity-mcp --json tool-info {tool_info_name}{port_suffix}")
+    elif advanced_category:
+        commands.append(f"cli-anything-unity-mcp --json advanced-tools --category {advanced_category}{port_suffix}")
+    elif step_name in {"unity_instances", "unity_select_instance", "tools/list"}:
+        commands.append("cli-anything-unity-mcp --json instances")
+
+    commands.extend(
+        [
+            f"cli-anything-unity-mcp --json debug doctor --recent-commands 8{port_suffix}",
+            f"cli-anything-unity-mcp --json debug trace --summary --status error --tail 20{port_suffix}",
+            f"cli-anything-unity-mcp --json console --count 80 --type error{port_suffix}",
+        ]
+    )
+    return _dedupe_commands(commands)
+
+
+def _summarize_live_pass_report(report: dict[str, Any]) -> dict[str, Any]:
+    steps = [step for step in report.get("steps", []) if isinstance(step, dict)]
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    failed_steps: list[dict[str, Any]] = []
+    timed_out_count = 0
+    initial_port = _as_port(summary.get("port"))
+    for step in steps:
+        timed_out = _step_timed_out(step)
+        if timed_out:
+            timed_out_count += 1
+        if step.get("status") == "failed" or timed_out:
+            observed_port = _step_observed_port(step) or initial_port
+            failed_step = {
+                "name": step.get("name"),
+                "status": "timed-out" if timed_out else step.get("status", "failed"),
+                "durationMs": step.get("durationMs"),
+                "detail": _extract_failure_detail(step),
+                "recommendedCommands": _recommend_live_pass_commands(step, observed_port),
+            }
+            console_summary = _summarize_console_snapshot(step.get("consoleSnapshot"))
+            if console_summary:
+                failed_step["consoleSummary"] = console_summary
+            failed_steps.append(failed_step)
+
+    timed_steps = [
+        {"name": step.get("name"), "durationMs": step.get("durationMs")}
+        for step in steps
+        if _step_timed_out(step)
+    ]
+    slowest_steps = sorted(
+        (
+            {
+                "name": step.get("name"),
+                "status": step.get("status"),
+                "durationMs": float(step.get("durationMs") or 0.0),
+            }
+            for step in steps
+            if isinstance(step.get("durationMs"), (int, float))
+        ),
+        key=lambda item: item["durationMs"],
+        reverse=True,
+    )[:5]
+    recommended_commands = _dedupe_commands(
+        [
+            command
+            for failed_step in failed_steps
+            for command in failed_step.get("recommendedCommands", [])
+        ]
+    )
+    return {
+        "totalSteps": len(steps),
+        "passed": int(summary.get("passed") or sum(1 for step in steps if step.get("status") == "passed")),
+        "failed": int(summary.get("failed") or sum(1 for step in steps if step.get("status") == "failed")),
+        "timedOut": timed_out_count,
+        "profile": summary.get("profile"),
+        "port": initial_port,
+        "reportFile": summary.get("reportFile"),
+        "failedSteps": failed_steps,
+        "timedOutSteps": timed_steps,
+        "portHops": _detect_port_hops(steps, initial_port),
+        "slowestSteps": slowest_steps,
+        "recommendedCommands": recommended_commands,
+    }
+
+
+def _format_live_pass_summary(report: dict[str, Any], *, failures_only: bool = False) -> str:
+    live_summary = report.get("liveSummary")
+    if not isinstance(live_summary, dict):
+        live_summary = _summarize_live_pass_report(report)
+
+    profile = live_summary.get("profile") or "unknown"
+    port = live_summary.get("port") if live_summary.get("port") is not None else "auto"
+    lines = [
+        "Unity MCP Live Pass",
+        (
+            f"Profile: {profile} | port: {port} | steps: {live_summary['totalSteps']} | "
+            f"passed: {live_summary['passed']} | failed: {live_summary['failed']} | "
+            f"timed out: {live_summary['timedOut']}"
+        ),
+    ]
+    if live_summary.get("reportFile"):
+        lines.append(f"Report: {live_summary['reportFile']}")
+
+    lines.extend(["", "Failures And Timeouts"])
+    failed_steps = live_summary.get("failedSteps") or []
+    if failed_steps:
+        for step in failed_steps:
+            duration = step.get("durationMs")
+            duration_suffix = f" in {duration}ms" if duration is not None else ""
+            lines.append(f"- {step.get('name')} [{step.get('status')}]{duration_suffix}: {step.get('detail')}")
+            if step.get("consoleSummary"):
+                lines.append(f"  console: {step['consoleSummary']}")
+            recommended = step.get("recommendedCommands") or []
+            if recommended:
+                lines.append(f"  next: {recommended[0]}")
+    else:
+        lines.append("- none")
+
+    lines.extend(["", "Port Hops"])
+    port_hops = live_summary.get("portHops") or []
+    if port_hops:
+        for hop in port_hops:
+            lines.append(f"- {hop.get('from')} -> {hop.get('to')} during {hop.get('step')}")
+    else:
+        lines.append("- none")
+
+    if not failures_only:
+        lines.extend(["", "Slowest Steps"])
+        slowest_steps = live_summary.get("slowestSteps") or []
+        if slowest_steps:
+            for step in slowest_steps:
+                lines.append(f"- {step.get('name')} [{step.get('status')}] {step.get('durationMs')}ms")
+        else:
+            lines.append("- none")
+        lines.extend(["", "Tip: use --json for the full report or --debug --report-file <path> to save raw MCP payloads."])
+    return "\n".join(lines)
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run a repeatable live pass against the thin unity-mcp-cli MCP adapter.",
@@ -138,6 +469,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--fail-fast", action="store_true", help="Stop at the first failing step.")
     parser.add_argument("--console-snapshot-count", type=int, default=20, help="How many Unity console entries to fetch when a step fails.")
     parser.add_argument("--report-file", type=Path, default=None, help="Optional path to write the pass report JSON.")
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="In text mode, print only counts, failures/timeouts, and Unity bridge port hops.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON output.")
     return parser.parse_args()
 
@@ -404,13 +740,15 @@ def main() -> int:
     report_file = args.report_file or (_default_report_file(runtime_dir, args.profile) if args.debug else None)
     result = _run_pass(args)
     if report_file:
+        result["summary"]["reportFile"] = str(report_file)
+    result["liveSummary"] = _summarize_live_pass_report(result)
+    if report_file:
         report_file.parent.mkdir(parents=True, exist_ok=True)
         report_file.write_text(json.dumps(result, indent=2, ensure_ascii=True), encoding="utf-8")
-        result["summary"]["reportFile"] = str(report_file)
     if args.json:
         print(json.dumps(result, separators=(",", ":"), ensure_ascii=True))
     else:
-        print(json.dumps(result, indent=2, ensure_ascii=True))
+        print(_format_live_pass_summary(result, failures_only=args.summary_only))
     return 0 if result["summary"]["failed"] == 0 else 1
 
 

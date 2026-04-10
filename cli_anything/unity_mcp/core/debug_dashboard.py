@@ -38,10 +38,10 @@ class DashboardConfig:
     port: int = 0
     unity_port: int | None = None
     open_browser: bool = True
-    console_count: int = 40
+    console_count: int = 20
     issue_limit: int = 20
     include_hierarchy: bool = False
-    editor_log_tail: int = 80
+    editor_log_tail: int = 40
     ab_umcp_only: bool = False
     trace_tail: int = 20
     message_type: str = "all"
@@ -90,11 +90,21 @@ def _dashboard_html() -> str:
       --bad: #ff7b7b;
       --accent: #6fd3ff;
       --shadow: 0 18px 40px rgba(0,0,0,0.28);
+      --shell-pad: clamp(14px, 1.2vw, 22px);
+      --radius: clamp(18px, 1vw, 24px);
+      --gap: clamp(12px, 1vw, 18px);
+      --font-body: clamp(14px, 0.18vw + 13px, 16px);
+      --font-small: clamp(12px, 0.12vw + 11px, 13px);
+      --font-panel: clamp(15px, 0.22vw + 14px, 18px);
+      --font-title: clamp(24px, 1.25vw + 19px, 40px);
+      --font-value: clamp(18px, 0.7vw + 15px, 28px);
+      --font-mono: clamp(11px, 0.12vw + 10.5px, 13px);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", Inter, sans-serif;
+      font-size: var(--font-body);
       background:
         radial-gradient(circle at top right, rgba(111,211,255,0.14), transparent 32%),
         radial-gradient(circle at top left, rgba(99,210,161,0.08), transparent 24%),
@@ -102,10 +112,10 @@ def _dashboard_html() -> str:
       color: var(--text);
     }
     .shell {
-      width: min(1480px, calc(100vw - 28px));
+      width: min(1480px, calc(100vw - clamp(14px, 2vw, 28px)));
       margin: 20px auto;
-      padding: 18px;
-      border-radius: 24px;
+      padding: var(--shell-pad);
+      border-radius: var(--radius);
       background: rgba(10, 16, 24, 0.82);
       backdrop-filter: blur(18px);
       box-shadow: var(--shadow);
@@ -113,24 +123,27 @@ def _dashboard_html() -> str:
     }
     .topbar {
       display: flex;
-      gap: 16px;
+      gap: var(--gap);
       align-items: flex-start;
       justify-content: space-between;
-      margin-bottom: 18px;
+      margin-bottom: var(--gap);
     }
     .title h1 {
       margin: 0 0 6px;
-      font-size: 28px;
+      font-size: var(--font-title);
       line-height: 1.1;
+      text-wrap: balance;
     }
     .title p {
       margin: 0;
       color: var(--muted);
       max-width: 720px;
+      font-size: clamp(13px, 0.18vw + 12px, 16px);
+      line-height: 1.55;
     }
     .toolbar {
       display: flex;
-      gap: 10px;
+      gap: clamp(8px, 0.7vw, 10px);
       align-items: center;
       flex-wrap: wrap;
       justify-content: flex-end;
@@ -142,7 +155,7 @@ def _dashboard_html() -> str:
     button {
       background: linear-gradient(180deg, #223a58 0%, #16253b 100%);
       border: 1px solid var(--border);
-      padding: 10px 14px;
+      padding: clamp(9px, 0.55vw, 11px) clamp(12px, 0.9vw, 15px);
       border-radius: 12px;
       cursor: pointer;
     }
@@ -152,28 +165,28 @@ def _dashboard_html() -> str:
     }
     .layout {
       display: grid;
-      grid-template-columns: 330px minmax(0, 1fr);
-      gap: 16px;
+      grid-template-columns: minmax(290px, 330px) minmax(0, 1fr);
+      gap: var(--gap);
     }
     .panel {
       background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
       border: 1px solid var(--border);
       border-radius: 18px;
-      padding: 16px;
+      padding: clamp(14px, 1vw, 18px);
       min-height: 120px;
     }
     .panel h2 {
       margin: 0 0 12px;
-      font-size: 16px;
+      font-size: var(--font-panel);
       letter-spacing: 0.01em;
     }
     .stack {
       display: grid;
-      gap: 14px;
+      gap: clamp(12px, 0.9vw, 14px);
     }
     .settings-grid {
       display: grid;
-      gap: 10px;
+      gap: clamp(9px, 0.7vw, 12px);
     }
     .field {
       display: grid;
@@ -181,14 +194,14 @@ def _dashboard_html() -> str:
     }
     .field label {
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--font-small);
     }
     .field input[type="number"], .field select, .field input[type="text"] {
       width: 100%;
       border-radius: 12px;
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.04);
-      padding: 10px 12px;
+      padding: clamp(9px, 0.55vw, 11px) clamp(11px, 0.7vw, 13px);
     }
     .checkbox {
       display: flex;
@@ -197,35 +210,45 @@ def _dashboard_html() -> str:
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.03);
       border-radius: 12px;
-      padding: 10px 12px;
+      padding: clamp(9px, 0.55vw, 11px) clamp(11px, 0.7vw, 13px);
+      line-height: 1.45;
     }
     .checkbox input {
       width: 18px;
       height: 18px;
       accent-color: var(--accent);
+      flex: 0 0 auto;
     }
     .cards {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(min(185px, 100%), 1fr));
+      gap: clamp(10px, 0.8vw, 12px);
+      margin-bottom: var(--gap);
     }
     .card {
-      padding: 14px;
+      padding: clamp(12px, 0.8vw, 15px);
       border-radius: 16px;
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.03);
+      min-width: 0;
+      overflow: hidden;
     }
     .card .label {
       color: var(--muted);
-      font-size: 12px;
+      font-size: var(--font-small);
       text-transform: uppercase;
       letter-spacing: 0.06em;
     }
     .card .value {
+      display: block;
+      max-inline-size: 100%;
       margin-top: 8px;
-      font-size: 22px;
+      font-size: var(--font-value);
       font-weight: 650;
+      line-height: 1.15;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      text-wrap: pretty;
     }
     .status-good { color: var(--good); }
     .status-warn { color: var(--warn); }
@@ -233,21 +256,21 @@ def _dashboard_html() -> str:
     .two-col {
       display: grid;
       grid-template-columns: 1.15fr 0.85fr;
-      gap: 16px;
-      margin-bottom: 16px;
+      gap: var(--gap);
+      margin-bottom: var(--gap);
     }
     .panel pre, .log {
       margin: 0;
       white-space: pre-wrap;
       word-break: break-word;
       font-family: Consolas, "SFMono-Regular", monospace;
-      font-size: 12px;
+      font-size: var(--font-mono);
       line-height: 1.5;
       color: #dce7fb;
       background: rgba(7,11,18,0.58);
       border: 1px solid rgba(255,255,255,0.04);
       border-radius: 14px;
-      padding: 12px;
+      padding: clamp(10px, 0.8vw, 13px);
       max-height: 420px;
       overflow: auto;
     }
@@ -273,7 +296,7 @@ def _dashboard_html() -> str:
     }
     .trace-meta {
       color: var(--muted);
-      font-size: 12px;
+      font-size: var(--font-small);
       margin-bottom: 6px;
     }
     .inline-pills {
@@ -285,7 +308,7 @@ def _dashboard_html() -> str:
     .pill {
       border-radius: 999px;
       padding: 6px 10px;
-      font-size: 12px;
+      font-size: var(--font-small);
       border: 1px solid var(--border);
       background: rgba(255,255,255,0.05);
       color: var(--muted);
@@ -293,12 +316,31 @@ def _dashboard_html() -> str:
     .footer-note {
       margin-top: 10px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: var(--font-small);
+      line-height: 1.5;
     }
     @media (max-width: 1180px) {
       .layout { grid-template-columns: 1fr; }
       .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .two-col { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 780px) {
+      .shell {
+        margin: 10px auto;
+      }
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .toolbar {
+        justify-content: flex-start;
+      }
+      .cards {
+        grid-template-columns: 1fr;
+      }
+      button {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -310,7 +352,8 @@ def _dashboard_html() -> str:
         <p>Live view for bridge health, doctor findings, trace steps, Unity console state, and Editor.log details. This is a debugging surface for the CLI layer, not a sample scene viewer.</p>
       </div>
       <div class="toolbar">
-        <button id="refresh-now">Refresh Now</button>
+        <button id="refresh-live">Live Refresh</button>
+        <button id="refresh-now">Run Deep Check</button>
         <button id="save-settings" class="ghost">Save Settings</button>
         <span id="status-pill" class="pill">Loading…</span>
       </div>
@@ -322,15 +365,15 @@ def _dashboard_html() -> str:
           <div class="settings-grid">
             <div class="checkbox">
               <input id="auto-refresh" type="checkbox" checked>
-              <label for="auto-refresh">Auto refresh dashboard</label>
+              <label for="auto-refresh">Auto refresh live view</label>
             </div>
             <div class="field">
               <label for="refresh-seconds">Refresh interval (seconds)</label>
-              <input id="refresh-seconds" type="number" min="1" step="0.5" value="2">
+              <input id="refresh-seconds" type="number" min="1" step="0.5" value="5">
             </div>
             <div class="field">
               <label for="console-count">Unity console count</label>
-              <input id="console-count" type="number" min="1" step="1" value="40">
+              <input id="console-count" type="number" min="1" step="1" value="20">
             </div>
             <div class="field">
               <label for="issue-limit">Compilation / issue limit</label>
@@ -342,7 +385,7 @@ def _dashboard_html() -> str:
             </div>
             <div class="field">
               <label for="editor-log-tail">Editor.log tail</label>
-              <input id="editor-log-tail" type="number" min="1" step="1" value="80">
+              <input id="editor-log-tail" type="number" min="1" step="1" value="40">
             </div>
             <div class="field">
               <label for="message-type">Console severity</label>
@@ -370,10 +413,11 @@ def _dashboard_html() -> str:
               <label for="unity-console-breadcrumbs">Write CLI breadcrumbs into Unity Console / Editor.log</label>
             </div>
           </div>
-          <div class="footer-note">Save Settings persists dashboard defaults and the Unity Console breadcrumb toggle into the CLI session file.</div>
+          <div class="footer-note">Auto refresh only updates the lighter live view. Use deep check when you actually need bridge diagnostics, full Editor.log context, or heavier Unity inspection.</div>
         </section>
         <section class="panel">
           <h2>Bridge</h2>
+          <div class="footer-note">Deep check only. Auto refresh stays lightweight so Unity does not hitch.</div>
           <pre id="bridge-json">Loading…</pre>
         </section>
       </div>
@@ -396,6 +440,7 @@ def _dashboard_html() -> str:
           </div>
           <div class="panel">
             <h2>Editor.log</h2>
+            <div class="footer-note">Deep check only. Auto refresh reuses the last deep log snapshot.</div>
             <pre id="editor-log">Loading…</pre>
           </div>
         </section>
@@ -405,16 +450,17 @@ def _dashboard_html() -> str:
   <script>
     const qs = (id) => document.getElementById(id);
     let refreshTimer = null;
+    let refreshInFlight = false;
     let currentState = null;
 
     function getSettings() {
       return {
         autoRefresh: qs("auto-refresh").checked,
-        refreshSeconds: Number(qs("refresh-seconds").value || 2),
-        consoleCount: Number(qs("console-count").value || 40),
+        refreshSeconds: Number(qs("refresh-seconds").value || 5),
+        consoleCount: Number(qs("console-count").value || 20),
         issueLimit: Number(qs("issue-limit").value || 20),
         traceTail: Number(qs("trace-tail").value || 20),
-        editorLogTail: Number(qs("editor-log-tail").value || 80),
+        editorLogTail: Number(qs("editor-log-tail").value || 40),
         messageType: qs("message-type").value || "all",
         editorLogContains: qs("editor-log-contains").value || "",
         includeHierarchy: qs("include-hierarchy").checked,
@@ -426,10 +472,10 @@ def _dashboard_html() -> str:
     function applyPreferences(preferences) {
       if (!preferences) return;
       qs("auto-refresh").checked = !!preferences.dashboardAutoRefresh;
-      qs("refresh-seconds").value = preferences.dashboardRefreshSeconds ?? 2;
-      qs("console-count").value = preferences.dashboardConsoleCount ?? 40;
+      qs("refresh-seconds").value = preferences.dashboardRefreshSeconds ?? 5;
+      qs("console-count").value = preferences.dashboardConsoleCount ?? 20;
       qs("issue-limit").value = preferences.dashboardIssueLimit ?? 20;
-      qs("editor-log-tail").value = preferences.dashboardEditorLogTail ?? 80;
+      qs("editor-log-tail").value = preferences.dashboardEditorLogTail ?? 40;
       qs("include-hierarchy").checked = !!preferences.dashboardIncludeHierarchy;
       qs("ab-umcp-only").checked = !!preferences.dashboardAbUmcpOnly;
       qs("unity-console-breadcrumbs").checked = !!preferences.unityConsoleBreadcrumbs;
@@ -480,10 +526,18 @@ def _dashboard_html() -> str:
     }
 
     function renderBridge(bridge) {
-      qs("bridge-json").textContent = JSON.stringify(bridge || {}, null, 2);
+      if (!bridge) {
+        qs("bridge-json").textContent = "Run Deep Check to load bridge diagnostics.";
+        return;
+      }
+      qs("bridge-json").textContent = JSON.stringify(bridge, null, 2);
     }
 
     function renderEditorLog(editorLog) {
+      if (!editorLog) {
+        qs("editor-log").textContent = "Run Deep Check to load Editor.log details.";
+        return;
+      }
       const entries = editorLog?.entries || [];
       qs("editor-log").textContent = entries.map((entry) => {
         const prefix = entry?.matched ? "*" : " ";
@@ -502,30 +556,33 @@ def _dashboard_html() -> str:
       qs("trace-tail").value = 20;
     }
 
-    async function refreshState() {
+    async function refreshState(mode = "live") {
       const settings = getSettings();
       const params = new URLSearchParams({
         consoleCount: String(settings.consoleCount),
-        issueLimit: String(settings.issueLimit),
         traceTail: String(settings.traceTail),
-        editorLogTail: String(settings.editorLogTail),
         messageType: settings.messageType,
-        includeHierarchy: String(settings.includeHierarchy),
-        abUmcpOnly: String(settings.abUmcpOnly),
       });
-      if (settings.editorLogContains) {
-        params.set("editorLogContains", settings.editorLogContains);
+      if (mode === "deep") {
+        params.set("issueLimit", String(settings.issueLimit));
+        params.set("editorLogTail", String(settings.editorLogTail));
+        params.set("includeHierarchy", String(settings.includeHierarchy));
+        params.set("abUmcpOnly", String(settings.abUmcpOnly));
+        if (settings.editorLogContains) {
+          params.set("editorLogContains", settings.editorLogContains);
+        }
       }
-      updateStatus("Refreshing…");
-      const response = await fetch(`/api/state?${params.toString()}`);
+      updateStatus(mode === "deep" ? "Running deep check…" : "Refreshing live view…");
+      const endpoint = mode === "deep" ? "/api/state" : "/api/live";
+      const response = await fetch(`${endpoint}?${params.toString()}`);
       currentState = await response.json();
       renderSummary(currentState.doctor?.summary || currentState.snapshot?.summary || {});
       renderFindings(currentState.doctor);
       renderTrace(currentState.trace?.entries || []);
       renderConsole(currentState.snapshot?.console, currentState.snapshot?.consoleSummary);
-      renderBridge(currentState.bridge);
-      renderEditorLog(currentState.editorLog);
-      updateStatus(`Updated ${new Date().toLocaleTimeString()}`);
+      renderBridge(currentState.bridge || currentState.cached?.bridge || null);
+      renderEditorLog(currentState.editorLog || currentState.cached?.editorLog || null);
+      updateStatus(`${mode === "deep" ? "Deep check" : "Live view"} updated ${new Date().toLocaleTimeString()}`);
     }
 
     async function saveSettings() {
@@ -553,21 +610,34 @@ def _dashboard_html() -> str:
 
     function scheduleRefresh() {
       if (refreshTimer) {
-        clearInterval(refreshTimer);
+        clearTimeout(refreshTimer);
         refreshTimer = null;
       }
       const settings = getSettings();
       if (!settings.autoRefresh) {
         return;
       }
-      const intervalMs = Math.max(500, Number(settings.refreshSeconds || 2) * 1000);
-      refreshTimer = setInterval(() => {
-        refreshState().catch((error) => updateStatus(`Refresh failed: ${error}`));
+      const intervalMs = Math.max(1000, Number(settings.refreshSeconds || 5) * 1000);
+      refreshTimer = setTimeout(async () => {
+        if (!refreshInFlight) {
+          refreshInFlight = true;
+          try {
+            await refreshState("live");
+          } catch (error) {
+            updateStatus(`Refresh failed: ${error}`);
+          } finally {
+            refreshInFlight = false;
+          }
+        }
+        scheduleRefresh();
       }, intervalMs);
     }
 
+    qs("refresh-live").addEventListener("click", () => {
+      refreshState("live").catch((error) => updateStatus(`Refresh failed: ${error}`));
+    });
     qs("refresh-now").addEventListener("click", () => {
-      refreshState().catch((error) => updateStatus(`Refresh failed: ${error}`));
+      refreshState("deep").catch((error) => updateStatus(`Deep check failed: ${error}`));
     });
     qs("save-settings").addEventListener("click", () => {
       saveSettings().catch((error) => updateStatus(`Save failed: ${error}`));
@@ -577,7 +647,7 @@ def _dashboard_html() -> str:
     });
 
     loadSettings()
-      .then(refreshState)
+      .then(() => refreshState("live"))
       .then(scheduleRefresh)
       .catch((error) => updateStatus(`Startup failed: ${error}`));
   </script>
@@ -594,45 +664,53 @@ def serve_debug_dashboard(
 ) -> DashboardHandle:
     html = _dashboard_html().encode("utf-8")
     settings_lock = threading.Lock()
+    state_lock = threading.Lock()
+    cached_deep_state: dict[str, Any] | None = None
+
+    def _parse_query(query: dict[str, list[str]]) -> dict[str, Any]:
+        preferences = backend.get_debug_preferences()
+        return {
+            "console_count": _coerce_int(
+                (query.get("consoleCount") or [preferences.get("dashboardConsoleCount")])[0],
+                int(preferences.get("dashboardConsoleCount", config.console_count)),
+            ),
+            "issue_limit": _coerce_int(
+                (query.get("issueLimit") or [preferences.get("dashboardIssueLimit")])[0],
+                int(preferences.get("dashboardIssueLimit", config.issue_limit)),
+            ),
+            "trace_tail": _coerce_int(
+                (query.get("traceTail") or [config.trace_tail])[0],
+                config.trace_tail,
+            ),
+            "editor_log_tail": _coerce_int(
+                (query.get("editorLogTail") or [preferences.get("dashboardEditorLogTail")])[0],
+                int(preferences.get("dashboardEditorLogTail", config.editor_log_tail)),
+            ),
+            "include_hierarchy": _coerce_bool(
+                (query.get("includeHierarchy") or [preferences.get("dashboardIncludeHierarchy")])[0],
+                bool(preferences.get("dashboardIncludeHierarchy", config.include_hierarchy)),
+            ),
+            "ab_umcp_only": _coerce_bool(
+                (query.get("abUmcpOnly") or [preferences.get("dashboardAbUmcpOnly")])[0],
+                bool(preferences.get("dashboardAbUmcpOnly", config.ab_umcp_only)),
+            ),
+            "message_type": (query.get("messageType") or [config.message_type])[0] or "all",
+            "editor_log_contains": (query.get("editorLogContains") or [""])[0] or None,
+        }
 
     def _build_state(query: dict[str, list[str]]) -> dict[str, Any]:
-        preferences = backend.get_debug_preferences()
-        console_count = _coerce_int(
-            (query.get("consoleCount") or [preferences.get("dashboardConsoleCount")])[0],
-            int(preferences.get("dashboardConsoleCount", config.console_count)),
-        )
-        issue_limit = _coerce_int(
-            (query.get("issueLimit") or [preferences.get("dashboardIssueLimit")])[0],
-            int(preferences.get("dashboardIssueLimit", config.issue_limit)),
-        )
-        trace_tail = _coerce_int(
-            (query.get("traceTail") or [config.trace_tail])[0],
-            config.trace_tail,
-        )
-        editor_log_tail = _coerce_int(
-            (query.get("editorLogTail") or [preferences.get("dashboardEditorLogTail")])[0],
-            int(preferences.get("dashboardEditorLogTail", config.editor_log_tail)),
-        )
-        include_hierarchy = _coerce_bool(
-            (query.get("includeHierarchy") or [preferences.get("dashboardIncludeHierarchy")])[0],
-            bool(preferences.get("dashboardIncludeHierarchy", config.include_hierarchy)),
-        )
-        ab_umcp_only = _coerce_bool(
-            (query.get("abUmcpOnly") or [preferences.get("dashboardAbUmcpOnly")])[0],
-            bool(preferences.get("dashboardAbUmcpOnly", config.ab_umcp_only)),
-        )
-        message_type = (query.get("messageType") or [config.message_type])[0] or "all"
-        editor_log_contains = (query.get("editorLogContains") or [""])[0] or None
+        nonlocal cached_deep_state
+        options = _parse_query(query)
         state = backend.build_debug_dashboard_state(
             port=config.unity_port,
-            console_count=console_count,
-            issue_limit=issue_limit,
-            include_hierarchy=include_hierarchy,
-            editor_log_tail=editor_log_tail,
-            editor_log_contains=editor_log_contains,
-            ab_umcp_only=ab_umcp_only,
-            trace_tail=trace_tail,
-            message_type=message_type,
+            console_count=options["console_count"],
+            issue_limit=options["issue_limit"],
+            include_hierarchy=options["include_hierarchy"],
+            editor_log_tail=options["editor_log_tail"],
+            editor_log_contains=options["editor_log_contains"],
+            ab_umcp_only=options["ab_umcp_only"],
+            trace_tail=options["trace_tail"],
+            message_type=options["message_type"],
             history_formatter=history_formatter,
         )
         state["doctor"] = build_debug_doctor_report(
@@ -640,6 +718,31 @@ def serve_debug_dashboard(
             state["trace"]["entries"],
             state["request"]["port"],
         )
+        with state_lock:
+            cached_deep_state = state
+        return state
+
+    def _build_live_state(query: dict[str, list[str]]) -> dict[str, Any]:
+        options = _parse_query(query)
+        state = backend.build_debug_dashboard_live_state(
+            port=config.unity_port,
+            console_count=options["console_count"],
+            message_type=options["message_type"],
+            trace_tail=options["trace_tail"],
+            history_formatter=history_formatter,
+        )
+        state["doctor"] = build_debug_doctor_report(
+            state["snapshot"],
+            state["trace"]["entries"],
+            state["request"]["port"],
+        )
+        with state_lock:
+            if cached_deep_state is not None:
+                state["cached"] = {
+                    "bridge": cached_deep_state.get("bridge"),
+                    "editorLog": cached_deep_state.get("editorLog"),
+                    "generatedAt": cached_deep_state.get("generatedAt"),
+                }
         return state
 
     class DashboardHandler(BaseHTTPRequestHandler):
@@ -674,6 +777,14 @@ def serve_debug_dashboard(
             if parsed.path == "/api/state":
                 try:
                     payload = _build_state(parse_qs(parsed.query))
+                except Exception as exc:  # pragma: no cover - exercised live
+                    self._send_json({"error": str(exc)}, status=500)
+                    return
+                self._send_json(payload)
+                return
+            if parsed.path == "/api/live":
+                try:
+                    payload = _build_live_state(parse_qs(parsed.query))
                 except Exception as exc:  # pragma: no cover - exercised live
                     self._send_json({"error": str(exc)}, status=500)
                     return

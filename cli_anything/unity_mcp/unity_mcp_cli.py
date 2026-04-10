@@ -19,6 +19,8 @@ from .core.agent_profiles import AgentProfile, AgentProfileStore, derive_agent_p
 from .core.client import UnityMCPClient, UnityMCPClientError
 from .core.debug_dashboard import DashboardConfig, serve_debug_dashboard
 from .core.debug_doctor import build_debug_doctor_report
+from .core.memory import ALL_CATEGORIES, ProjectMemory, memory_for_session
+from .core.routes import route_to_tool_name
 from .core.session import SessionStore
 from .core.workflows import (
     build_asset_path,
@@ -1113,6 +1115,32 @@ def _filter_history_entries(
     return filtered
 
 
+def _filter_rendered_trace_entries(
+    entries: list[dict[str, Any]],
+    *,
+    category: str | None = None,
+    route_name: str | None = None,
+    tool_name: str | None = None,
+) -> list[dict[str, Any]]:
+    filtered = list(entries)
+    if category:
+        needle = category.strip().lower()
+        filtered = [
+            entry for entry in filtered if needle in str(entry.get("category") or "").strip().lower()
+        ]
+    if route_name:
+        needle = route_name.strip().lower()
+        filtered = [
+            entry for entry in filtered if needle in str(entry.get("routeName") or "").strip().lower()
+        ]
+    if tool_name:
+        needle = tool_name.strip().lower()
+        filtered = [
+            entry for entry in filtered if needle in str(entry.get("toolName") or "").strip().lower()
+        ]
+    return filtered
+
+
 def _basenameish(value: str) -> str:
     normalized = str(value or "").replace("\\", "/").rstrip("/")
     if not normalized:
@@ -1268,6 +1296,37 @@ def _trace_phase_and_base_label(command: str, args: dict[str, Any], note: str | 
     return ("run", f"Running {normalized}")
 
 
+def _history_route_name(command: str) -> str | None:
+    normalized = str(command or "").strip()
+    if not normalized or "/" not in normalized:
+        return None
+    if normalized in {"cli/progress", "debug/breadcrumb"} or normalized.startswith("_meta/"):
+        return None
+    return normalized
+
+
+def _history_tool_name(route_name: str | None) -> str | None:
+    if not route_name:
+        return None
+    try:
+        return route_to_tool_name(route_name)
+    except ValueError:
+        return None
+
+
+def _history_category_name(route_name: str | None, tool_name: str | None) -> str | None:
+    if route_name:
+        category, _, _ = route_name.partition("/")
+        normalized = category.strip().lower()
+        return normalized or None
+    if tool_name and tool_name.startswith("unity_"):
+        remainder = tool_name[len("unity_") :]
+        category, _, _ = remainder.partition("_")
+        normalized = category.strip().lower()
+        return normalized or None
+    return None
+
+
 def _humanize_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
     payload = dict(entry)
     command = str(payload.get("command") or "")
@@ -1287,6 +1346,7 @@ def _humanize_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
         payload["target"] = None
         payload["actor"] = payload.get("agentProfile") or payload.get("agentId")
         payload["amount"] = None
+        payload["commandKind"] = "progress"
         return payload
 
     if command in {"script/update", "script/create", "script/read", "script/delete"} and target:
@@ -1305,13 +1365,371 @@ def _humanize_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
     if amount and amount not in summary:
         summary = f"{summary} ({amount})"
 
+    route_name = _history_route_name(command)
+    tool_name = _history_tool_name(route_name)
+    category_name = _history_category_name(route_name, tool_name)
     payload["phase"] = phase
     payload["summary"] = summary
     payload["target"] = target
     payload["actor"] = payload.get("agentProfile") or payload.get("agentId")
+    payload["commandKind"] = "route" if route_name else "command"
+    if route_name:
+        payload["routeName"] = route_name
+    if tool_name:
+        payload["toolName"] = tool_name
+    if category_name:
+        payload["category"] = category_name
     if amount:
         payload["amount"] = amount
     return payload
+
+
+def _history_entry_identity(entry: dict[str, Any]) -> tuple[str, ...]:
+    return (
+        str(entry.get("timestamp") or ""),
+        str(entry.get("command") or ""),
+        str(entry.get("status") or ""),
+        str(entry.get("transport") or ""),
+        str(entry.get("durationMs") or ""),
+        str(entry.get("error") or ""),
+        str(entry.get("note") or ""),
+        str(entry.get("args") or ""),
+    )
+
+
+def _format_trace_watch_timestamp(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "--:--:--"
+    try:
+        normalized = text.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.astimezone().strftime("%H:%M:%S")
+    except ValueError:
+        return text[-8:] if len(text) >= 8 else text
+
+
+def _format_trace_watch_line(entry: dict[str, Any]) -> str:
+    timestamp = _format_trace_watch_timestamp(entry.get("timestamp"))
+    summary = str(entry.get("summary") or entry.get("command") or "CLI activity").strip()
+    status = str(entry.get("status") or "ok").strip().lower()
+    phase = str(entry.get("phase") or "run").strip().lower()
+    command = str(entry.get("command") or "").strip()
+    transport = str(entry.get("transport") or "").strip()
+    actor = str(entry.get("actor") or entry.get("agentProfile") or entry.get("agentId") or "").strip()
+    category = str(entry.get("category") or "").strip()
+    route_name = str(entry.get("routeName") or "").strip()
+    tool_name = str(entry.get("toolName") or "").strip()
+    error = str(entry.get("error") or "").strip()
+
+    details: list[str] = [phase]
+    if actor:
+        details.append(actor)
+    if category:
+        details.append(f"category {category}")
+    if route_name:
+        details.append(f"route {route_name}")
+    elif command and command != "cli/progress":
+        details.append(f"command {command}")
+    if tool_name:
+        details.append(f"tool {tool_name}")
+    if transport:
+        details.append(f"via {transport}")
+    if status != "ok":
+        details.append(f"status {status}")
+
+    line = f"[{timestamp}] {summary}"
+    if details:
+        line += " | " + " | ".join(details)
+    if error:
+        line += f" | error {error}"
+    return line
+
+
+def _trace_port_suffix(port: int | None) -> str:
+    return f" --port {port}" if isinstance(port, int) else " --port <port>"
+
+
+def _recommend_trace_commands(
+    *,
+    command_kind: str,
+    category: str | None,
+    route_name: str | None,
+    tool_name: str | None,
+    selected_port: int | None,
+) -> list[str]:
+    commands: list[str] = []
+    port_suffix = _trace_port_suffix(selected_port)
+    normalized_category = (category or "").strip().lower()
+    normalized_route = (route_name or "").strip()
+    normalized_tool = (tool_name or "").strip()
+    normalized_command_kind = (command_kind or "").strip().lower()
+
+    if normalized_route:
+        commands.append(f"cli-anything-unity-mcp --json debug trace --route {normalized_route}")
+    elif normalized_category:
+        commands.append(f"cli-anything-unity-mcp --json debug trace --category {normalized_category}")
+
+    if normalized_route.startswith(("scene/", "gameobject/", "component/", "asset/", "script/")) or normalized_category in {
+        "scene",
+        "gameobject",
+        "component",
+        "asset",
+        "script",
+        "prefab",
+    }:
+        commands.append(f"cli-anything-unity-mcp --json workflow inspect{port_suffix}")
+        commands.append(f"cli-anything-unity-mcp --json debug doctor --recent-commands 8{port_suffix}")
+    elif normalized_route in {"compilation/errors", "search/missing-references"} or normalized_route.startswith("console/"):
+        commands.append(f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{port_suffix}")
+        commands.append("cli-anything-unity-mcp --json debug editor-log --tail 120 --ab-umcp-only")
+    elif normalized_route.startswith(("graphics/", "sceneview/")) or normalized_category in {
+        "graphics",
+        "sceneview",
+        "lighting",
+        "ui",
+    }:
+        commands.append(f"cli-anything-unity-mcp --json debug capture --kind both{port_suffix}")
+        commands.append(f"cli-anything-unity-mcp --json debug snapshot --console-count 80{port_suffix}")
+    elif normalized_route.startswith("play/") or normalized_category in {"play", "testing"}:
+        commands.append(f"cli-anything-unity-mcp --json debug bridge{port_suffix}")
+        commands.append(f"cli-anything-unity-mcp --json status{port_suffix}")
+    elif normalized_command_kind == "tool" and normalized_tool:
+        commands.append(f"cli-anything-unity-mcp --json debug doctor --recent-commands 8{port_suffix}")
+        commands.append(f"cli-anything-unity-mcp --json debug bridge{port_suffix}")
+    else:
+        commands.append(f"cli-anything-unity-mcp --json debug doctor --recent-commands 8{port_suffix}")
+        commands.append(f"cli-anything-unity-mcp --json debug bridge{port_suffix}")
+
+    if normalized_tool:
+        commands.append(f"cli-anything-unity-mcp --json tool-info {normalized_tool}")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for command in commands:
+        normalized = command.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped[:3]
+
+
+def _diagnose_trace_group(
+    *,
+    command_kind: str,
+    category: str | None,
+    route_name: str | None,
+    tool_name: str | None,
+    last_status: str | None,
+) -> str | None:
+    if str(last_status or "").strip().lower() != "error":
+        return None
+    normalized_category = (category or "").strip().lower()
+    normalized_route = (route_name or "").strip().lower()
+    normalized_tool = (tool_name or "").strip()
+    normalized_command_kind = (command_kind or "").strip().lower()
+
+    if normalized_route.startswith("scene/") or normalized_category == "scene":
+        return "Scene inspection or mutation failed recently."
+    if normalized_route in {"compilation/errors", "search/missing-references"} or normalized_route.startswith("console/"):
+        return "Unity diagnostics reported a recent editor-side problem."
+    if normalized_route.startswith(("graphics/", "sceneview/")) or normalized_category in {"graphics", "sceneview", "lighting", "ui"}:
+        return "A visual or rendering-related CLI check failed recently."
+    if normalized_route.startswith("play/") or normalized_category in {"play", "testing"}:
+        return "Play-mode or testing control failed recently."
+    if normalized_command_kind == "tool" and normalized_tool:
+        return f"Unity tool {normalized_tool} failed recently."
+    if normalized_route:
+        return f"CLI route {normalized_route} failed recently."
+    return "Recent CLI activity included failures."
+
+
+def _summarize_trace_entries(
+    entries: list[dict[str, Any]],
+    *,
+    selected_port: int | None = None,
+) -> list[dict[str, Any]]:
+    groups: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    order = 0
+    for entry in entries:
+        command_name = str(entry.get("command") or "").strip().lower()
+        if command_name in {"debug/breadcrumb", "cli/progress"}:
+            continue
+        command_kind = str(entry.get("commandKind") or "command").strip().lower()
+        category = str(entry.get("category") or "").strip()
+        route_name = str(entry.get("routeName") or "").strip()
+        tool_name = str(entry.get("toolName") or "").strip()
+        summary = str(entry.get("summary") or entry.get("command") or "CLI activity").strip()
+        status = str(entry.get("status") or "ok").strip().lower()
+        duration = entry.get("durationMs")
+        error = str(entry.get("error") or "").strip() or None
+        timestamp = str(entry.get("timestamp") or "").strip()
+
+        key = (command_kind, category, route_name, tool_name)
+        group = groups.get(key)
+        if group is None:
+            order += 1
+            group = {
+                "commandKind": command_kind,
+                "category": category or None,
+                "routeName": route_name or None,
+                "toolName": tool_name or None,
+                "label": summary,
+                "count": 0,
+                "okCount": 0,
+                "errorCount": 0,
+                "lastStatus": status,
+                "lastTimestamp": timestamp or None,
+                "lastError": error,
+                "diagnosis": None,
+                "suggestedNextCommands": [],
+                "averageDurationMs": None,
+                "maxDurationMs": None,
+                "_durationTotal": 0.0,
+                "_durationCount": 0,
+                "_sortIndex": order,
+            }
+            groups[key] = group
+
+        group["count"] += 1
+        if status == "ok":
+            group["okCount"] += 1
+        else:
+            group["errorCount"] += 1
+
+        if timestamp and (not group["lastTimestamp"] or timestamp >= str(group["lastTimestamp"])):
+            group["lastTimestamp"] = timestamp
+            group["lastStatus"] = status
+            group["lastError"] = error
+            if summary:
+                group["label"] = summary
+
+        if isinstance(duration, (int, float)):
+            group["_durationTotal"] += float(duration)
+            group["_durationCount"] += 1
+            current_max = group["maxDurationMs"]
+            group["maxDurationMs"] = float(duration) if current_max is None else max(float(current_max), float(duration))
+
+    summary_groups = list(groups.values())
+    for group in summary_groups:
+        duration_count = int(group.pop("_durationCount"))
+        duration_total = float(group.pop("_durationTotal"))
+        group.pop("_sortIndex", None)
+        if duration_count > 0:
+            group["averageDurationMs"] = round(duration_total / duration_count, 3)
+            if group["maxDurationMs"] is not None:
+                group["maxDurationMs"] = round(float(group["maxDurationMs"]), 3)
+        group["diagnosis"] = _diagnose_trace_group(
+            command_kind=str(group.get("commandKind") or ""),
+            category=str(group.get("category") or ""),
+            route_name=str(group.get("routeName") or ""),
+            tool_name=str(group.get("toolName") or ""),
+            last_status=str(group.get("lastStatus") or ""),
+        )
+        group["suggestedNextCommands"] = _recommend_trace_commands(
+            command_kind=str(group.get("commandKind") or ""),
+            category=str(group.get("category") or ""),
+            route_name=str(group.get("routeName") or ""),
+            tool_name=str(group.get("toolName") or ""),
+            selected_port=selected_port,
+        )
+
+    summary_groups.sort(
+        key=lambda item: (
+            1 if str(item.get("lastStatus") or "").strip().lower() == "error" else 0,
+            str(item.get("lastTimestamp") or ""),
+            int(item.get("count") or 0),
+        ),
+        reverse=True,
+    )
+    return summary_groups
+
+
+def _format_trace_summary_text(payload: dict[str, Any]) -> str:
+    groups = list(payload.get("groups") or [])
+    problem_groups = list(payload.get("problemGroups") or [])
+    filters = dict(payload.get("filters") or {})
+    lines: list[str] = ["Unity CLI Trace Summary"]
+
+    group_count = int(payload.get("groupCount") or len(groups))
+    lines.append(f"Groups: {group_count}")
+    if filters.get("agentId"):
+        lines.append(f"Agent: {filters['agentId']}")
+
+    filter_bits: list[str] = []
+    if filters.get("status"):
+        filter_bits.append(f"status={filters['status']}")
+    if filters.get("category"):
+        filter_bits.append(f"category={filters['category']}")
+    if filters.get("route"):
+        filter_bits.append(f"route={filters['route']}")
+    if filters.get("tool"):
+        filter_bits.append(f"tool={filters['tool']}")
+    if filters.get("commandContains"):
+        filter_bits.append(f"contains={filters['commandContains']}")
+    if filter_bits:
+        lines.append("Filters: " + ", ".join(filter_bits))
+
+    if problem_groups:
+        lines.append("")
+        lines.append("Current Problems")
+        for group in problem_groups:
+            label = str(group.get("label") or "CLI activity").strip()
+            route_name = str(group.get("routeName") or "").strip()
+            tool_name = str(group.get("toolName") or "").strip()
+            diagnosis = str(group.get("diagnosis") or "").strip()
+            last_error = str(group.get("lastError") or "").strip()
+            lines.append(f"- {label}")
+            if route_name:
+                lines.append(f"  route: {route_name}")
+            if tool_name:
+                lines.append(f"  tool: {tool_name}")
+            if diagnosis:
+                lines.append(f"  why: {diagnosis}")
+            if last_error:
+                lines.append(f"  error: {last_error}")
+            suggested = list(group.get("suggestedNextCommands") or [])
+            if suggested:
+                lines.append("  next:")
+                for command in suggested:
+                    lines.append(f"    {command}")
+    else:
+        lines.append("")
+        lines.append("No current failing groups.")
+
+    if groups:
+        lines.append("")
+        lines.append("Recent Groups")
+        for group in groups[:8]:
+            label = str(group.get("label") or "CLI activity").strip()
+            category = str(group.get("category") or "").strip()
+            route_name = str(group.get("routeName") or "").strip()
+            tool_name = str(group.get("toolName") or "").strip()
+            last_status = str(group.get("lastStatus") or "ok").strip().lower()
+            count = int(group.get("count") or 0)
+            ok_count = int(group.get("okCount") or 0)
+            error_count = int(group.get("errorCount") or 0)
+            average_duration = group.get("averageDurationMs")
+            meta_bits: list[str] = [f"count {count}", f"ok {ok_count}", f"errors {error_count}", f"last {last_status}"]
+            if category:
+                meta_bits.append(f"category {category}")
+            if route_name:
+                meta_bits.append(f"route {route_name}")
+            if tool_name:
+                meta_bits.append(f"tool {tool_name}")
+            if isinstance(average_duration, (int, float)):
+                meta_bits.append(f"avg {round(float(average_duration), 3)}ms")
+            lines.append(f"- {label} ({'; '.join(meta_bits)})")
+
+    recommended_commands = list(payload.get("recommendedCommands") or [])
+    if recommended_commands:
+        lines.append("")
+        lines.append("Suggested Next Commands")
+        for command in recommended_commands:
+            lines.append(f"- {command}")
+
+    return "\n".join(lines)
 
 
 @debug_group.command("snapshot")
@@ -1608,21 +2026,37 @@ def debug_dashboard_command(
     default=None,
     help="Optional status filter.",
 )
+@click.option("--summary", "summary_mode", is_flag=True, help="Group recent trace entries by category/route/tool.")
 @click.option("--command-contains", type=str, default=None, help="Only include entries whose command contains this text.")
+@click.option("--category", type=str, default=None, help="Only include entries for a matching Unity category like scene or graphics.")
+@click.option("--route", "route_name", type=str, default=None, help="Only include entries for a matching Unity route.")
+@click.option("--tool", "tool_name", type=str, default=None, help="Only include entries for a matching Unity tool name.")
 @click.option("--agent-id", "filter_agent_id", type=str, default=None, help="Only include entries recorded for this agent ID.")
+@click.option("--follow", is_flag=True, help="Keep watching new CLI trace entries. Plain-text mode only.")
+@click.option("--history/--new-only", "show_history", default=False, show_default=True, help="In follow mode, print matching existing entries before watching for new ones.")
+@click.option("--interval", type=float, default=0.5, show_default=True, help="Seconds between local trace polls in follow mode.")
+@click.option("--duration", type=float, default=None, help="Optional number of seconds to follow before exiting.")
 @click.option("--clear", "clear_history", is_flag=True, help="Clear the stored CLI trace after printing.")
 @click.pass_context
 def debug_trace_command(
     ctx: click.Context,
     tail: int,
     status: str | None,
+    summary_mode: bool,
     command_contains: str | None,
+    category: str | None,
+    route_name: str | None,
+    tool_name: str | None,
     filter_agent_id: str | None,
+    follow: bool,
+    show_history: bool,
+    interval: float,
+    duration: float | None,
     clear_history: bool,
 ) -> None:
     """Show recent CLI route/tool attempts with status, timing, and errors."""
 
-    def _callback() -> dict[str, Any]:
+    def _load_rendered_entries() -> list[dict[str, Any]]:
         history = ctx.obj.backend.get_history()
         entries = _filter_history_entries(
             history,
@@ -1632,16 +2066,80 @@ def debug_trace_command(
             agent_id=filter_agent_id,
         )
         rendered_entries = [_humanize_history_entry(entry) for entry in entries]
+        return _filter_rendered_trace_entries(
+            rendered_entries,
+            category=category,
+            route_name=route_name,
+            tool_name=tool_name,
+        )
+
+    if follow:
+        if ctx.obj.json_output:
+            raise click.UsageError("--follow is only supported without --json.")
+        if clear_history:
+            raise click.UsageError("--clear cannot be combined with --follow.")
+        if summary_mode:
+            raise click.UsageError("--summary cannot be combined with --follow.")
+
+        rendered_entries = _load_rendered_entries()
+        seen = {_history_entry_identity(entry) for entry in rendered_entries}
+
+        click.echo("Watching Unity CLI trace. Press Ctrl+C to stop.")
+        if show_history:
+            for entry in rendered_entries:
+                click.echo(_format_trace_watch_line(entry))
+
+        started = time.monotonic()
+        poll_interval = max(0.1, float(interval))
+        try:
+            while True:
+                if duration is not None and (time.monotonic() - started) >= max(0.0, duration):
+                    break
+                time.sleep(poll_interval)
+                for entry in _load_rendered_entries():
+                    key = _history_entry_identity(entry)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    click.echo(_format_trace_watch_line(entry))
+        except KeyboardInterrupt:
+            click.echo("Stopped watching Unity CLI trace.")
+        return
+
+    def _callback() -> dict[str, Any]:
+        rendered_entries = _load_rendered_entries()
+        selected_port = ctx.obj.backend.session_store.load().selected_port
+        summary_groups = (
+            _summarize_trace_entries(rendered_entries, selected_port=selected_port)
+            if summary_mode
+            else None
+        )
+        problem_groups = [
+            group
+            for group in (summary_groups or [])
+            if str(group.get("lastStatus") or "").strip().lower() == "error"
+        ]
+        recommended_commands: list[str] = []
+        if summary_mode:
+            for group in problem_groups:
+                for command in group.get("suggestedNextCommands") or []:
+                    normalized = str(command).strip()
+                    if normalized and normalized not in recommended_commands:
+                        recommended_commands.append(normalized)
         payload = {
-            "title": "Unity CLI Trace",
+            "title": "Unity CLI Trace Summary" if summary_mode else "Unity CLI Trace",
             "count": len(rendered_entries),
             "tail": tail,
             "filters": {
                 "status": status,
+                "summary": summary_mode,
                 "commandContains": command_contains,
+                "category": category,
+                "route": route_name,
+                "tool": tool_name,
                 "agentId": filter_agent_id,
+                "follow": False,
             },
-            "entries": rendered_entries,
             "agent": {
                 "agentId": ctx.obj.agent_id,
                 "profile": _serialize_agent_profile(ctx.obj.agent_profile),
@@ -1649,10 +2147,22 @@ def debug_trace_command(
                 "legacy": ctx.obj.legacy_mode,
             },
         }
+        if summary_mode:
+            payload["groups"] = summary_groups or []
+            payload["groupCount"] = len(summary_groups or [])
+            payload["problemGroups"] = problem_groups
+            payload["problemCount"] = len(problem_groups)
+            payload["recommendedCommands"] = recommended_commands[:6]
+        else:
+            payload["entries"] = rendered_entries
         if clear_history:
             ctx.obj.backend.clear_history()
             payload["cleared"] = True
         return payload
+
+    if summary_mode and not ctx.obj.json_output:
+        _run_and_emit(ctx, lambda: _format_trace_summary_text(_callback()))
+        return
 
     _run_and_emit(ctx, _callback)
 
@@ -1754,11 +2264,23 @@ def debug_doctor_command(
         selected_port = port
         if selected_port is None:
             selected_port = int((payload.get("summary") or {}).get("port")) if (payload.get("summary") or {}).get("port") is not None else None
+        mem = memory_for_session(ctx.obj.backend.session_store.load())
         report = build_debug_doctor_report(
             payload,
             history_before[-max(0, recent_commands):] if recent_commands > 0 else [],
             selected_port,
+            memory=mem,
         )
+
+        # ── Fix-loop auto-learning ─────────────────────────────────────────
+        # If issues from the last doctor run are now resolved, credit the
+        # commands that ran in between and auto-save them as fixes.
+        auto_learned: list[dict[str, Any]] = []
+        if mem is not None:
+            auto_learned = _detect_and_learn_fixes(mem, report, history_before)
+            if auto_learned:
+                report["autoLearnedFixes"] = auto_learned
+
         report["agent"] = {
             "agentId": ctx.obj.agent_id,
             "profile": _serialize_agent_profile(ctx.obj.agent_profile),
@@ -1768,6 +2290,77 @@ def debug_doctor_command(
         return report
 
     _run_and_emit(ctx, _callback)
+
+
+def _detect_and_learn_fixes(
+    mem: "ProjectMemory",
+    current_report: dict[str, Any],
+    history_before: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Compare current doctor findings to the last saved state.
+
+    When issues that were present last time are now gone, credit the CLI
+    commands that ran in between and save them as fix suggestions.
+    Returns a list of auto-learned fix records (for report transparency).
+    """
+    try:
+        last_state = mem.get_last_doctor_state()
+        current_findings = current_report.get("findings") or []
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        # Save current state for the next doctor run to diff against.
+        mem.save_doctor_state(current_findings, now_iso)
+
+        if not last_state:
+            return []
+
+        last_findings_titles = {
+            f["title"] for f in (last_state.get("findings") or [])
+            if f.get("severity") in ("error", "warning")
+        }
+        current_titles = {
+            f["title"] for f in current_findings
+            if f.get("title") != "Healthy Snapshot" and f.get("severity") in ("error", "warning")
+        }
+        resolved = last_findings_titles - current_titles
+        if not resolved:
+            return []
+
+        # Find commands that ran after the last doctor state was saved.
+        last_ts = last_state.get("timestamp", "")
+        intervening = [
+            h for h in history_before
+            if h.get("timestamp", "") > last_ts
+            and h.get("status") == "ok"
+            and "debug" not in str(h.get("command", ""))  # skip debug/inspect commands
+            and h.get("command") not in {"instances", "status", "ping", "history", "memory"}
+        ]
+
+        if not intervening:
+            return []
+
+        learned = []
+        for issue_title in resolved:
+            # Credit the most recent non-trivial command before resolution.
+            best = intervening[-1]
+            cmd = best.get("command", "")
+            args = best.get("args") or {}
+            # Reconstruct a CLI command string from history.
+            arg_str = " ".join(
+                f"--{k} {v}" for k, v in args.items()
+                if v is not None and k not in {"port", "agent_id"}
+            )
+            fix_command = f"cli-anything-unity-mcp {cmd} {arg_str}".strip()
+            mem.remember_fix(
+                error_pattern=issue_title,
+                fix_command=fix_command,
+                context=f"Auto-learned: resolved '{issue_title}'",
+            )
+            learned.append({"resolvedIssue": issue_title, "creditedCommand": fix_command})
+
+        return learned
+    except Exception:
+        return []
 
 
 @debug_group.command("editor-log")
@@ -2483,6 +3076,14 @@ def tool_info_command(
 @click.option("--search", type=str, default=None, help="Filter by tool name or description text.")
 @click.option("--summary", "summary_only", is_flag=True, help="Return only summary counts.")
 @click.option("--exclude-unsupported", is_flag=True, help="Hide tools marked unsupported in the upstream catalog.")
+@click.option(
+    "--next-batch",
+    "next_batch_limit",
+    type=click.IntRange(0, 50),
+    default=0,
+    show_default=True,
+    help="Include a prioritized batch of deferred tools for the next live-validation pass.",
+)
 @click.pass_context
 def tool_coverage_command(
     ctx: click.Context,
@@ -2491,6 +3092,7 @@ def tool_coverage_command(
     search: str | None,
     summary_only: bool,
     exclude_unsupported: bool,
+    next_batch_limit: int,
 ) -> None:
     """Report upstream tool coverage status across live-tested, covered, mock-only, unsupported, and deferred buckets."""
     _run_and_emit(
@@ -2501,6 +3103,7 @@ def tool_coverage_command(
             search=search,
             include_unsupported=not exclude_unsupported,
             summary_only=summary_only,
+            next_batch_limit=next_batch_limit,
         ),
     )
 
@@ -2757,7 +3360,7 @@ def workflow_inspect_command(
             "sampledAssetCount": len(asset_items),
         }
 
-        return {
+        result = {
             "summary": summary,
             "ping": ping,
             "project": project,
@@ -2771,8 +3374,75 @@ def workflow_inspect_command(
                 "sampled": asset_items,
             },
         }
+        _learn_from_inspect(ctx, result)
+        return result
 
     _run_and_emit(ctx, _callback)
+
+
+def _learn_from_inspect(ctx: click.Context, result: dict[str, Any]) -> None:
+    """Silently cache project structure facts from a workflow-inspect result."""
+    try:
+        state = ctx.obj.backend.session_store.load()
+        mem = memory_for_session(state)
+        if mem is None:
+            return
+
+        project = result.get("project") or {}
+        ping = result.get("ping") or {}
+        summary = result.get("summary") or {}
+        assets = result.get("assets") or {}
+
+        # Render pipeline
+        pipeline = project.get("renderPipeline") or project.get("currentRenderPipeline")
+        if pipeline:
+            mem.remember_structure("render_pipeline", pipeline)
+
+        # Unity version
+        version = ping.get("unityVersion") or project.get("unityVersion")
+        if version:
+            mem.remember_structure("unity_version", version)
+
+        # Project name
+        name = summary.get("projectName") or project.get("productName")
+        if name:
+            mem.remember_structure("project_name", name)
+
+        # Installed packages (compact list of name:version)
+        packages = project.get("packages") or project.get("installedPackages")
+        if isinstance(packages, list) and packages:
+            pkg_summary = []
+            for pkg in packages:
+                if isinstance(pkg, dict):
+                    pkg_name = pkg.get("name") or pkg.get("packageId") or ""
+                    pkg_ver = pkg.get("version") or ""
+                    if pkg_name:
+                        pkg_summary.append(f"{pkg_name}@{pkg_ver}" if pkg_ver else pkg_name)
+                elif isinstance(pkg, str):
+                    pkg_summary.append(pkg)
+            if pkg_summary:
+                mem.remember_structure("packages", pkg_summary)
+
+        # Script directories seen in asset listing
+        sampled = assets.get("sampled") or []
+        script_dirs: set[str] = set()
+        for item in sampled:
+            path = item.get("path") or item.get("name") or "" if isinstance(item, dict) else str(item)
+            if path.endswith(".cs"):
+                parts = path.replace("\\", "/").rsplit("/", 1)
+                if len(parts) == 2:
+                    script_dirs.add(parts[0])
+        if script_dirs:
+            mem.remember_structure("script_directories", sorted(script_dirs))
+
+        # Active scene
+        active_scene = summary.get("activeScene")
+        if active_scene:
+            mem.remember_structure("last_active_scene", active_scene)
+
+    except Exception:
+        # Memory learning is best-effort — never break the inspect workflow.
+        pass
 
 
 @workflow_group.command("create-behaviour")
@@ -3831,3 +4501,121 @@ def workflow_validate_scene_command(
 
     _run_and_emit(ctx, _callback)
 
+
+
+# ─── Memory command group ─────────────────────────────────────────────────────
+
+
+@cli.group("memory")
+def memory_group() -> None:
+    """Persistent per-project memory — store and recall learned patterns and fixes."""
+
+
+def _require_memory(ctx: click.Context) -> "ProjectMemory":
+    """Return a ProjectMemory for the active project, or exit with a helpful message."""
+    state = ctx.obj.backend.session_store.load()
+    mem = memory_for_session(state)
+    if mem is None:
+        raise click.ClickException(
+            "No Unity instance selected. Run 'cli-anything-unity-mcp select <port>' first."
+        )
+    return mem
+
+
+@memory_group.command("recall")
+@click.option(
+    "--category",
+    type=click.Choice(sorted(ALL_CATEGORIES)),
+    default=None,
+    help="Filter by category.",
+)
+@click.option("--search", type=str, default=None, help="Case-insensitive substring search.")
+@click.option("--limit", type=int, default=20, show_default=True, help="Max entries to return.")
+@click.pass_context
+def memory_recall_command(
+    ctx: click.Context,
+    category: "str | None",
+    search: "str | None",
+    limit: int,
+) -> None:
+    """Show what the CLI remembers about the current project."""
+    mem = _require_memory(ctx)
+    results = mem.recall(category=category, search=search, limit=limit)
+    _emit(ctx, {"projectPath": mem.project_path, "count": len(results), "entries": results})
+
+
+@memory_group.command("remember-fix")
+@click.argument("error_pattern")
+@click.argument("fix_command")
+@click.option("--context", "fix_context", type=str, default="", help="Optional note about when this applies.")
+@click.pass_context
+def memory_remember_fix_command(
+    ctx: click.Context,
+    error_pattern: str,
+    fix_command: str,
+    fix_context: str,
+) -> None:
+    """Record that FIX_COMMAND resolved an error matching ERROR_PATTERN.
+
+    \b
+    Example:
+      memory remember-fix "CS0246" "cli-anything-unity-mcp script-update ..."
+    """
+    mem = _require_memory(ctx)
+    mem.remember_fix(error_pattern, fix_command, context=fix_context)
+    _emit(ctx, {"saved": True, "errorPattern": error_pattern, "fixCommand": fix_command})
+
+
+@memory_group.command("remember")
+@click.argument("category", type=click.Choice(sorted(ALL_CATEGORIES)))
+@click.argument("key")
+@click.argument("value")
+@click.pass_context
+def memory_remember_command(
+    ctx: click.Context,
+    category: str,
+    key: str,
+    value: str,
+) -> None:
+    """Save an arbitrary memory entry.
+
+    \b
+    Examples:
+      memory remember structure render_pipeline URP
+      memory remember pattern addressables "Project uses Addressables, not Resources.Load"
+    """
+    mem = _require_memory(ctx)
+    mem.save(category, key, {"value": value})
+    _emit(ctx, {"saved": True, "category": category, "key": key, "value": value})
+
+
+@memory_group.command("forget")
+@click.option(
+    "--category",
+    type=click.Choice(sorted(ALL_CATEGORIES)),
+    default=None,
+    help="Limit deletion to a category.",
+)
+@click.option("--key", type=str, default=None, help="Delete a specific entry by key.")
+@click.option("--all", "forget_all", is_flag=True, help="Clear all memories for this project.")
+@click.pass_context
+def memory_forget_command(
+    ctx: click.Context,
+    category: "str | None",
+    key: "str | None",
+    forget_all: bool,
+) -> None:
+    """Delete memories for the current project."""
+    if not category and not forget_all:
+        raise click.UsageError("Specify --category, --category + --key, or --all.")
+    mem = _require_memory(ctx)
+    deleted = mem.forget(category=None if forget_all else category, key=key)
+    _emit(ctx, {"deleted": deleted})
+
+
+@memory_group.command("stats")
+@click.pass_context
+def memory_stats_command(ctx: click.Context) -> None:
+    """Show a summary of stored memories for the current project."""
+    mem = _require_memory(ctx)
+    _emit(ctx, mem.stats())

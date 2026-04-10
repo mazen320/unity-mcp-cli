@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+from .schema_templates import summarize_schema
 from .tool_catalog import get_upstream_catalog, iter_upstream_tools
 
 
@@ -202,12 +204,104 @@ def _coverage_status(tool: Dict[str, Any]) -> tuple[str, str, str]:
     return "deferred", note, blocker
 
 
+def _tool_risk(tool: Dict[str, Any]) -> tuple[str, int]:
+    route = str(tool.get("route") or "").lower()
+    name = str(tool.get("name") or "").lower()
+    text = f"{route} {name}"
+    destructive_words = ("delete", "remove", "clear", "destroy", "unload")
+    read_words = (
+        "info",
+        "list",
+        "get",
+        "summary",
+        "status",
+        "find",
+        "search",
+        "validate",
+        "preview",
+    )
+    create_words = ("create", "generate", "bake", "build")
+    if any(word in text for word in destructive_words):
+        return "destructive", 3
+    if any(word in text for word in read_words):
+        return "read-only", 0
+    if any(word in text for word in create_words):
+        return "safe-mutation", 1
+    return "stateful-mutation", 2
+
+
+def _next_batch_reason(tool: Dict[str, Any], risk: str) -> str:
+    blocker = str(tool.get("coverageBlocker") or "")
+    if risk == "read-only":
+        return "Good first candidate because it can usually be inspected without mutating the scene."
+    if blocker == "package-dependent-live-audit":
+        return "Needs package-aware fixture checks before promotion."
+    if blocker == "stateful-live-audit":
+        return "Needs disposable-scene setup, assertions, and cleanup before promotion."
+    if blocker == "environment-sensitive":
+        return "Needs editor-state guardrails so the live audit is repeatable."
+    return "Needs explicit wrapper or live-audit evidence before promotion."
+
+
+def _coverage_next_batch(tools: list[Dict[str, Any]], limit: int) -> list[Dict[str, Any]]:
+    if limit <= 0:
+        return []
+
+    candidates = [tool for tool in tools if tool.get("coverageStatus") == "deferred"]
+    candidates.sort(
+        key=lambda tool: (
+            _tool_risk(tool)[1],
+            str(tool.get("category") or ""),
+            str(tool.get("name") or ""),
+        )
+    )
+
+    batch: list[Dict[str, Any]] = []
+    for tool in candidates[:limit]:
+        risk, _rank = _tool_risk(tool)
+        schema = summarize_schema(tool.get("inputSchema"))
+        name = str(tool.get("name") or "")
+        route = str(tool.get("route") or "")
+        template = schema["requiredTemplate"]
+        if template:
+            params_json = json.dumps(template, separators=(",", ":"), ensure_ascii=True)
+            tool_command = f"cli-anything-unity-mcp --json tool {name} --params '{params_json}' --port <port>"
+        else:
+            tool_command = f"cli-anything-unity-mcp --json tool {name} --port <port>"
+        batch.append(
+            {
+                "name": name,
+                "route": route,
+                "category": tool.get("category"),
+                "risk": risk,
+                "coverageStatus": tool.get("coverageStatus"),
+                "coverageBlocker": tool.get("coverageBlocker"),
+                "required": schema["required"],
+                "optional": schema["optional"],
+                "requiredTemplate": schema["requiredTemplate"],
+                "reason": _next_batch_reason(tool, risk),
+                "recommendedCommands": [
+                    f"cli-anything-unity-mcp --json tool-info {name} --port <port>",
+                    f"cli-anything-unity-mcp --json tool-template {name} --include-optional --port <port>",
+                    tool_command,
+                ],
+                "handoffPrompt": (
+                    f"Audit {name} ({route}) in a disposable Unity scene. Start with tool-info "
+                    "and tool-template, run the smallest safe live check, capture before/after evidence, "
+                    "and only promote coverage if cleanup is reliable."
+                ),
+            }
+        )
+    return batch
+
+
 def build_tool_coverage_matrix(
     category: str | None = None,
     status: str | None = None,
     search: str | None = None,
     include_unsupported: bool = True,
     summary_only: bool = False,
+    next_batch_limit: int = 0,
 ) -> Dict[str, Any]:
     status_filter = (status or "").strip().lower() or None
     if status_filter and status_filter not in COVERAGE_STATUSES:
@@ -259,10 +353,13 @@ def build_tool_coverage_matrix(
             "search": search,
             "includeUnsupported": include_unsupported,
             "summaryOnly": summary_only,
+            "nextBatchLimit": next_batch_limit,
         },
     }
 
     payload: Dict[str, Any] = {"summary": summary}
+    if next_batch_limit > 0:
+        payload["nextBatch"] = _coverage_next_batch(tools, next_batch_limit)
     if not summary_only:
         payload["tools"] = tools
     return payload

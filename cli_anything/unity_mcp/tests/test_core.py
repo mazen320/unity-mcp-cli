@@ -18,8 +18,13 @@ from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_
 from cli_anything.unity_mcp.core.session import SessionState, SessionStore
 from cli_anything.unity_mcp.core.tool_coverage import build_tool_coverage_matrix
 from cli_anything.unity_mcp.core.workflows import build_behaviour_script
-from cli_anything.unity_mcp.unity_mcp_cli import _humanize_history_entry
-from scripts.run_live_mcp_pass import _build_profile_plan, _default_report_file
+from cli_anything.unity_mcp.unity_mcp_cli import _humanize_history_entry, _summarize_trace_entries
+from scripts.run_live_mcp_pass import (
+    _build_profile_plan,
+    _default_report_file,
+    _format_live_pass_summary,
+    _summarize_live_pass_report,
+)
 from cli_anything.unity_mcp.utils.unity_mcp_backend import (
     BackendSelectionError,
     UnityMCPBackend,
@@ -92,15 +97,16 @@ class DashboardBackendStub:
     def __init__(self) -> None:
         self.preferences = {
             "unityConsoleBreadcrumbs": True,
-            "dashboardAutoRefresh": True,
-            "dashboardRefreshSeconds": 2.0,
-            "dashboardConsoleCount": 40,
+            "dashboardAutoRefresh": False,
+            "dashboardRefreshSeconds": 5.0,
+            "dashboardConsoleCount": 20,
             "dashboardIssueLimit": 20,
             "dashboardIncludeHierarchy": False,
-            "dashboardEditorLogTail": 80,
+            "dashboardEditorLogTail": 40,
             "dashboardAbUmcpOnly": False,
         }
         self.last_state_args: dict[str, Any] | None = None
+        self.last_live_args: dict[str, Any] | None = None
 
     def get_debug_preferences(self) -> dict[str, Any]:
         return dict(self.preferences)
@@ -165,6 +171,46 @@ class DashboardBackendStub:
             "request": {"port": port},
         }
 
+    def build_debug_dashboard_live_state(
+        self,
+        *,
+        port: int | None = None,
+        console_count: int = 20,
+        message_type: str = "all",
+        trace_tail: int = 20,
+        history_formatter: Any = None,
+    ) -> dict[str, Any]:
+        self.last_live_args = {
+            "port": port,
+            "console_count": console_count,
+            "message_type": message_type,
+            "trace_tail": trace_tail,
+            "history_formatter": history_formatter,
+        }
+        return {
+            "title": "Unity Debug Dashboard",
+            "generatedAt": 124.0,
+            "preferences": dict(self.preferences),
+            "snapshot": {
+                "summary": {
+                    "projectName": "Demo",
+                    "activeScene": "LiveScene",
+                    "sceneDirty": False,
+                    "consoleEntryCount": 1,
+                    "consoleHighestSeverity": "info",
+                    "queueQueuedRequests": 0,
+                },
+                "editorState": {"isPlaying": False, "isCompiling": False},
+                "consoleSummary": {"highestSeverity": "info"},
+                "console": {"entries": [{"type": "info", "message": "live"}]},
+                "compilation": {"count": 0, "entries": []},
+                "missingReferences": {"totalFound": 0, "results": []},
+                "queue": {"totalQueued": 0, "activeAgents": 0},
+            },
+            "trace": {"entries": [{"summary": "Inspecting scene info", "phase": "inspect"}]},
+            "request": {"port": port},
+        }
+
 
 class CoreTests(unittest.TestCase):
     def test_agent_profile_store_persists_selection_and_profiles(self) -> None:
@@ -216,6 +262,26 @@ class CoreTests(unittest.TestCase):
         self.assertIn("disposable fixtures", tools["unity_terrain_create_grid"]["coverageNote"])
         self.assertGreaterEqual(payload["summary"]["countsByStatus"]["live-tested"], 1)
 
+    def test_tool_coverage_matrix_can_build_next_agent_batch(self) -> None:
+        payload = build_tool_coverage_matrix(
+            category="terrain",
+            status="deferred",
+            summary_only=True,
+            next_batch_limit=3,
+        )
+
+        self.assertNotIn("tools", payload)
+        self.assertEqual(payload["summary"]["filters"]["nextBatchLimit"], 3)
+        self.assertGreaterEqual(len(payload["nextBatch"]), 1)
+        self.assertLessEqual(len(payload["nextBatch"]), 3)
+        candidate = payload["nextBatch"][0]
+        self.assertEqual(candidate["coverageStatus"], "deferred")
+        self.assertEqual(candidate["category"], "terrain")
+        self.assertIn(candidate["risk"], {"read-only", "safe-mutation", "stateful-mutation", "destructive"})
+        self.assertIn("cli-anything-unity-mcp --json tool-info", candidate["recommendedCommands"][0])
+        self.assertIn("cli-anything-unity-mcp --json tool-template", candidate["recommendedCommands"][1])
+        self.assertIn("disposable Unity scene", candidate["handoffPrompt"])
+
     def test_tool_coverage_matrix_explains_hub_tools_as_unity_hub_integration_gap(self) -> None:
         payload = build_tool_coverage_matrix(category="hub")
 
@@ -250,6 +316,85 @@ class CoreTests(unittest.TestCase):
             str(report_file).replace("\\", "/"),
             "C:/Temp/.cli-anything-unity-mcp/live-pass-lighting-20260409-120000.json",
         )
+
+    def test_live_pass_summary_highlights_failures_timeouts_and_port_hops(self) -> None:
+        report = {
+            "steps": [
+                {
+                    "name": "unity_select_instance",
+                    "status": "passed",
+                    "durationMs": 12.0,
+                    "result": {"selectedPort": 7891},
+                },
+                {
+                    "name": "unity_inspect",
+                    "status": "passed",
+                    "durationMs": 130.25,
+                    "result": {"summary": {"port": 7892}},
+                },
+                {
+                    "name": "unity_play(play)",
+                    "status": "failed",
+                    "durationMs": 20000.0,
+                    "result": {"timedOut": True, "error": "play mode did not settle"},
+                    "consoleSnapshot": {
+                        "status": "passed",
+                        "result": {
+                            "entries": [
+                                {
+                                    "type": "error",
+                                    "message": "Input exception during play mode",
+                                }
+                            ]
+                        },
+                    },
+                },
+            ],
+            "summary": {
+                "port": 7891,
+                "passed": 2,
+                "failed": 1,
+                "profile": "ui",
+                "reportFile": "C:/Temp/live-pass-ui.json",
+            },
+        }
+
+        summary = _summarize_live_pass_report(report)
+
+        self.assertEqual(summary["totalSteps"], 3)
+        self.assertEqual(summary["passed"], 2)
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(summary["timedOut"], 1)
+        failed_step = summary["failedSteps"][0]
+        self.assertEqual(failed_step["name"], "unity_play(play)")
+        self.assertEqual(failed_step["status"], "timed-out")
+        self.assertEqual(failed_step["durationMs"], 20000.0)
+        self.assertEqual(failed_step["detail"], "play mode did not settle")
+        self.assertEqual(failed_step["consoleSummary"], "error: Input exception during play mode")
+        self.assertIn(
+            "cli-anything-unity-mcp --json play stop --port 7891",
+            failed_step["recommendedCommands"],
+        )
+        self.assertIn(
+            "cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port 7891",
+            summary["recommendedCommands"],
+        )
+        self.assertEqual(
+            summary["portHops"],
+            [{"step": "unity_inspect", "from": 7891, "to": 7892}],
+        )
+
+        report["liveSummary"] = summary
+        text = _format_live_pass_summary(report, failures_only=True)
+
+        self.assertIn("Unity MCP Live Pass", text)
+        self.assertIn("Failures And Timeouts", text)
+        self.assertIn("unity_play(play) [timed-out] in 20000.0ms: play mode did not settle", text)
+        self.assertIn("console: error: Input exception during play mode", text)
+        self.assertIn("next: cli-anything-unity-mcp --json play stop --port 7891", text)
+        self.assertIn("Port Hops", text)
+        self.assertIn("7891 -> 7892 during unity_inspect", text)
+        self.assertNotIn("Slowest Steps", text)
 
     def test_mcp_tool_registry_is_curated_and_has_fast_defaults(self) -> None:
         names = [tool["name"] for tool in iter_mcp_tools()]
@@ -300,6 +445,61 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(entry["phase"], "inspect")
         self.assertIsNone(entry["target"])
         self.assertEqual(entry["summary"], "Checking project info")
+
+    def test_humanize_history_entry_adds_route_and_tool_metadata(self) -> None:
+        entry = _humanize_history_entry(
+            {
+                "command": "scene/info",
+                "args": {},
+                "status": "ok",
+            }
+        )
+
+        self.assertEqual(entry["commandKind"], "route")
+        self.assertEqual(entry["routeName"], "scene/info")
+        self.assertEqual(entry["toolName"], "unity_scene_info")
+        self.assertEqual(entry["category"], "scene")
+        self.assertEqual(entry["summary"], "Inspecting scene info")
+
+    def test_summarize_trace_entries_adds_problem_guidance(self) -> None:
+        entries = [
+            _humanize_history_entry(
+                {
+                    "command": "scene/info",
+                    "args": {},
+                    "status": "error",
+                    "error": "bridge unavailable",
+                    "timestamp": "2026-04-09T10:00:00+00:00",
+                    "durationMs": 22.5,
+                }
+            ),
+            _humanize_history_entry(
+                {
+                    "command": "debug/breadcrumb",
+                    "args": {"message": "noise"},
+                    "status": "error",
+                    "timestamp": "2026-04-09T10:00:01+00:00",
+                }
+            ),
+        ]
+
+        groups = _summarize_trace_entries(entries, selected_port=7892)
+
+        self.assertEqual(len(groups), 1)
+        group = groups[0]
+        self.assertEqual(group["routeName"], "scene/info")
+        self.assertEqual(group["toolName"], "unity_scene_info")
+        self.assertEqual(group["errorCount"], 1)
+        self.assertEqual(group["lastError"], "bridge unavailable")
+        self.assertEqual(group["diagnosis"], "Scene inspection or mutation failed recently.")
+        self.assertIn(
+            "cli-anything-unity-mcp --json debug trace --route scene/info",
+            group["suggestedNextCommands"],
+        )
+        self.assertIn(
+            "cli-anything-unity-mcp --json workflow inspect --port 7892",
+            group["suggestedNextCommands"],
+        )
 
     def test_tool_route_overrides_and_round_trip(self) -> None:
         self.assertEqual(tool_name_to_route("unity_execute_code"), "editor/execute-code")
@@ -396,6 +596,21 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(save_payload["preferences"]["dashboardConsoleCount"], 22)
             self.assertTrue(save_payload["preferences"]["dashboardIncludeHierarchy"])
 
+            live_payload = json.loads(
+                urlopen(
+                    handle.url + "api/live?consoleCount=9&traceTail=4&messageType=info",
+                    timeout=5,
+                )
+                .read()
+                .decode("utf-8")
+            )
+            self.assertEqual(live_payload["title"], "Unity Debug Dashboard")
+            self.assertEqual(live_payload["doctor"]["summary"]["assessment"], "healthy")
+            self.assertEqual(backend.last_live_args["port"], 7892)
+            self.assertEqual(backend.last_live_args["console_count"], 9)
+            self.assertEqual(backend.last_live_args["trace_tail"], 4)
+            self.assertEqual(backend.last_live_args["message_type"], "info")
+
             state_payload = json.loads(
                 urlopen(
                     handle.url
@@ -469,6 +684,53 @@ class CoreTests(unittest.TestCase):
             self.assertIn("route failed", history[-1]["error"])
             self.assertEqual(history[-1]["transport"], "queue")
             self.assertIn("durationMs", history[-1])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_emit_unity_breadcrumb_can_fail_without_polluting_trace_history(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            registry_path = tmpdir / "instances.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "port": 7890,
+                            "projectName": "Demo",
+                            "projectPath": "C:/Projects/Demo",
+                            "unityVersion": "6000.0.0f1",
+                            "platform": "WindowsEditor",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            session_store = SessionStore(tmpdir / "session.json")
+            backend = UnityMCPBackend(
+                client=ErrorRouteClient(
+                    {
+                        7890: {
+                            "status": "ok",
+                            "projectName": "Demo",
+                            "projectPath": "C:/Projects/Demo",
+                            "unityVersion": "6000.0.0f1",
+                            "platform": "WindowsEditor",
+                        }
+                    }
+                ),
+                session_store=session_store,
+                registry_path=registry_path,
+                default_port=7890,
+                port_range_start=7890,
+                port_range_end=7890,
+            )
+            backend.select_instance(7890)
+
+            with self.assertRaises(UnityMCPClientError):
+                backend.emit_unity_breadcrumb("hello", record_history=False)
+
+            self.assertEqual(backend.get_history(), [])
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

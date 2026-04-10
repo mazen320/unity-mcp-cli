@@ -41,6 +41,7 @@ python -m pip install -e .
 python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp.tests.test_full_e2e -v
 cli-anything-unity-mcp --help
 cli-anything-unity-mcp --json tool-coverage --summary
+cli-anything-unity-mcp --json tool-coverage --category terrain --status deferred --summary --next-batch 5
 cli-anything-unity-mcp --json tool-coverage --status unsupported
 cli-anything-unity-mcp --json debug bridge --port 7891
 cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port 7891
@@ -58,6 +59,7 @@ cli-anything-unity-mcp --json agent watch --iterations 2 --interval 0 --port 789
 cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy --port 7891
 cli-anything-unity-mcp --json debug watch --iterations 2 --interval 0 --console-count 20 --port 7891
 python .\scripts\run_live_mcp_pass.py --port 7891
+python .\scripts\run_live_mcp_pass.py --port 7891 --summary-only
 python .\scripts\run_live_mcp_pass.py --port 7891 --profile ui --prepare-scene discard --debug --report-file .\.cli-anything-unity-mcp\live-pass-ui-debug.json
 python .\scripts\run_live_mcp_pass.py --port 7891 --include-heavy --debug --report-file .\.cli-anything-unity-mcp\live-pass-heavy-debug.json
 ```
@@ -68,4 +70,5 @@ Live pass notes:
 - `--prepare-scene save|discard` lets mutating validation steps start from a clean scene on purpose instead of failing halfway through a run.
 - `--debug` records per-step timings, raw MCP payloads, and Unity console snapshots for failed steps.
 - `--report-file` writes the full run report to disk for later inspection.
+- Text mode now prints a scan-friendly live-pass summary with first next commands for failed steps. Add `--summary-only` to limit it to counts, failures/timeouts, and Unity bridge port hops.
 - `workflow audit-advanced` now performs disposable scene and asset probes for broader advanced-category coverage, then resets the scene and deletes generated assets.

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import json
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from .memory import ProjectMemory
 
 
 def _port_suffix(port: int | None) -> str:
@@ -26,10 +30,91 @@ def _finding(
     return payload
 
 
+def _check_structure_drift(
+    findings: list[dict[str, Any]],
+    structure: dict[str, Any],
+    snapshot: dict[str, Any],
+    port_suffix: str,
+    add_command: Any,
+) -> None:
+    """Add findings when the current snapshot diverges from cached project structure."""
+
+    cached_pipeline = structure.get("render_pipeline")
+    if cached_pipeline:
+        camera_diag = dict(snapshot.get("cameraDiagnostics") or {})
+        current_pipeline = camera_diag.get("pipeline") or ""
+
+        def _normalize_pipeline(p: str) -> str:
+            """Collapse known aliases to a canonical name."""
+            p = p.lower().replace(" ", "").replace("-", "").replace("_", "")
+            if p in {"urp", "universalrp", "universalrenderpipeline"}:
+                return "urp"
+            if p in {"hdrp", "highdefinitionrp", "highdefinitionrenderpipeline"}:
+                return "hdrp"
+            if p in {"builtin", "builtinrenderpipeline", "legacy", "none", ""}:
+                return "builtin"
+            return p
+
+        # Detect pipeline change (e.g. someone switched from URP to Built-in).
+        # Normalize before comparing so "URP" == "UniversalRP" == "Universal Render Pipeline".
+        if current_pipeline and _normalize_pipeline(cached_pipeline) != _normalize_pipeline(current_pipeline):
+            findings.append(
+                _finding(
+                    "warning",
+                    "Render Pipeline Changed",
+                    f"Project was using '{cached_pipeline}' but camera now reports '{current_pipeline}'. "
+                    f"This can break materials, lighting, and post-processing.",
+                    f"cli-anything-unity-mcp --json workflow inspect{port_suffix}",
+                    {"cachedPipeline": cached_pipeline, "currentPipeline": current_pipeline},
+                )
+            )
+            add_command(f"cli-anything-unity-mcp --json workflow inspect{port_suffix}")
+
+    cached_version = structure.get("unity_version")
+    if cached_version:
+        editor_state = dict(snapshot.get("editorState") or {})
+        current_version = editor_state.get("unityVersion") or ""
+        if current_version and current_version != cached_version:
+            findings.append(
+                _finding(
+                    "info",
+                    "Unity Version Changed",
+                    f"Project was last inspected on Unity {cached_version}, now running {current_version}. "
+                    f"Re-inspect to update cached structure.",
+                    f"cli-anything-unity-mcp --json workflow inspect{port_suffix}",
+                    {"cachedVersion": cached_version, "currentVersion": current_version},
+                )
+            )
+            add_command(f"cli-anything-unity-mcp --json workflow inspect{port_suffix}")
+
+    # Detect known package-dependent tools vs installed packages
+    cached_packages = structure.get("packages")
+    if isinstance(cached_packages, list):
+        pkg_names = {p.split("@")[0] if "@" in p else p for p in cached_packages}
+        compilation = dict(snapshot.get("compilation") or {})
+        entries = compilation.get("entries") or []
+        for entry in entries:
+            msg = str(entry.get("message") or "").lower() if isinstance(entry, dict) else ""
+            # Common: user tries TextMeshPro API without the package
+            if "tmpro" in msg or "textmeshpro" in msg:
+                if not any("textmeshpro" in p.lower() or "com.unity.textmeshpro" in p.lower() for p in pkg_names):
+                    findings.append(
+                        _finding(
+                            "error",
+                            "TextMeshPro Not Installed",
+                            "Compilation references TextMeshPro but the package is not in the cached package list. "
+                            "Install it via Package Manager or 'cli-anything-unity-mcp tool unity_packages_add'.",
+                            f"cli-anything-unity-mcp --json tool unity_packages_add --params '{{\"packageId\":\"com.unity.textmeshpro\"}}'",
+                        )
+                    )
+                    break
+
+
 def build_debug_doctor_report(
     snapshot: dict[str, Any],
     recent_history: List[dict[str, Any]] | None,
     active_port: int | None,
+    memory: Optional["ProjectMemory"] = None,
 ) -> dict[str, Any]:
     summary = dict(snapshot.get("summary") or {})
     editor_state = dict(snapshot.get("editorState") or {})
@@ -191,6 +276,27 @@ def build_debug_doctor_report(
 
     add_command(f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{port_suffix}")
     add_command(f"cli-anything-unity-mcp --json debug capture --kind both{port_suffix}")
+
+    # ── Memory-powered diagnostics ───────────────────────────────────────────
+    if memory is not None:
+        # Annotate findings with past fixes.
+        for finding in findings:
+            evidence_text = json.dumps(finding.get("evidence") or {}) + " " + str(finding.get("detail", ""))
+            past_fixes = memory.suggest_fix(evidence_text)
+            if not past_fixes:
+                past_fixes = memory.suggest_fix(finding.get("title", ""))
+            if past_fixes:
+                best = past_fixes[0]["content"]
+                finding["pastFix"] = {
+                    "fixCommand": best.get("fixCommand"),
+                    "context": best.get("context", ""),
+                    "note": "This pattern was seen before — the command below fixed it last time.",
+                }
+
+        # Cross-check snapshot against cached project structure.
+        structure = memory.get_all_structure()
+        if structure:
+            _check_structure_drift(findings, structure, snapshot, port_suffix, add_command)
 
     if findings:
         severity_rank = {"info": 0, "warning": 1, "error": 2}

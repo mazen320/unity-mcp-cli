@@ -24,12 +24,12 @@ def get_workspace_fallback_session_path() -> Path:
 
 DEFAULT_DEBUG_PREFERENCES: Dict[str, Any] = {
     "unityConsoleBreadcrumbs": True,
-    "dashboardAutoRefresh": True,
-    "dashboardRefreshSeconds": 2.0,
-    "dashboardConsoleCount": 40,
+    "dashboardAutoRefresh": False,
+    "dashboardRefreshSeconds": 5.0,
+    "dashboardConsoleCount": 20,
     "dashboardIssueLimit": 20,
     "dashboardIncludeHierarchy": False,
-    "dashboardEditorLogTail": 80,
+    "dashboardEditorLogTail": 40,
     "dashboardAbUmcpOnly": False,
 }
 

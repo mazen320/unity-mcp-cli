@@ -4,13 +4,6 @@
 
 It talks directly to the Unity plugin's local HTTP bridge instead of relying on a full MCP tool-registration flow every turn. The result is a faster, easier-to-debug shell surface for Codex and other command-driven agents.
 
-<p align="center">
-  <img src="docs/media/unity-debug-game-view.png" alt="Unity Game View capture from the CLI debug flow" width="48%" />
-  <img src="docs/media/unity-debug-scene-view.png" alt="Unity Scene View capture from the CLI debug flow" width="48%" />
-</p>
-
-<p align="center"><sub>Example Game View and Scene View captures saved by <code>debug capture --kind both</code>. These images come from disposable validation scenes used to test the CLI.</sub></p>
-
 ## Why This Exists
 
 - Lower overhead than exposing everything through a giant MCP surface
@@ -101,13 +94,22 @@ cli-anything-unity-mcp --json workflow inspect --port <port>
 cli-anything-unity-mcp --json debug doctor --port <port>
 cli-anything-unity-mcp --json debug trace --tail 20
 cli-anything-unity-mcp --json debug capture --kind both --port <port>
+python .\scripts\run_live_mcp_pass.py --port <port> --summary-only
 ```
 
 Normal commands now emit visible Unity-side `[CLI-TRACE]` breadcrumbs, so you can watch agent activity in the Unity Console or Editor log:
 
 ```powershell
 cli-anything-unity-mcp debug editor-log --contains "CLI-TRACE" --follow
+cli-anything-unity-mcp debug trace --follow --history --tail 12
+cli-anything-unity-mcp --json debug trace --summary --tail 20
+cli-anything-unity-mcp --json debug trace --summary --status error --tail 20
+cli-anything-unity-mcp --json debug trace --category scene
+cli-anything-unity-mcp --json debug trace --route scene/info
+cli-anything-unity-mcp --json debug trace --tool unity_scene_stats
 ```
+
+`debug trace --summary` now separates current `problemGroups` from normal recent activity, returns `recommendedCommands` when something is still failing, and renders a readable text report when you run it without `--json`.
 
 If you want a more detailed live debugging surface, launch the local browser dashboard:
 
@@ -121,6 +123,15 @@ If Unity Console breadcrumbs are getting noisy, you can turn them off without di
 cli-anything-unity-mcp --json debug settings --no-unity-console-breadcrumbs
 cli-anything-unity-mcp --json debug settings --unity-console-breadcrumbs
 ```
+
+For repeatable MCP validation, use the live-pass runner:
+
+```powershell
+python .\scripts\run_live_mcp_pass.py --port <port> --summary-only
+python .\scripts\run_live_mcp_pass.py --port <port> --profile ui --debug --report-file .\.cli-anything-unity-mcp\live-pass-ui-debug.json
+```
+
+Text mode now reports counts, failures/timeouts, Unity bridge port hops, slowest steps, and the first useful follow-up command for each failed step. Use `--summary-only` when you only want the failure-first view, or `--json` when an agent needs the full structured report.
 
 For multi-step workflows, those breadcrumbs now include substeps like:
 
@@ -151,6 +162,7 @@ cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hiera
 cli-anything-unity-mcp --json debug capture --kind both --port <port>
 cli-anything-unity-mcp --json debug editor-log --tail 120 --ab-umcp-only
 cli-anything-unity-mcp debug dashboard --port <port>
+python .\scripts\run_live_mcp_pass.py --port <port> --summary-only
 ```
 
 ### Tool Surface
@@ -160,6 +172,7 @@ cli-anything-unity-mcp --json tools --search scene
 cli-anything-unity-mcp --json tool-info unity_scene_stats
 cli-anything-unity-mcp --json tool unity_scene_stats --port <port>
 cli-anything-unity-mcp --json tool-coverage --summary
+cli-anything-unity-mcp --json tool-coverage --category terrain --status deferred --summary --next-batch 5
 ```
 
 ## Coverage Snapshot
@@ -183,7 +196,10 @@ Use:
 cli-anything-unity-mcp --json tool-coverage --summary
 cli-anything-unity-mcp --json tool-coverage --status unsupported
 cli-anything-unity-mcp --json tool-coverage --status deferred --category terrain
+cli-anything-unity-mcp --json tool-coverage --status deferred --category terrain --summary --next-batch 5
 ```
+
+`--next-batch` is the handoff view for contributors or parallel agents. It returns prioritized deferred tools with risk labels, required parameter templates, suggested commands, and a short audit prompt for live validation.
 
 ## Product Direction
 

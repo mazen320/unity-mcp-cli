@@ -1749,6 +1749,10 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(all(entry.get("commandPath") == "scene-info" for entry in payload["entries"]))
         self.assertTrue(all(entry.get("activity") == "inspecting scene info" for entry in payload["entries"]))
         self.assertTrue(all(entry.get("actor") for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("commandKind") == "route" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("category") == "scene" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("routeName") == "scene/info" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("toolName") == "unity_scene_info" for entry in payload["entries"]))
         self.assertTrue(any("Inspecting scene" in str(entry["summary"]) for entry in payload["entries"]))
         self.assertIn("agent", payload)
 
@@ -1772,6 +1776,223 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(all(entry.get("actor") == "agent-alpha" for entry in payload["entries"]))
         self.assertTrue(all(entry.get("commandPath") == "scene-info" for entry in payload["entries"]))
         self.assertTrue(all(entry.get("activity") == "inspecting scene info" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("category") == "scene" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("routeName") == "scene/info" for entry in payload["entries"]))
+        self.assertTrue(all(entry.get("toolName") == "unity_scene_info" for entry in payload["entries"]))
+
+    def test_debug_trace_can_filter_entries_by_category_route_and_tool(self) -> None:
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+        self.run_cli("--json", "--agent-id", "agent-alpha", "console", "--count", "5")
+
+        category_result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--tail",
+            "10",
+            "--category",
+            "scene",
+            "--agent-id",
+            "agent-alpha",
+        )
+        category_payload = json.loads(category_result.stdout.strip())
+
+        self.assertGreaterEqual(category_payload["count"], 1)
+        self.assertTrue(all(entry.get("category") == "scene" for entry in category_payload["entries"]))
+        self.assertTrue(all(entry.get("routeName") == "scene/info" for entry in category_payload["entries"]))
+        self.assertEqual(category_payload["filters"]["category"], "scene")
+
+        route_result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--tail",
+            "10",
+            "--route",
+            "scene/info",
+            "--agent-id",
+            "agent-alpha",
+        )
+        route_payload = json.loads(route_result.stdout.strip())
+
+        self.assertGreaterEqual(route_payload["count"], 1)
+        self.assertTrue(all(entry.get("routeName") == "scene/info" for entry in route_payload["entries"]))
+        self.assertTrue(all(entry.get("toolName") == "unity_scene_info" for entry in route_payload["entries"]))
+        self.assertEqual(route_payload["filters"]["route"], "scene/info")
+
+        tool_result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--tail",
+            "10",
+            "--tool",
+            "unity_scene_info",
+            "--agent-id",
+            "agent-alpha",
+        )
+        tool_payload = json.loads(tool_result.stdout.strip())
+
+        self.assertGreaterEqual(tool_payload["count"], 1)
+        self.assertTrue(all(entry.get("toolName") == "unity_scene_info" for entry in tool_payload["entries"]))
+        self.assertTrue(all(entry.get("routeName") == "scene/info" for entry in tool_payload["entries"]))
+        self.assertEqual(tool_payload["filters"]["tool"], "unity_scene_info")
+
+    def test_debug_trace_summary_groups_recent_activity(self) -> None:
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+        self.run_cli("--json", "--agent-id", "agent-alpha", "console", "--count", "5")
+
+        result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--summary",
+            "--tail",
+            "12",
+            "--agent-id",
+            "agent-alpha",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertEqual(payload["title"], "Unity CLI Trace Summary")
+        self.assertTrue(payload["filters"]["summary"])
+        self.assertGreaterEqual(payload["groupCount"], 2)
+        self.assertNotIn("entries", payload)
+        self.assertIn("groups", payload)
+        self.assertEqual(payload["problemCount"], 0)
+        self.assertEqual(payload["problemGroups"], [])
+        self.assertEqual(payload["recommendedCommands"], [])
+
+        scene_group = next(group for group in payload["groups"] if group.get("routeName") == "scene/info")
+        self.assertEqual(scene_group["category"], "scene")
+        self.assertEqual(scene_group["toolName"], "unity_scene_info")
+        self.assertGreaterEqual(scene_group["count"], 2)
+        self.assertEqual(scene_group["lastStatus"], "ok")
+        self.assertIsNotNone(scene_group["averageDurationMs"])
+        self.assertIsNone(scene_group["diagnosis"])
+        self.assertTrue(
+            any("debug trace --route scene/info" in command for command in scene_group["suggestedNextCommands"])
+        )
+
+    def test_debug_trace_summary_renders_readable_plain_text(self) -> None:
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+        self.run_cli("--json", "--agent-id", "agent-alpha", "console", "--count", "5")
+
+        result = self.run_cli(
+            "debug",
+            "trace",
+            "--summary",
+            "--tail",
+            "12",
+            "--agent-id",
+            "agent-alpha",
+        )
+
+        self.assertIn("Unity CLI Trace Summary", result.stdout)
+        self.assertIn("No current failing groups.", result.stdout)
+        self.assertIn("Recent Groups", result.stdout)
+        self.assertIn("Inspecting scene info", result.stdout)
+        self.assertIn("route scene/info", result.stdout)
+
+    def test_debug_trace_summary_surfaces_problem_groups_and_next_commands(self) -> None:
+        self.run_cli("--json", "select", str(self.port))
+        error_result = subprocess.run(
+            [
+                *self.cli_command,
+                "--host",
+                "127.0.0.1",
+                "--default-port",
+                str(self.port),
+                "--port-range-start",
+                str(self.port),
+                "--port-range-end",
+                str(self.port),
+                "--registry-path",
+                str(self.registry_path),
+                "--session-path",
+                str(self.session_path),
+                "--json",
+                "route",
+                "scene/info",
+                "--port",
+                str(self.port + 5),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertNotEqual(error_result.returncode, 0)
+        self.assertIn("Could not reach Unity bridge", error_result.stderr)
+
+        summary_result = self.run_cli(
+            "--json",
+            "debug",
+            "trace",
+            "--summary",
+            "--tail",
+            "12",
+            "--status",
+            "error",
+        )
+        payload = json.loads(summary_result.stdout.strip())
+
+        self.assertGreaterEqual(payload["problemCount"], 1)
+        self.assertTrue(payload["recommendedCommands"])
+        self.assertTrue(any("workflow inspect --port" in command for command in payload["recommendedCommands"]))
+        self.assertTrue(any("debug doctor --recent-commands 8 --port" in command for command in payload["recommendedCommands"]))
+
+        problem_group = next(group for group in payload["problemGroups"] if group.get("routeName") == "scene/info")
+        self.assertEqual(problem_group["category"], "scene")
+        self.assertEqual(problem_group["lastStatus"], "error")
+        self.assertEqual(problem_group["errorCount"], 1)
+        self.assertEqual(problem_group["diagnosis"], "Scene inspection or mutation failed recently.")
+        self.assertTrue(
+            any("debug trace --route scene/info" in command for command in problem_group["suggestedNextCommands"])
+        )
+
+    def test_debug_trace_summary_problem_plain_text_highlights_next_steps(self) -> None:
+        self.run_cli("--json", "select", str(self.port))
+        subprocess.run(
+            [
+                *self.cli_command,
+                "--host",
+                "127.0.0.1",
+                "--default-port",
+                str(self.port),
+                "--port-range-start",
+                str(self.port),
+                "--port-range-end",
+                str(self.port),
+                "--registry-path",
+                str(self.registry_path),
+                "--session-path",
+                str(self.session_path),
+                "--json",
+                "route",
+                "scene/info",
+                "--port",
+                str(self.port + 5),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+        result = self.run_cli(
+            "debug",
+            "trace",
+            "--summary",
+            "--tail",
+            "12",
+            "--status",
+            "error",
+        )
+
+        self.assertIn("Current Problems", result.stdout)
+        self.assertIn("Scene inspection or mutation failed recently.", result.stdout)
+        self.assertIn("Suggested Next Commands", result.stdout)
+        self.assertIn("cli-anything-unity-mcp --json debug doctor --recent-commands 8 --port", result.stdout)
 
     def test_normal_command_emits_automatic_unity_trace_breadcrumbs(self) -> None:
         self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
@@ -1956,6 +2177,102 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(payload["latest"]["summary"]["consoleEntryCount"], 3)
         self.assertEqual(payload["latest"]["consoleSummary"]["highestSeverity"], "error")
         self.assertEqual(payload["latest"]["queue"]["activeAgents"], 1)
+
+    def test_debug_trace_follow_streams_local_history_without_json(self) -> None:
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+
+        result = self.run_cli(
+            "debug",
+            "trace",
+            "--follow",
+            "--history",
+            "--duration",
+            "0.15",
+            "--tail",
+            "6",
+            "--agent-id",
+            "agent-alpha",
+        )
+
+        self.assertIn("Watching Unity CLI trace.", result.stdout)
+        self.assertIn("Inspecting scene info", result.stdout)
+        self.assertIn("category scene", result.stdout)
+        self.assertIn("route scene/info", result.stdout)
+        self.assertIn("tool unity_scene_info", result.stdout)
+
+    def test_debug_trace_follow_is_new_only_by_default(self) -> None:
+        self.run_cli("--json", "--agent-id", "agent-alpha", "scene-info")
+
+        result = self.run_cli(
+            "debug",
+            "trace",
+            "--follow",
+            "--duration",
+            "0.15",
+            "--tail",
+            "6",
+            "--agent-id",
+            "agent-alpha",
+        )
+
+        self.assertIn("Watching Unity CLI trace.", result.stdout)
+        self.assertNotIn("Inspecting scene info", result.stdout)
+
+    def test_debug_trace_follow_rejects_json_mode(self) -> None:
+        result = subprocess.run(
+            [
+                *self.cli_command,
+                "--host",
+                "127.0.0.1",
+                "--default-port",
+                str(self.port),
+                "--port-range-start",
+                str(self.port),
+                "--port-range-end",
+                str(self.port),
+                "--registry-path",
+                str(self.registry_path),
+                "--session-path",
+                str(self.session_path),
+                "--json",
+                "debug",
+                "trace",
+                "--follow",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--follow is only supported without --json.", result.stderr)
+
+    def test_debug_trace_follow_rejects_summary_mode(self) -> None:
+        result = subprocess.run(
+            [
+                *self.cli_command,
+                "--host",
+                "127.0.0.1",
+                "--default-port",
+                str(self.port),
+                "--port-range-start",
+                str(self.port),
+                "--port-range-end",
+                str(self.port),
+                "--registry-path",
+                str(self.registry_path),
+                "--session-path",
+                str(self.session_path),
+                "debug",
+                "trace",
+                "--follow",
+                "--summary",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--summary cannot be combined with --follow.", result.stderr)
 
     def test_debug_capture_saves_game_and_scene_images(self) -> None:
         output_dir = self.tmpdir / "captures"
@@ -2147,9 +2464,21 @@ class FullE2ETests(unittest.TestCase):
     def test_tool_coverage_command_reports_live_tested_summary(self) -> None:
         summary_result = self.run_cli("--json", "tool-coverage", "--summary")
         category_result = self.run_cli("--json", "tool-coverage", "--category", "terrain")
+        next_batch_result = self.run_cli(
+            "--json",
+            "tool-coverage",
+            "--category",
+            "terrain",
+            "--status",
+            "deferred",
+            "--summary",
+            "--next-batch",
+            "2",
+        )
 
         summary_payload = json.loads(summary_result.stdout.strip())
         category_payload = json.loads(category_result.stdout.strip())
+        next_batch_payload = json.loads(next_batch_result.stdout.strip())
 
         self.assertIn("summary", summary_payload)
         self.assertGreater(summary_payload["summary"]["countsByStatus"]["live-tested"], 0)
@@ -2158,6 +2487,12 @@ class FullE2ETests(unittest.TestCase):
             tool for tool in category_payload["tools"] if tool["name"] == "unity_terrain_create"
         )
         self.assertEqual(terrain_create["coverageStatus"], "live-tested")
+        self.assertNotIn("tools", next_batch_payload)
+        self.assertEqual(next_batch_payload["summary"]["filters"]["nextBatchLimit"], 2)
+        self.assertGreaterEqual(len(next_batch_payload["nextBatch"]), 1)
+        self.assertLessEqual(len(next_batch_payload["nextBatch"]), 2)
+        self.assertEqual(next_batch_payload["nextBatch"][0]["coverageStatus"], "deferred")
+        self.assertIn("handoffPrompt", next_batch_payload["nextBatch"][0])
 
     def test_mcp_server_lists_tools_and_executes_curated_calls(self) -> None:
         process = self.start_mcp_server()
