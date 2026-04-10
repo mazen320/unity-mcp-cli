@@ -1965,3 +1965,115 @@ class CoreTests(unittest.TestCase):
             call_route.assert_called_once_with("queue/info", timeout=1.0)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_emit_unity_breadcrumb_uses_file_ipc_route_when_selected_instance_is_file_transport(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        umcp = project / ".umcp"
+        umcp.mkdir(parents=True, exist_ok=True)
+        try:
+            from datetime import datetime, timezone
+
+            ping_data = {
+                "status": "ok",
+                "projectName": "MyProject",
+                "projectPath": str(project),
+                "unityVersion": "6000.4.0f1",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+                "transport": "file-ipc",
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            session_store = SessionStore(tmpdir / "session.json")
+            session_store.save(
+                SessionState(
+                    selected_port=None,
+                    selected_instance={
+                        "projectName": "MyProject",
+                        "projectPath": str(project),
+                        "port": None,
+                        "transport": "file-ipc",
+                    },
+                    history=[],
+                )
+            )
+            backend = UnityMCPBackend(
+                client=FakeClient(pings={}),
+                session_store=session_store,
+                registry_path=tmpdir / "instances.json",
+                transport="file",
+                file_ipc_paths=[project],
+            )
+
+            with patch.object(
+                FileIPCClient,
+                "call_route",
+                return_value={"success": True, "level": "info", "message": "hello"},
+            ) as call_route:
+                result = backend.emit_unity_breadcrumb("hello")
+
+            self.assertTrue(result["success"])
+            call_route.assert_called_once_with(
+                "debug/breadcrumb",
+                params={"message": "hello", "level": "info"},
+            )
+            history = backend.get_history()
+            self.assertEqual(history[-1]["command"], "debug/breadcrumb")
+            self.assertEqual(history[-1]["transport"], "file-ipc")
+            self.assertEqual(history[-1]["status"], "ok")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_get_context_uses_file_ipc_route_when_selected_instance_is_file_transport(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        umcp = project / ".umcp"
+        umcp.mkdir(parents=True, exist_ok=True)
+        try:
+            from datetime import datetime, timezone
+
+            ping_data = {
+                "status": "ok",
+                "projectName": "MyProject",
+                "projectPath": str(project),
+                "unityVersion": "6000.4.0f1",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+                "transport": "file-ipc",
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            session_store = SessionStore(tmpdir / "session.json")
+            session_store.save(
+                SessionState(
+                    selected_port=None,
+                    selected_instance={
+                        "projectName": "MyProject",
+                        "projectPath": str(project),
+                        "port": None,
+                        "transport": "file-ipc",
+                    },
+                    history=[],
+                )
+            )
+            backend = UnityMCPBackend(
+                client=FakeClient(pings={}),
+                session_store=session_store,
+                registry_path=tmpdir / "instances.json",
+                transport="file",
+                file_ipc_paths=[project],
+            )
+
+            with patch.object(
+                FileIPCClient,
+                "call_route",
+                return_value={"projectPath": str(project), "renderPipeline": "builtin"},
+            ) as call_route:
+                result = backend.get_context()
+
+            self.assertEqual(result["projectPath"], str(project))
+            call_route.assert_called_once_with("context", params={})
+            history = backend.get_history()
+            self.assertEqual(history[-1]["command"], "context")
+            self.assertEqual(history[-1]["transport"], "file-ipc")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)

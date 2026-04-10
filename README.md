@@ -1,6 +1,6 @@
 # Unity MCP CLI
 
-`unity-mcp-cli` is a CLI-first Unity assistant for Unity projects, built to work with the AnkleBreaker Unity MCP plugin and the lightweight File IPC bridge scripts in this repo.
+`unity-mcp-cli` is a CLI-first Unity assistant for Unity projects, built to work with the AnkleBreaker Unity MCP plugin and the standalone File IPC bridge scripts in this repo.
 
 It talks directly to Unity through either the plugin's local HTTP bridge or the repo's file-based IPC bridge instead of relying on a full MCP tool-registration flow every turn. The result is a faster, easier-to-debug shell surface for Codex and other command-driven agents.
 
@@ -8,6 +8,11 @@ It talks directly to Unity through either the plugin's local HTTP bridge or the 
 
 - Use [FILE_IPC.md](FILE_IPC.md) if you want the standalone core route path that does not require the AnkleBreaker Unity plugin.
 - Use [PLUGIN_SETUP.md](PLUGIN_SETUP.md) if you want the full advanced AnkleBreaker plugin HTTP bridge path.
+
+| Bridge | Best for | Needs plugin | Needs ports |
+| --- | --- | --- | --- |
+| File IPC | fast local scene work, debugging, core agent loop | no | no |
+| Plugin HTTP | full advanced Unity route surface | yes | yes |
 
 ## Why This Exists
 
@@ -32,7 +37,7 @@ It talks directly to Unity through either the plugin's local HTTP bridge or the 
 
 This repo is the CLI/client layer plus optional Unity Editor bridge scripts.
 
-It is not a full clean-room replacement for the Unity backend. The full AnkleBreaker Unity-side plugin still powers the broad advanced route surface. The File IPC bridge in `unity-scripts/Editor/` is a lightweight local fallback for core editor routes when you want zero-port setup or do not need the full plugin surface.
+It is not yet a full clean-room replacement for the deepest Unity backend surface. The full AnkleBreaker Unity-side plugin still powers the broad advanced route surface. The File IPC bridge in `unity-scripts/Editor/` is now a standalone-first direct path for core editor routes when you want zero-port setup, lower overhead, or no plugin dependency for day-to-day scene work.
 
 If you are using this repo with Codex or another coding agent, read [AGENTS.md](AGENTS.md) first. It defines the intended CLI-first workflow, debugging loop, and verification expectations.
 
@@ -97,9 +102,18 @@ cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --j
 cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json route --params '{"menuItem":"Window/CLI Anything"}' editor/execute-menu-item
 ```
 
+If you want a reusable standalone verification pass instead of typing commands one by one:
+
+```powershell
+python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame"
+python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame" --json
+```
+
 `CliAnythingWindow.cs` is optional. Copy it into `Assets/Editor/` if you want a native Unity panel at `Window > CLI Anything`.
 
 Standalone File IPC is intentionally smaller than the full plugin route surface. It is good for core local control such as editor state, scene info, hierarchy, console, compilation errors, GameObject basics, component basics, script read/create, undo/redo, screenshots, agent session/log visibility, and opening the native CLI Anything panel. Use the AnkleBreaker plugin HTTP bridge when you need the full advanced catalog across terrain, animation, shaders, prefabs, packages, and other deep Unity systems.
+
+Recent standalone File IPC live verification in `OutsideTheBox` also covered direct `context`, `search/scene-stats`, `search/missing-references`, `debug breadcrumb`, `console/log` breadcrumb readback, and `debug capture --kind both`.
 
 Agents still work on the File IPC path. The agent process runs the CLI, the CLI tags commands with an `agentId`, and the Unity-side File IPC bridge records lightweight `agent sessions` / `agent log` state without background polling. File IPC executes directly on Unity's main thread, so it does not need the old HTTP queue for core routes.
 

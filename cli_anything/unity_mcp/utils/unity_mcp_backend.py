@@ -259,8 +259,12 @@ class UnityMCPBackend:
         return routes
 
     def get_context(self, category: str | None = None, port: Optional[int] = None) -> Dict[str, Any]:
-        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         params = {"category": category} if category else {}
+        file_client = self._resolve_file_ipc_client() if port is None else None
+        if file_client is not None:
+            return self._call_route_file_ipc(file_client, "context", params, record_history=True)
+
+        resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         try:
             # Context can touch Unity APIs, so prefer the bridge queue/main-thread path.
             queued = self.call_route("context", params=params, port=resolved_port, use_queue=True)
@@ -911,6 +915,41 @@ class UnityMCPBackend:
                     note="Skipped Unity console breadcrumb",
                 )
             return payload
+
+        file_client = self._resolve_file_ipc_client() if port is None else None
+        if file_client is not None:
+            started_at = time.monotonic()
+            try:
+                result = self._call_route_file_ipc(
+                    file_client,
+                    "debug/breadcrumb",
+                    {"message": message, "level": normalized_level},
+                    record_history=False,
+                )
+            except Exception as exc:
+                if record_history:
+                    self._record_history(
+                        "debug/breadcrumb",
+                        {"message": message, "level": normalized_level},
+                        None,
+                        status="error",
+                        duration_ms=self._elapsed_ms(started_at),
+                        error=str(exc),
+                        transport="file-ipc",
+                        note="Emit Unity console breadcrumb",
+                    )
+                raise
+
+            if record_history:
+                self._record_history(
+                    "debug/breadcrumb",
+                    {"message": message, "level": normalized_level},
+                    None,
+                    duration_ms=self._elapsed_ms(started_at),
+                    transport="file-ipc",
+                    note="Emit Unity console breadcrumb",
+                )
+            return result
 
         resolved_port = self.resolve_port(explicit_port=port, allow_default=False)
         escaped_message = json.dumps(f"[CLI-TRACE] {message}")

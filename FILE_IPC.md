@@ -71,6 +71,13 @@ Open the optional native Unity panel:
 cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json route --params '{"menuItem":"Window/CLI Anything"}' editor/execute-menu-item
 ```
 
+Run the reusable standalone smoke pass:
+
+```powershell
+python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame"
+python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame" --json
+```
+
 ## Agents With File IPC
 
 Agents do work with File IPC. They run outside Unity and use the CLI as the transport:
@@ -105,17 +112,20 @@ The native `Window > CLI Anything` panel is the local cockpit for visibility and
 Standalone File IPC currently covers the core local route surface:
 
 - `ping`
-- `scene/info`, `scene/hierarchy`, `scene/save`, `scene/new`, `scene/stats`
+- `scene/info`, `scene/hierarchy`, `scene/save`, `scene/new`, `scene/stats`, `search/scene-stats`
 - `project/info`
+- `context`
 - `editor/state`, `editor/play-mode`, `editor/execute-menu-item`
+- `debug/breadcrumb`
 - `compilation/errors`
 - `console/log`, `console/clear`
+- `search/missing-references`
 - `gameobject/create`, `gameobject/delete`, `gameobject/info`, `gameobject/set-active`, `gameobject/set-transform`
 - `component/add`, `component/get-properties`
 - `asset/list`
 - `script/create`, `script/read`
-- `undo/perform`, `redo/perform`
-- `screenshot/game`
+- `undo/perform`, `undo/redo`, `redo/perform`
+- `graphics/game-capture`, `graphics/scene-capture`, `screenshot/game`
 - `queue/info`, `agents/list`, `agents/log`
 
 `CliAnythingWindow.cs` is optional. Copy it into `Assets/Editor/` too if you want the native `Window > CLI Anything` panel.
@@ -142,7 +152,10 @@ This path has been live-tested against the `OutsideTheBox` Unity project with:
 
 - `instances`
 - `state`
+- `context`
 - `scene-info`
+- `search/scene-stats`
+- `search/missing-references`
 - compact `hierarchy`
 - `compilation/errors`
 - `editor/execute-menu-item`
@@ -151,15 +164,15 @@ This path has been live-tested against the `OutsideTheBox` Unity project with:
 - `gameobject/create`
 - `gameobject/set-transform`
 - `component/add`
+- `debug breadcrumb` plus direct `console/log` readback
+- `debug capture --kind both`
 - `queue/info`, `agent queue`, `agent sessions`, `agent log`, `agent watch --iterations 1`
 
-The latest visible proof was a File IPC-only scene edit that created:
+The latest visible proof also included:
 
-```text
-/McpLiveFpsPass/CLI_FILE_IPC_PROBE_LIGHT
-```
-
-with a `Light` component and a verified hierarchy count increase.
+- a standalone breadcrumb written into Unity and read back through `console/log`
+- live `search/scene-stats` totals from the active `McpLiveFpsPass` scene
+- direct Game View and Scene View captures returned through File IPC as PNG data
 
 ## Mental Model
 

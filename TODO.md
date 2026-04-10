@@ -12,7 +12,7 @@ It focuses on three outcomes:
 
 As of 2026-04-10:
 
-- `94/94` automated tests passing
+- `96/96` automated tests passing
 - heavy live MCP pass passing `15/15`
 - tool coverage: `32` live-tested, `37` covered, `215` mock-only, `38` deferred, `6` unsupported
 - `unsupported` currently maps to the Unity Hub surface only
@@ -20,6 +20,18 @@ As of 2026-04-10:
 - thin MCP adapter is working
 - upstream coverage matrix exists in code and JSON form
 - live debug reports via `scripts/run_live_mcp_pass.py --debug --report-file ...`
+
+## Latest Standalone-First File IPC Pass
+
+- `FileIPCBridge.cs` now prefers the standalone handler first for the direct core route set instead of only using it as a weak last fallback.
+- `StandaloneRouteHandler.cs` now covers `context`, `search/scene-stats`, `search/missing-references`, `debug/breadcrumb`, `graphics/game-capture`, `graphics/scene-capture`, and `undo/redo` in the no-plugin path.
+- `UnityMCPBackend.get_context()` no longer falls through to `127.0.0.1:0` when the selected transport is file IPC.
+- `emit_unity_breadcrumb()` now uses the standalone File IPC route directly when the selected instance is file transport.
+- `scripts/run_file_ipc_smoke.py` now gives us a reusable no-plugin smoke pass instead of ad-hoc manual testing.
+- Live-tested in `OutsideTheBox`: `state`, `context`, `search/scene-stats`, `search/missing-references`, `debug breadcrumb`, `console/log` breadcrumb readback, and `debug capture --kind both`.
+- Saved capture proof:
+  - `.cli-anything-unity-mcp/captures/standalone-v3-live-game.png`
+  - `.cli-anything-unity-mcp/captures/standalone-v3-live-scene.png`
 
 ## What Was Just Built (2026-04-10 session)
 

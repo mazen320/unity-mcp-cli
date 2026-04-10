@@ -36,7 +36,7 @@ public static class FileIPCBridge
     // Poll inbox every 100ms, heartbeat every 2s
     private const double PollInterval = 0.1;
     private const double HeartbeatInterval = 2.0;
-    private const string BridgeVersion = "agent-registry-v2";
+    private const string BridgeVersion = "standalone-first-v3";
     private const int MaxAgentActions = 200;
 
     // Cached reflection for plugin route dispatch
@@ -44,6 +44,42 @@ public static class FileIPCBridge
     private static bool _pluginChecked;
     private static readonly Dictionary<string, AgentSessionInfo> AgentSessions = new Dictionary<string, AgentSessionInfo>();
     private static readonly List<AgentActionInfo> AgentActions = new List<AgentActionInfo>();
+    private static readonly HashSet<string> StandaloneOwnedRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "ping",
+        "scene/info",
+        "scene/hierarchy",
+        "scene/save",
+        "scene/new",
+        "scene/stats",
+        "search/scene-stats",
+        "project/info",
+        "context",
+        "editor/state",
+        "editor/play-mode",
+        "editor/execute-menu-item",
+        "debug/breadcrumb",
+        "compilation/errors",
+        "console/log",
+        "console/clear",
+        "search/missing-references",
+        "gameobject/create",
+        "gameobject/delete",
+        "gameobject/info",
+        "gameobject/set-active",
+        "gameobject/set-transform",
+        "component/add",
+        "component/get-properties",
+        "asset/list",
+        "script/create",
+        "script/read",
+        "undo/perform",
+        "undo/redo",
+        "redo/perform",
+        "graphics/game-capture",
+        "graphics/scene-capture",
+        "screenshot/game",
+    };
 
     static FileIPCBridge()
     {
@@ -202,6 +238,8 @@ public static class FileIPCBridge
             return BuildAgentList();
         if (route == "agents/log")
             return BuildAgentLog(paramsJson, agentId);
+        if (StandaloneOwnedRoutes.Contains(route))
+            return StandaloneRouteHandler.Handle(route, paramsJson);
 
         // Try the full Unity MCP plugin first (if installed)
         if (TryPluginDispatch(route, paramsJson, out object pluginResult))

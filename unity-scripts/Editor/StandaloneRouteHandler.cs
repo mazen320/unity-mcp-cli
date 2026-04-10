@@ -20,6 +20,7 @@ using System.Text;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 public static class StandaloneRouteHandler
@@ -40,13 +41,17 @@ public static class StandaloneRouteHandler
             case "scene/save":      return HandleSceneSave();
             case "scene/new":       return HandleSceneNew(p);
             case "scene/stats":     return HandleSceneStats();
+            case "search/scene-stats": return HandleSceneStats();
             case "project/info":    return HandleProjectInfo();
+            case "context":         return HandleContext(p);
             case "editor/state":    return HandleEditorState();
             case "editor/play-mode":return HandlePlayMode(p);
             case "editor/execute-menu-item": return HandleExecuteMenuItem(p);
-            case "compilation/errors": return HandleCompilationErrors();
+            case "debug/breadcrumb": return HandleDebugBreadcrumb(p);
+            case "compilation/errors": return HandleCompilationErrors(p);
             case "console/log":     return HandleConsoleLog(p);
             case "console/clear":   return HandleConsoleClear();
+            case "search/missing-references": return HandleMissingReferences(p);
             case "gameobject/create": return HandleGameObjectCreate(p);
             case "gameobject/delete": return HandleGameObjectDelete(p);
             case "gameobject/info": return HandleGameObjectInfo(p);
@@ -58,7 +63,10 @@ public static class StandaloneRouteHandler
             case "script/create":   return HandleScriptCreate(p);
             case "script/read":     return HandleScriptRead(p);
             case "undo/perform":    return HandleUndo();
+            case "undo/redo":       return HandleRedo();
             case "redo/perform":    return HandleRedo();
+            case "graphics/game-capture": return HandleGraphicsGameCapture(p);
+            case "graphics/scene-capture": return HandleGraphicsSceneCapture(p);
             case "screenshot/game": return HandleScreenshotGame(p);
             default:
                 return new ErrorResult { error = "Unknown route: " + route, unknownRoute = true };
@@ -73,9 +81,11 @@ public static class StandaloneRouteHandler
         {
             {"status", "ok"},
             {"projectName", Application.productName},
+            {"productName", Application.productName},
             {"projectPath", Path.GetDirectoryName(Application.dataPath)},
             {"unityVersion", Application.unityVersion},
             {"platform", Application.platform.ToString()},
+            {"renderPipeline", GetRenderPipelineName()},
             {"transport", "file-ipc-standalone"}
         };
     }
@@ -85,6 +95,7 @@ public static class StandaloneRouteHandler
         var scene = SceneManager.GetActiveScene();
         return new Dictionary<string, object>
         {
+            {"activeScene", scene.name},
             {"name", scene.name},
             {"path", scene.path},
             {"isDirty", scene.isDirty},
@@ -172,8 +183,15 @@ public static class StandaloneRouteHandler
     private static object HandleSceneStats()
     {
         var scene = SceneManager.GetActiveScene();
-        var allGOs = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
-        int meshCount = 0, lightCount = 0, cameraCount = 0;
+        var allGOs = EnumerateSceneGameObjects(scene).ToList();
+        int totalComponents = 0;
+        int meshCount = 0;
+        int totalVertices = 0;
+        int totalTriangles = 0;
+        int lightCount = 0;
+        int cameraCount = 0;
+        int colliderCount = 0;
+        int rigidbodyCount = 0;
         var componentCounts = new Dictionary<string, int>();
 
         foreach (var go in allGOs)
@@ -181,23 +199,53 @@ public static class StandaloneRouteHandler
             foreach (var comp in go.GetComponents<Component>())
             {
                 if (comp == null) continue;
+                totalComponents++;
                 string typeName = comp.GetType().Name;
-                componentCounts[typeName] = componentCounts.GetValueOrDefault(typeName, 0) + 1;
+                int existingCount;
+                componentCounts.TryGetValue(typeName, out existingCount);
+                componentCounts[typeName] = existingCount + 1;
 
-                if (comp is MeshRenderer || comp is SkinnedMeshRenderer) meshCount++;
+                if (comp is MeshFilter meshFilter && meshFilter.sharedMesh != null)
+                {
+                    meshCount++;
+                    totalVertices += meshFilter.sharedMesh.vertexCount;
+                    totalTriangles += meshFilter.sharedMesh.triangles.Length / 3;
+                }
+                else if (comp is SkinnedMeshRenderer skinnedMeshRenderer && skinnedMeshRenderer.sharedMesh != null)
+                {
+                    meshCount++;
+                    totalVertices += skinnedMeshRenderer.sharedMesh.vertexCount;
+                    totalTriangles += skinnedMeshRenderer.sharedMesh.triangles.Length / 3;
+                }
                 if (comp is Light) lightCount++;
                 if (comp is Camera) cameraCount++;
+                if (comp is Collider) colliderCount++;
+                if (comp is Rigidbody || comp is Rigidbody2D) rigidbodyCount++;
             }
         }
 
         return new Dictionary<string, object>
         {
             {"sceneName", scene.name},
-            {"totalGameObjects", allGOs.Length},
+            {"totalGameObjects", allGOs.Count},
+            {"totalComponents", totalComponents},
             {"totalMeshes", meshCount},
+            {"totalVertices", totalVertices},
+            {"totalTriangles", totalTriangles},
             {"totalLights", lightCount},
             {"totalCameras", cameraCount},
-            {"componentCounts", componentCounts}
+            {"totalColliders", colliderCount},
+            {"totalRigidbodies", rigidbodyCount},
+            {"topComponents", componentCounts
+                .OrderByDescending(pair => pair.Value)
+                .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Take(12)
+                .Select(pair => new Dictionary<string, object>
+                {
+                    {"type", pair.Key},
+                    {"count", pair.Value}
+                })
+                .ToList()}
         };
     }
 
@@ -205,14 +253,67 @@ public static class StandaloneRouteHandler
     {
         return new Dictionary<string, object>
         {
+            {"productName", Application.productName},
             {"projectName", Application.productName},
             {"projectPath", Path.GetDirectoryName(Application.dataPath)},
             {"unityVersion", Application.unityVersion},
             {"companyName", Application.companyName},
             {"platform", EditorUserBuildSettings.activeBuildTarget.ToString()},
             {"colorSpace", PlayerSettings.colorSpace.ToString()},
+            {"renderPipeline", GetRenderPipelineName()},
             {"scriptingBackend", PlayerSettings.GetScriptingBackend(
-                EditorUserBuildSettings.selectedBuildTargetGroup).ToString()}
+                UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(
+                    EditorUserBuildSettings.selectedBuildTargetGroup)).ToString()}
+        };
+    }
+
+    private static object HandleContext(Dictionary<string, object> p)
+    {
+        string category = GetString(p, "category", "");
+        string projectRoot = Path.GetDirectoryName(Application.dataPath);
+        string contextAssetPath = "Assets/MCP/Context";
+        string contextFullPath = Path.Combine(projectRoot, "Assets", "MCP", "Context");
+        bool enabled = Directory.Exists(contextFullPath);
+        var categoryPayloads = new List<Dictionary<string, object>>();
+
+        if (enabled)
+        {
+            var files = Directory
+                .GetFiles(contextFullPath, "*", SearchOption.AllDirectories)
+                .Where(path => !path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (string filePath in files)
+            {
+                string fileCategory = Path.GetFileNameWithoutExtension(filePath);
+                if (!string.IsNullOrEmpty(category) && !fileCategory.Equals(category, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string relativePath = "Assets/" + filePath
+                    .Substring(Application.dataPath.Length)
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    .Replace(Path.DirectorySeparatorChar, '/');
+
+                categoryPayloads.Add(new Dictionary<string, object>
+                {
+                    {"category", fileCategory},
+                    {"path", relativePath},
+                    {"content", File.ReadAllText(filePath)},
+                });
+            }
+        }
+
+        return new Dictionary<string, object>
+        {
+            {"enabled", enabled},
+            {"projectPath", projectRoot},
+            {"unityVersion", Application.unityVersion},
+            {"platform", Application.platform.ToString()},
+            {"renderPipeline", GetRenderPipelineName()},
+            {"contextPath", contextAssetPath},
+            {"fileCount", categoryPayloads.Count},
+            {"categories", categoryPayloads},
         };
     }
 
@@ -222,8 +323,10 @@ public static class StandaloneRouteHandler
         return new Dictionary<string, object>
         {
             {"isPlaying", EditorApplication.isPlaying},
+            {"isPlayingOrWillChangePlaymode", EditorApplication.isPlayingOrWillChangePlaymode},
             {"isPaused", EditorApplication.isPaused},
             {"isCompiling", EditorApplication.isCompiling},
+            {"unityVersion", Application.unityVersion},
             {"activeScene", scene.name},
             {"activeScenePath", scene.path},
             {"sceneDirty", scene.isDirty}
@@ -258,17 +361,29 @@ public static class StandaloneRouteHandler
         };
     }
 
-    private static object HandleCompilationErrors()
+    private static object HandleCompilationErrors(Dictionary<string, object> p)
     {
-        // Read compiler errors from the compilation pipeline
-        var errors = new List<Dictionary<string, object>>();
-        // Unity doesn't expose CompilationPipeline errors without the package,
-        // but we can check the console
+        int requestedCount = GetInt(p, "count", 20);
+        var filteredErrors = ReadEditorLogTail(Math.Max(requestedCount * 20, 300))
+            .Where(line => LooksLikeCompilationError(line))
+            .ToList();
+        var errors = filteredErrors
+            .Skip(Math.Max(0, filteredErrors.Count - Math.Max(1, requestedCount)))
+            .Select(line => new Dictionary<string, object>
+            {
+                {"message", line.Trim()},
+                {"type", "error"},
+                {"timestamp", ""},
+                {"stackTrace", ""},
+            })
+            .ToList();
+
         return new Dictionary<string, object>
         {
-            {"errors", errors},
+            {"count", errors.Count},
             {"isCompiling", EditorApplication.isCompiling},
-            {"hasErrors", errors.Count > 0}
+            {"hasErrors", errors.Count > 0},
+            {"entries", errors}
         };
     }
 
@@ -286,25 +401,80 @@ public static class StandaloneRouteHandler
         };
     }
 
-    private static object HandleConsoleLog(Dictionary<string, object> p)
+    private static object HandleDebugBreadcrumb(Dictionary<string, object> p)
     {
         string message = GetString(p, "message", "");
-        string type = GetString(p, "type", "log").ToLower();
+        string level = GetString(p, "level", "info").ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(message))
+            return new ErrorResult { error = "message is required" };
 
-        switch (type)
+        LogType logType = LogType.Log;
+        switch (level)
         {
             case "warning":
-                Debug.LogWarning(message);
+                logType = LogType.Warning;
                 break;
             case "error":
-                Debug.LogError(message);
-                break;
-            default:
-                Debug.Log(message);
+                logType = LogType.Error;
                 break;
         }
 
-        return new Dictionary<string, object> { {"success", true}, {"message", message}, {"type", type} };
+        StackTraceLogType previous = Application.GetStackTraceLogType(logType);
+        try
+        {
+            Application.SetStackTraceLogType(logType, StackTraceLogType.None);
+            string prefixed = message.StartsWith("[CLI-TRACE]", StringComparison.Ordinal) ? message : "[CLI-TRACE] " + message;
+            if (logType == LogType.Warning)
+                Debug.LogWarning(prefixed);
+            else if (logType == LogType.Error)
+                Debug.LogError(prefixed);
+            else
+                Debug.Log(prefixed);
+        }
+        finally
+        {
+            Application.SetStackTraceLogType(logType, previous);
+        }
+
+        return new Dictionary<string, object>
+        {
+            {"success", true},
+            {"message", message},
+            {"level", level}
+        };
+    }
+
+    private static object HandleConsoleLog(Dictionary<string, object> p)
+    {
+        string requestedType = GetString(p, "type", "all").ToLowerInvariant();
+        int requestedCount = GetInt(p, "count", 20);
+
+        var entries = ReadEditorLogTail(Math.Max(requestedCount * 10, 200))
+            .Select((line, index) => new Dictionary<string, object>
+            {
+                {"message", line.Trim()},
+                {"type", GuessLogType(line)},
+                {"timestamp", ""},
+                {"stackTrace", ""},
+                {"lineNumber", index + 1},
+            })
+            .Where(entry =>
+            {
+                if (requestedType == "all")
+                    return true;
+                string type = entry["type"].ToString().ToLowerInvariant();
+                return type == requestedType || (requestedType == "log" && type == "info");
+            })
+            .ToList();
+        entries = entries
+            .Skip(Math.Max(0, entries.Count - Math.Max(1, requestedCount)))
+            .ToList();
+
+        return new Dictionary<string, object>
+        {
+            {"count", entries.Count},
+            {"entries", entries}
+        };
     }
 
     private static object HandleConsoleClear()
@@ -317,6 +487,94 @@ public static class StandaloneRouteHandler
             clear?.Invoke(null, null);
         }
         return new Dictionary<string, object> { {"success", true} };
+    }
+
+    private static object HandleMissingReferences(Dictionary<string, object> p)
+    {
+        int limit = GetInt(p, "limit", 50);
+        var results = new List<Dictionary<string, object>>();
+        var scene = SceneManager.GetActiveScene();
+        int totalFound = 0;
+        bool truncated = false;
+
+        foreach (var go in EnumerateSceneGameObjects(scene))
+        {
+            int missingScriptCount = GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(go);
+            if (missingScriptCount > 0)
+            {
+                totalFound++;
+                if (results.Count < limit)
+                {
+                    results.Add(new Dictionary<string, object>
+                    {
+                        {"path", GetPath(go)},
+                        {"gameObject", go.name},
+                        {"component", "MonoBehaviour"},
+                        {"issue", $"Missing script reference ({missingScriptCount})"},
+                    });
+                }
+                else
+                {
+                    truncated = true;
+                }
+            }
+
+            foreach (var component in go.GetComponents<Component>())
+            {
+                if (component == null)
+                    continue;
+
+                SerializedObject serializedObject;
+                try
+                {
+                    serializedObject = new SerializedObject(component);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                var iterator = serializedObject.GetIterator();
+                bool enterChildren = true;
+                while (iterator.NextVisible(enterChildren))
+                {
+                    enterChildren = false;
+                    if (iterator.propertyType != SerializedPropertyType.ObjectReference)
+                        continue;
+                    if (iterator.objectReferenceValue != null || iterator.objectReferenceInstanceIDValue == 0)
+                        continue;
+
+                    totalFound++;
+                    if (results.Count < limit)
+                    {
+                        results.Add(new Dictionary<string, object>
+                        {
+                            {"path", GetPath(go)},
+                            {"gameObject", go.name},
+                            {"component", component.GetType().Name},
+                            {"property", iterator.propertyPath},
+                            {"issue", "Missing object reference"},
+                        });
+                    }
+                    else
+                    {
+                        truncated = true;
+                    }
+                }
+            }
+        }
+
+        var payload = new Dictionary<string, object>
+        {
+            {"scope", "scene"},
+            {"totalFound", totalFound},
+            {"returned", results.Count},
+            {"limit", limit},
+            {"results", results}
+        };
+        if (truncated)
+            payload["truncated"] = true;
+        return payload;
     }
 
     private static object HandleGameObjectCreate(Dictionary<string, object> p)
@@ -566,6 +824,32 @@ public static class StandaloneRouteHandler
         return new Dictionary<string, object> { {"success", true}, {"action", "redo"} };
     }
 
+    private static object HandleGraphicsGameCapture(Dictionary<string, object> p)
+    {
+        int width = Math.Max(1, GetInt(p, "width", 512));
+        int height = Math.Max(1, GetInt(p, "height", 512));
+        Camera camera = Camera.main ?? UnityEngine.Object.FindObjectsByType<Camera>()
+            .FirstOrDefault(cam => cam != null && cam.enabled && cam.gameObject.activeInHierarchy);
+
+        if (camera == null)
+            return new ErrorResult { error = "No enabled camera found for game capture." };
+
+        return CaptureCamera(camera, width, height, includeCameraName: true);
+    }
+
+    private static object HandleGraphicsSceneCapture(Dictionary<string, object> p)
+    {
+        int width = Math.Max(1, GetInt(p, "width", 512));
+        int height = Math.Max(1, GetInt(p, "height", 512));
+        SceneView sceneView = SceneView.lastActiveSceneView ?? SceneView.sceneViews.OfType<SceneView>().FirstOrDefault();
+
+        if (sceneView == null || sceneView.camera == null)
+            return new ErrorResult { error = "No SceneView camera available for capture." };
+
+        sceneView.Repaint();
+        return CaptureCamera(sceneView.camera, width, height, includeCameraName: false);
+    }
+
     private static object HandleScreenshotGame(Dictionary<string, object> p)
     {
         string filename = GetString(p, "filename", "screenshot_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".png");
@@ -573,8 +857,16 @@ public static class StandaloneRouteHandler
 
         if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
         string fullPath = Path.Combine(folder, filename);
+        var capture = HandleGraphicsGameCapture(new Dictionary<string, object>
+        {
+            {"width", GetInt(p, "width", 1280)},
+            {"height", GetInt(p, "height", 720)},
+        }) as Dictionary<string, object>;
+        if (capture == null || !capture.ContainsKey("base64"))
+            return new ErrorResult { error = "Unable to capture game view." };
 
-        ScreenCapture.CaptureScreenshot(fullPath);
+        File.WriteAllBytes(fullPath, Convert.FromBase64String(capture["base64"].ToString()));
+
         return new Dictionary<string, object>
         {
             {"success", true},
@@ -584,6 +876,151 @@ public static class StandaloneRouteHandler
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    private static string GetRenderPipelineName()
+    {
+        RenderPipelineAsset pipeline = GraphicsSettings.currentRenderPipeline;
+        return pipeline != null ? pipeline.name : "builtin";
+    }
+
+    private static IEnumerable<GameObject> EnumerateSceneGameObjects(Scene scene)
+    {
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            foreach (var go in EnumerateGameObjectTree(root))
+                yield return go;
+        }
+    }
+
+    private static IEnumerable<GameObject> EnumerateGameObjectTree(GameObject root)
+    {
+        yield return root;
+        for (int i = 0; i < root.transform.childCount; i++)
+        {
+            foreach (var child in EnumerateGameObjectTree(root.transform.GetChild(i).gameObject))
+                yield return child;
+        }
+    }
+
+    private static List<string> ReadEditorLogTail(int maxLines)
+    {
+        string logPath = GetEditorLogPath();
+        if (!File.Exists(logPath))
+            return new List<string>();
+
+        const int maxBytes = 262144;
+        using (var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            long length = stream.Length;
+            int bytesToRead = (int)Math.Min(maxBytes, length);
+            if (bytesToRead <= 0)
+                return new List<string>();
+
+            stream.Seek(-bytesToRead, SeekOrigin.End);
+            byte[] buffer = new byte[bytesToRead];
+            int read = stream.Read(buffer, 0, bytesToRead);
+            string text = Encoding.UTF8.GetString(buffer, 0, read);
+            var lines = text
+                .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+                .ToList();
+
+            if (length > bytesToRead && lines.Count > 0)
+                lines.RemoveAt(0);
+
+            var filteredLines = lines
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .ToList();
+
+            return filteredLines
+                .Skip(Math.Max(0, filteredLines.Count - Math.Max(1, maxLines)))
+                .ToList();
+        }
+    }
+
+    private static string GetEditorLogPath()
+    {
+#if UNITY_EDITOR_WIN
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Unity",
+            "Editor",
+            "Editor.log");
+#elif UNITY_EDITOR_OSX
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Personal),
+            "Library",
+            "Logs",
+            "Unity",
+            "Editor.log");
+#else
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Personal),
+            ".config",
+            "unity3d",
+            "Editor.log");
+#endif
+    }
+
+    private static bool LooksLikeCompilationError(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+
+        string normalized = line.ToLowerInvariant();
+        return normalized.Contains(" error cs")
+            || normalized.Contains(": error ")
+            || normalized.Contains("error cs")
+            || normalized.Contains("all compiler errors have to be fixed")
+            || (normalized.Contains(".cs(") && normalized.Contains("error"));
+    }
+
+    private static string GuessLogType(string line)
+    {
+        string normalized = (line ?? string.Empty).ToLowerInvariant();
+        if (normalized.Contains("exception"))
+            return "exception";
+        if (normalized.Contains("error"))
+            return "error";
+        if (normalized.Contains("warning") || normalized.Contains("warn"))
+            return "warning";
+        return "info";
+    }
+
+    private static Dictionary<string, object> CaptureCamera(Camera camera, int width, int height, bool includeCameraName)
+    {
+        RenderTexture previousTarget = camera.targetTexture;
+        RenderTexture previousActive = RenderTexture.active;
+        var renderTexture = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+        var texture = new Texture2D(width, height, TextureFormat.RGB24, false);
+
+        try
+        {
+            renderTexture.Create();
+            camera.targetTexture = renderTexture;
+            RenderTexture.active = renderTexture;
+            camera.Render();
+            texture.ReadPixels(new Rect(0, 0, width, height), 0, 0, false);
+            texture.Apply(false, false);
+
+            var payload = new Dictionary<string, object>
+            {
+                {"success", true},
+                {"base64", Convert.ToBase64String(texture.EncodeToPNG())},
+                {"width", width},
+                {"height", height},
+            };
+            if (includeCameraName)
+                payload["cameraName"] = camera.name;
+            return payload;
+        }
+        finally
+        {
+            camera.targetTexture = previousTarget;
+            RenderTexture.active = previousActive;
+            UnityEngine.Object.DestroyImmediate(renderTexture);
+            UnityEngine.Object.DestroyImmediate(texture);
+        }
+    }
 
     private static string GetPath(GameObject go)
     {

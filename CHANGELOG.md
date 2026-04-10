@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **standalone-first File IPC core expansion** — the Unity-side standalone bridge now owns more of the direct no-plugin core path before plugin reflection is tried: `context`, `search/scene-stats`, `search/missing-references`, `debug/breadcrumb`, `graphics/game-capture`, `graphics/scene-capture`, and `undo/redo` are now part of the standalone-first route set.
+- **direct File IPC breadcrumb route** — `debug/breadcrumb` now works through the standalone Unity bridge, so CLI activity can be written into the Unity Console and read back through `console/log` without relying on `editor/execute-code`.
+- **file-transport context fix** — `UnityMCPBackend.get_context()` now uses the selected File IPC client directly instead of incorrectly falling through to `127.0.0.1:0` style port resolution.
+- **`scripts/run_file_ipc_smoke.py`** — one-command standalone verification pass for a live Unity project. It checks instances, state, context, scene info, scene stats, missing references, agent visibility, breadcrumb write/readback, and optional captures, then writes a structured JSON report.
+- **live standalone verification update** — the no-AnkleBreaker path was live-verified in `OutsideTheBox` for `context`, `search/scene-stats`, `search/missing-references`, `debug breadcrumb`, `console/log` breadcrumb readback, and `debug capture --kind both`.
 - **project memory system** — persistent per-project learning store in `core/memory.py`. Keyed by SHA256 hash of the project path. Survives across sessions. Storage at `%LOCALAPPDATA%/CLIAnything/memory/` on Windows with workspace fallback.
 - **four memory categories** — `fix` (error pattern → fix command), `structure` (render pipeline, packages, Unity version, script dirs, active scene), `pattern` (recurring project behaviour), `preference` (per-project agent preferences)
 - **`memory` command group** — `memory recall`, `memory remember-fix`, `memory remember`, `memory forget`, `memory stats` for manual memory management
@@ -23,7 +28,7 @@ All notable changes to this project will be documented in this file.
 - **terrain + animation mock coverage** — all 25 deferred terrain tools and 12 deferred animation tools promoted to `mock-only` with full mock bridge handlers. `ProjectMemory.summarize_for_selection()` method added for compact selection-time context.
 - **prefab + asmdef + particle + lod + constraint mock coverage** — 36 more tools promoted: `prefab` (18), `asmdef` (8), `particle` (6), `lod` (2), `constraint` (2). Each has mock bridge handler + test assertion in `test_mock_only_advanced_routes_work_against_mock_bridge`.
 - **final deferred promotion batch** — remaining non-package-dependent tools promoted: `profiler` (4), `debugger` (3), `editorprefs` (3), `audio` (2), `console/clear` (1), `screenshot` (2), `testing/run-tests + get-job` (2), `undo` (3), `vfx` (2), `component` (3), `gameobject` (3 extra routes: duplicate/reparent/set-active/set-object-reference), `agents/log`, `asset/import`, `asset/create-material`, `build/start`, `ping`, `editor/execute-menu-item`, `renderer/set-material`, `scene/new`, `sceneview/set-camera`, `context`. Each has a mock bridge handler + test assertion.
-- **coverage matrix at 86.6%** — 32 live-tested, 37 covered, 215 mock-only, 38 deferred (Amplify=23, UMA=15, both package-dependent), 6 unsupported. 94/94 tests passing.
+- **coverage matrix at 86.6%** — 32 live-tested, 37 covered, 215 mock-only, 38 deferred (Amplify=23, UMA=15, both package-dependent), 6 unsupported. 96/96 tests passing.
 - **package fixture plans for deferred tools** — `tool-coverage --fixture-plan` now returns category-level live-audit handoff plans for Amplify and UMA with package requirements, fixture roots, preflight commands, risk-ordered tool groups, cleanup guidance, and contributor-ready recommended commands.
 - **unsupported support plans** — `tool-coverage --support-plan` now returns an explicit Unity Hub implementation plan so unsupported tools are tracked as a separate backend integration, not ignored.
 - **cross-track coverage handoff** — `tool-coverage --handoff-plan` now summarizes the remaining 44 tools into the optional-package live-audit track and Unity Hub backend track with recommended next commands.
@@ -35,7 +40,7 @@ All notable changes to this project will be documented in this file.
 - **`--transport auto|http|file`** CLI option — controls transport mode. `auto` (default) tries HTTP first, falls back to file IPC. `http` skips file IPC entirely. `file` skips HTTP port scanning entirely.
 - **`--file-ipc-path`** CLI option — specify Unity project roots to check for `.umcp` file IPC bridges. Repeatable for multiple projects.
 - **backend integration** — `UnityMCPBackend` discovers file IPC instances alongside HTTP instances, deduplicates by project path (preferring HTTP when both are available), and delegates `call_route` to the right transport based on the selected instance's transport type.
-- **10 file IPC unit tests** — ping, stale heartbeat rejection, roundtrip command/response, timeout cleanup, discovery, backend integration, and File IPC queue-info registry delegation.
+- **12 file IPC unit tests** — ping, stale heartbeat rejection, roundtrip command/response, timeout cleanup, discovery, backend integration, File IPC queue-info registry delegation, file-transport breadcrumb routing, and file-transport context routing.
 - **`memory_for_session()` factory** — creates a `ProjectMemory` from the active session's selected instance without extra bridge calls
 
 ### Improved
