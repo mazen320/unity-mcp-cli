@@ -5,6 +5,7 @@ from typing import Any
 
 import click
 
+from ..core.project_insights import build_project_insights
 from ..core.memory import memory_for_session
 from ._shared import (
     BackendSelectionError,
@@ -141,6 +142,17 @@ def workflow_inspect_command(
                 "sampled": asset_items,
             },
         }
+        project_root = summary.get("projectPath") or ping.get("projectPath") or project.get("projectPath")
+        if project_root:
+            insights = build_project_insights(project_root, inspect_payload=result)
+            result["projectInsights"] = insights
+            summary["hasProjectGuidance"] = bool((insights.get("guidance") or {}).get("found"))
+            summary["improvementSuggestionCount"] = len(insights.get("recommendations") or [])
+        else:
+            result["projectInsights"] = {
+                "available": False,
+                "error": "Project path is unavailable for local project analysis.",
+            }
         _learn_from_inspect(ctx, result)
         return result
 

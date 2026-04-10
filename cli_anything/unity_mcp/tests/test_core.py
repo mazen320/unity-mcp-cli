@@ -15,6 +15,7 @@ from cli_anything.unity_mcp.core.debug_dashboard import DashboardConfig, serve_d
 from cli_anything.unity_mcp.core.debug_doctor import build_debug_doctor_report
 from cli_anything.unity_mcp.core.embedded_cli import EmbeddedCLIOptions, run_cli_json
 from cli_anything.unity_mcp.core.mcp_tools import get_mcp_tool, iter_mcp_tools
+from cli_anything.unity_mcp.core.project_insights import build_project_insights
 from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConnectionError, UnityMCPHTTPError
 from cli_anything.unity_mcp.core.memory import ProjectMemory
 from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_route
@@ -1966,6 +1967,42 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_ping_auto_selects_single_file_ipc_instance_when_none_is_selected(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        umcp = project / ".umcp"
+        umcp.mkdir(parents=True, exist_ok=True)
+        try:
+            from datetime import datetime, timezone
+
+            ping_data = {
+                "status": "ok",
+                "projectName": "MyProject",
+                "projectPath": str(project),
+                "unityVersion": "6000.4.0f1",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+                "transport": "file-ipc",
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            backend = UnityMCPBackend(
+                client=FakeClient(pings={}),
+                session_store=SessionStore(tmpdir / "session.json"),
+                registry_path=tmpdir / "instances.json",
+                transport="file",
+                file_ipc_paths=[project],
+            )
+
+            result = backend.ping()
+
+            self.assertEqual(result["projectName"], "MyProject")
+            self.assertEqual(result["transport"], "file-ipc")
+            state = backend.session_store.load()
+            self.assertEqual((state.selected_instance or {}).get("projectPath"), str(project))
+            self.assertEqual((state.selected_instance or {}).get("transport"), "file-ipc")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_emit_unity_breadcrumb_uses_file_ipc_route_when_selected_instance_is_file_transport(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "MyProject"
@@ -2075,5 +2112,93 @@ class CoreTests(unittest.TestCase):
             history = backend.get_history()
             self.assertEqual(history[-1]["command"], "context")
             self.assertEqual(history[-1]["transport"], "file-ipc")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_record_progress_uses_file_ipc_breadcrumb_without_fake_port_zero(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        umcp = project / ".umcp"
+        umcp.mkdir(parents=True, exist_ok=True)
+        try:
+            from datetime import datetime, timezone
+
+            ping_data = {
+                "status": "ok",
+                "projectName": "MyProject",
+                "projectPath": str(project),
+                "unityVersion": "6000.4.0f1",
+                "lastHeartbeat": datetime.now(timezone.utc).isoformat(),
+                "transport": "file-ipc",
+            }
+            (umcp / "ping.json").write_text(json.dumps(ping_data))
+
+            session_store = SessionStore(tmpdir / "session.json")
+            session_store.save(
+                SessionState(
+                    selected_port=None,
+                    selected_instance={
+                        "projectName": "MyProject",
+                        "projectPath": str(project),
+                        "port": None,
+                        "transport": "file-ipc",
+                    },
+                    history=[],
+                )
+            )
+            backend = UnityMCPBackend(
+                client=FakeClient(pings={}),
+                session_store=session_store,
+                registry_path=tmpdir / "instances.json",
+                transport="file",
+                file_ipc_paths=[project],
+            )
+
+            with patch.object(backend, "emit_unity_breadcrumb", return_value={"success": True}) as emit_breadcrumb:
+                backend.record_progress("Checking project info")
+
+            emit_breadcrumb.assert_called_once()
+            self.assertIsNone(emit_breadcrumb.call_args.kwargs["port"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_build_project_insights_detects_guidance_and_asset_pipeline_gaps(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Art" / "Models").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Art" / "Textures").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+
+            (project / "AGENTS.md").write_text("# Project instructions\nUse URP.\n", encoding="utf-8")
+            (project / "Assets" / "Scripts" / "Player.cs").write_text("public class Player {}", encoding="utf-8")
+            (project / "Assets" / "Art" / "Models" / "Hero.fbx").write_text("fbx", encoding="utf-8")
+            for index in range(10):
+                (project / "Assets" / "Art" / "Textures" / f"HeroAlbedo_{index}.png").write_text("png", encoding="utf-8")
+            (project / "Assets" / "Scenes" / "Main.unity").write_text("scene", encoding="utf-8")
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.inputsystem": "1.8.0"}}),
+                encoding="utf-8",
+            )
+
+            insights = build_project_insights(
+                project,
+                inspect_payload={"summary": {"sceneDirty": True}},
+            )
+
+            self.assertTrue(insights["available"])
+            self.assertTrue(insights["guidance"]["hasAgentsMd"])
+            self.assertEqual(insights["assetScan"]["counts"]["models"], 1)
+            self.assertEqual(insights["assetScan"]["counts"]["textures"], 10)
+            self.assertEqual(insights["assetScan"]["counts"]["materials"], 0)
+            self.assertEqual(insights["assetScan"]["packageCount"], 1)
+            titles = {item["title"] for item in insights["recommendations"]}
+            self.assertIn("Build A Material Library", titles)
+            self.assertIn("Prefabize Imported Models", titles)
+            self.assertIn("Audit Rig And Animation Pipeline", titles)
+            self.assertIn("Save Or Snapshot The Active Scene", titles)
+            self.assertNotIn("Add Agent Guidance", titles)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

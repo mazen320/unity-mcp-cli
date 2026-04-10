@@ -28,6 +28,8 @@ As of 2026-04-10:
 - `UnityMCPBackend.get_context()` no longer falls through to `127.0.0.1:0` when the selected transport is file IPC.
 - `emit_unity_breadcrumb()` now uses the standalone File IPC route directly when the selected instance is file transport.
 - `scripts/run_file_ipc_smoke.py` now gives us a reusable no-plugin smoke pass instead of ad-hoc manual testing.
+- `workflow inspect` now includes local project guidance + asset structure analysis and returns improvement suggestions for docs, scenes, tests, materials, prefabization, and animation pipeline gaps.
+- single discovered File IPC projects now auto-select for higher-level workflows, so `workflow inspect` works directly with `--transport file --file-ipc-path ...` without a separate select step.
 - Live-tested in `OutsideTheBox`: `state`, `context`, `search/scene-stats`, `search/missing-references`, `debug breadcrumb`, `console/log` breadcrumb readback, and `debug capture --kind both`.
 - Saved capture proof:
   - `.cli-anything-unity-mcp/captures/standalone-v3-live-game.png`

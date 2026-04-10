@@ -123,18 +123,19 @@ class UnityMCPBackend:
         breadcrumb_message: str | None = None,
     ) -> Dict[str, Any]:
         resolved_port: int | None = None
+        file_client = self._resolve_file_ipc_client() if port is None else None
         if port is not None:
             resolved_port = port
-        else:
+        elif file_client is None:
             try:
                 resolved_port = self.resolve_port(explicit_port=None, allow_default=False)
             except BackendSelectionError:
                 resolved_port = None
 
-        if emit_breadcrumb and resolved_port is not None and self.should_emit_unity_breadcrumbs():
+        if emit_breadcrumb and self.should_emit_unity_breadcrumbs():
             self.emit_unity_breadcrumb(
                 message=breadcrumb_message or message,
-                port=resolved_port,
+                port=resolved_port if file_client is None else None,
                 level=level,
                 record_history=False,
             )
@@ -1419,6 +1420,11 @@ class UnityMCPBackend:
         """If the selected instance uses file IPC, return its client."""
         state = self.session_store.load()
         inst = state.selected_instance
+        if not inst:
+            instances = self.discover_instances()
+            if len(instances) == 1 and instances[0].get("transport") == "file-ipc":
+                self.session_store.update_selection(instances[0])
+                inst = instances[0]
         if not inst:
             return None
         if inst.get("transport") != "file-ipc":

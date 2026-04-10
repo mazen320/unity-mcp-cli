@@ -25,6 +25,7 @@ It talks directly to Unity through either the plugin's local HTTP bridge or the 
 
 - discovers running Unity editors
 - inspects project, scene, hierarchy, console, compilation, queue, and editor state
+- scans local project guidance and asset structure during `workflow inspect`, including `AGENTS.md`, `Assets/MCP/Context`, scenes, scripts, materials, models, animations, tests, and package manifest data
 - creates and edits scripts, scene objects, components, references, and prefabs
 - captures Game View and Scene View screenshots
 - explains likely Unity problems with `debug doctor`
@@ -134,6 +135,12 @@ cli-anything-unity-mcp --json debug trace --tail 20
 cli-anything-unity-mcp --json debug capture --kind both --port <port>
 python .\scripts\run_live_mcp_pass.py --port <port> --summary-only
 ```
+
+`workflow inspect` now does more than just ask Unity for scene state. When the project path is available, it also scans the local project on disk and returns:
+
+- guidance sources such as `AGENTS.md`, `README.md`, and `Assets/MCP/Context`
+- asset/layout counts for scenes, scripts, asmdefs, prefabs, materials, models, animations, audio, shaders, and tests
+- improvement suggestions such as adding agent guidance, adding tests, prefabizing imported models, auditing rig/animation setup, or creating a sandbox scene
 
 Normal commands now emit visible Unity-side `[CLI-TRACE]` breadcrumbs, so you can watch agent activity in the Unity Console or Editor log:
 
