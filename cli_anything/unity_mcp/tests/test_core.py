@@ -2730,7 +2730,7 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Safe project improvement pass finished.", history[-1]["content"])
             self.assertIn("Applied:", history[-1]["content"])
             self.assertIn("Skipped:", history[-1]["content"])
-            self.assertIn("Sandbox scene skipped", history[-1]["content"])
+            self.assertIn("Sandbox scene skipped because no live Unity session is available.", history[-1]["content"])
             self.assertIn("Quality score:", history[-1]["content"])
             self.assertIn("->", history[-1]["content"])
         finally:

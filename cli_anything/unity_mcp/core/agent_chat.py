@@ -346,6 +346,8 @@ class _OfflineUnityAssistant:
         return f"Scene saved: {result.get('scene') or result.get('sceneName') or 'active scene'}."
 
     def _create_sandbox_reply(self) -> str:
+        if not self._has_live_unity():
+            return "Could not create the sandbox scene because no live Unity session is available."
         self._set_status("Creating sandbox scene")
         result = dict(
             self.bridge.client.call_route(
@@ -449,6 +451,33 @@ class _OfflineUnityAssistant:
         dependencies = dict(payload.get("dependencies") or {})
         return "com.unity.test-framework" in dependencies
 
+    def _has_live_unity(self) -> bool:
+        is_alive = getattr(self.bridge.client, "is_alive", None)
+        if callable(is_alive):
+            try:
+                return bool(is_alive(timeout=0.2))
+            except TypeError:
+                try:
+                    return bool(is_alive())
+                except Exception:
+                    return False
+            except Exception:
+                return False
+        ping = getattr(self.bridge.client, "ping", None)
+        if callable(ping):
+            try:
+                ping(timeout=0.2)
+                return True
+            except TypeError:
+                try:
+                    ping()
+                    return True
+                except Exception:
+                    return False
+            except Exception:
+                return False
+        return False
+
     def _improve_project_reply(self) -> str:
         applied: list[str] = []
         skipped: list[str] = []
@@ -493,6 +522,8 @@ class _OfflineUnityAssistant:
         self._set_status("Running safe project improvement pass", current=1, total=total_steps)
         if self._project_has_sandbox_scene():
             skipped.append("Sandbox scene already exists.")
+        elif not self._has_live_unity():
+            skipped.append("Sandbox scene skipped because no live Unity session is available.")
         else:
             try:
                 result = dict(
