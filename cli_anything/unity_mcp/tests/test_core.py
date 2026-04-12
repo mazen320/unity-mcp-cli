@@ -2624,6 +2624,7 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(bridge._history[-1]["role"], "ai")
             self.assertIn("I", bridge._history[-1]["content"])
             self.assertIn("inspect project", bridge._history[-1]["content"])
+            self.assertIn("improve project", bridge._history[-1]["content"])
             self.assertIn("create sandbox scene", bridge._history[-1]["content"])
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
@@ -2733,6 +2734,38 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Sandbox scene skipped because no live Unity session is available.", history[-1]["content"])
             self.assertIn("Quality score:", history[-1]["content"])
             self.assertIn("->", history[-1]["content"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_agent_chat_once_skips_sandbox_creation_without_live_unity(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        inbox_dir = project / ".umcp" / "chat" / "user-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (inbox_dir / "20260411T1000000000000-msg.json").write_text(
+                json.dumps({"id": "msg-1", "role": "user", "content": "create sandbox scene"}),
+                encoding="utf-8",
+            )
+
+            run_cli_json(
+                ["workflow", "agent-chat", "--once", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            history = json.loads((project / ".umcp" / "chat" / "history.json").read_text(encoding="utf-8"))
+            self.assertIn(
+                "Could not create the sandbox scene because no live Unity session is available.",
+                history[-1]["content"],
+            )
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
