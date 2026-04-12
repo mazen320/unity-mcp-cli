@@ -6,6 +6,7 @@ import shutil
 import unittest
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 from urllib.request import Request, urlopen
@@ -25,6 +26,7 @@ from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_
 from cli_anything.unity_mcp.core.session import SessionState, SessionStore
 from cli_anything.unity_mcp.core.tool_coverage import build_tool_coverage_matrix
 from cli_anything.unity_mcp.core.workflows import build_behaviour_script
+from cli_anything.unity_mcp.commands._shared import _format_cli_exception_message, _format_failed_route_hint
 from cli_anything.unity_mcp.unity_mcp_cli import _humanize_history_entry, _summarize_trace_entries
 from scripts.run_live_mcp_pass import (
     _build_profile_plan,
@@ -3676,6 +3678,60 @@ class CoreTests(unittest.TestCase):
             self.assertIn("- New findings: 1", payload["markdownSummary"])
             self.assertIn("- Resolved findings: 1", payload["markdownSummary"])
             self.assertIn("Recurring diagnostics", markdown_file.read_text(encoding="utf-8"))
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_failed_route_hint_includes_tool_transport_port_and_retry(self) -> None:
+        hint = _format_failed_route_hint(
+            {
+                "command": "editor/state",
+                "transport": "queue",
+                "port": 7890,
+            }
+        )
+        self.assertIsNotNone(hint)
+        assert hint is not None
+        self.assertIn("editor/state", hint)
+        self.assertIn("unity_editor_state", hint)
+        self.assertIn("queue", hint)
+        self.assertIn("7890", hint)
+        self.assertIn("debug doctor --port 7890", hint)
+
+    def test_failed_route_hint_handles_file_ipc_without_port(self) -> None:
+        hint = _format_failed_route_hint(
+            {
+                "command": "scene/info",
+                "transport": "file-ipc",
+                "port": None,
+            }
+        )
+        self.assertIsNotNone(hint)
+        assert hint is not None
+        self.assertIn("scene/info", hint)
+        self.assertIn("unity_scene_info", hint)
+        self.assertIn("file-ipc", hint)
+        self.assertIn("debug bridge", hint)
+        self.assertNotIn("--port", hint)
+
+    def test_cli_exception_message_ignores_stale_unrelated_history_error(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            store = SessionStore(tmpdir / "session.json")
+            store.record_command(
+                "editor/state",
+                port=7890,
+                status="error",
+                error="bridge unavailable",
+                transport="queue",
+            )
+            ctx = SimpleNamespace(
+                obj=SimpleNamespace(
+                    backend=SimpleNamespace(session_store=store),
+                )
+            )
+            message = _format_cli_exception_message(ctx, RuntimeError("totally different failure"))
+            self.assertEqual(message, "totally different failure")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

@@ -70,6 +70,50 @@ def _emit(ctx: click.Context, value: Any) -> None:
     click.echo(format_output(value, ctx.obj.json_output))
 
 
+def _format_failed_route_hint(entry: dict[str, Any] | None) -> str | None:
+    if not isinstance(entry, dict):
+        return None
+    route = str(entry.get("command") or "").strip()
+    if not route:
+        return None
+    transport = str(entry.get("transport") or "unknown").strip()
+    port = entry.get("port")
+    tool_name = route_to_tool_name(route)
+    port_flag = f" --port {port}" if isinstance(port, int) and port > 0 else ""
+    if transport == "file-ipc":
+        retry_command = "cli-anything-unity-mcp --json debug bridge"
+    else:
+        retry_command = f"cli-anything-unity-mcp --json debug doctor{port_flag}"
+    details = [f"route {route}"]
+    if tool_name:
+        details.append(f"tool {tool_name}")
+    details.append(f"transport {transport}")
+    if port is not None:
+        details.append(f"port {port}")
+    return f"Last failing {'; '.join(details)}. Try: {retry_command}"
+
+
+def _format_cli_exception_message(ctx: click.Context, exc: Exception) -> str:
+    base_message = str(exc)
+    try:
+        state = ctx.obj.backend.session_store.load()
+        history = list(getattr(state, "history", []) or [])
+    except Exception:
+        return base_message
+    if not history:
+        return base_message
+    latest = history[-1]
+    if str(latest.get("status") or "").strip().lower() != "error":
+        return base_message
+    latest_error = str(latest.get("error") or "").strip()
+    if latest_error and base_message not in latest_error and latest_error not in base_message:
+        return base_message
+    hint = _format_failed_route_hint(latest)
+    if not hint:
+        return base_message
+    return f"{base_message}. {hint}"
+
+
 def _current_port_from_params(ctx: click.Context) -> int | None:
     params = getattr(ctx, "params", None)
     if isinstance(params, dict):
@@ -556,7 +600,7 @@ def _run_and_emit(ctx: click.Context, callback: Callable[[], Any]) -> None:
         result = callback()
     except (BackendSelectionError, UnityMCPClientError, ValueError) as exc:
         _emit_auto_breadcrumb(ctx, stage="error", level="error", extra=str(exc))
-        raise click.ClickException(str(exc)) from exc
+        raise click.ClickException(_format_cli_exception_message(ctx, exc)) from exc
     _emit_auto_breadcrumb(ctx, stage="done", level="info")
     _emit(ctx, result)
 
