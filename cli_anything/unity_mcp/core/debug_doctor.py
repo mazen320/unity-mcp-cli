@@ -52,6 +52,41 @@ def _distinct_history_ports(recent_history: List[dict[str, Any]] | None) -> list
     return ports
 
 
+def _build_queue_diagnostics_summary(
+    queue: dict[str, Any],
+    recurring_signals: dict[tuple[str, str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    total_queued = int(queue.get("totalQueued") or 0)
+    active_agents = int(queue.get("activeAgents") or 0)
+    recurring_queue = dict((recurring_signals or {}).get(("queue", "queue-contention")) or {})
+
+    if total_queued > 0 and active_agents > 0:
+        status = "backlog-and-active"
+        summary = "Unity has queued work pending and active agent work in flight."
+    elif total_queued > 0:
+        status = "backlog"
+        summary = "Unity still has queued work waiting to run."
+    elif active_agents > 0:
+        status = "active-agents"
+        summary = "Unity still has active agent work in flight."
+    elif recurring_queue:
+        status = "clear-but-recurring"
+        summary = "Queue is clear right now, but repeated doctor runs have seen queue pressure before."
+    else:
+        status = "clear"
+        summary = "No queue backlog or active agent work detected."
+
+    return {
+        "status": status,
+        "totalQueued": total_queued,
+        "activeAgents": active_agents,
+        "recurringSignalCount": 1 if recurring_queue else 0,
+        "recurringSignalKeys": ["queue-contention"] if recurring_queue else [],
+        "summary": summary,
+        "recurringSignal": recurring_queue or None,
+    }
+
+
 def _check_structure_drift(
     findings: list[dict[str, Any]],
     structure: dict[str, Any],
@@ -307,6 +342,7 @@ def build_debug_doctor_report(
 
     total_queued = int(queue.get("totalQueued") or 0)
     active_agents = int(queue.get("activeAgents") or 0)
+    recurring_signals: dict[tuple[str, str], dict[str, Any]] = {}
     if total_queued > 0:
         findings.append(
             _finding(
@@ -474,6 +510,7 @@ def build_debug_doctor_report(
     # Compilation summary at top level for quick agent scanning.
     comp_entries = list(compilation.get("entries") or [])
     comp_summary_block = summarize_compilation_errors(comp_entries) if comp_entries else None
+    queue_diagnostics = _build_queue_diagnostics_summary(queue, recurring_signals)
 
     return {
         "title": "Unity Debug Doctor",
@@ -485,6 +522,7 @@ def build_debug_doctor_report(
         },
         "findings": findings,
         "compilationSummary": comp_summary_block,
+        "queueDiagnostics": queue_diagnostics,
         "recentCommands": list(recent_history or []),
         "recommendedCommands": recommended_commands,
         "snapshot": snapshot,

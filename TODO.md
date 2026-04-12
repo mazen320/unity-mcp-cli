@@ -12,7 +12,7 @@ It focuses on three outcomes:
 
 As of 2026-04-12:
 
-- `152/152` automated tests passing
+- `158/158` automated tests passing
 - heavy live MCP pass passing `15/15`
 - tool coverage: `40` live-tested, `37` covered, `207` mock-only, `38` deferred, `6` unsupported
 - `unsupported` currently maps to the Unity Hub surface only
@@ -39,8 +39,10 @@ As of 2026-04-12:
 - Added specialist rule modules in `core/expert_rules/` for direction, animation-readiness, tech-art importer hints, UI canvas scaling, and level-art density/readability.
 - Added benchmark output via `workflow benchmark-report` so expert scoring can be saved as a stable JSON snapshot for GitHub or regression tracking.
 - `workflow benchmark-report` now also carries bounded recurring diagnostics memory so saved benchmark JSON can show recurring compiler failures and recurring queue/bridge instability, not just current lens scores.
+- `workflow benchmark-report` now also emits a dedicated `queueDiagnostics` summary so queue pressure can be tracked separately from the broader recurring-operational-signal list.
 - Added `workflow benchmark-compare` so two saved benchmark JSON snapshots can be diffed into score deltas, lens deltas, finding churn, and recurring-diagnostics churn without re-running Unity.
 - `workflow benchmark-compare` now also emits a compact Markdown summary and can write it to `--markdown-file` for GitHub comments, PR descriptions, or release notes.
+- `workflow benchmark-compare` now includes `queueDiagnosticsDelta`, so recurring queue-pressure regressions and fixes can be shown directly in GitHub-friendly evidence.
 - CLI route failures now use recent backend history to explain which route failed, on which transport/port, and which retry/debug command to run next.
 - Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
 - Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.
@@ -320,7 +322,7 @@ We should consider the tool layer "done enough" when all of these are true:
 ### P1
 
 - Better route-level timeouts and bridge recovery hints now report the route being recovered, the selected project/port, and the last blocking transport error. Queue-backed failures now also point at `agent queue` and `agent sessions`; deeper queue diagnostics still need expansion.
-- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning. Next queue work should focus on stalled-queue heuristics and history-aware queue trend summaries.
+- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning, and now returns a compact `queueDiagnostics` block. Next queue work should focus on stalled-queue heuristics and longer-horizon trend summaries beyond the current recurring-signal snapshot.
 - Expand issue-specific helper commands for common Unity failures.
 - Make tool errors more actionable by surfacing route, category, likely blocker, and suggested retry path.
 - Continue expanding `core/error_heuristics.py` with edge-case Unity failures as they appear in real projects.

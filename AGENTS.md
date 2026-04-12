@@ -76,7 +76,7 @@ cli-anything-unity-mcp --json debug capture --kind both --port <port>
 - The `animation` lens can use live hierarchy data when it is available, so prefer running it against a selected editor when you want scene-side Animator wiring feedback and not just asset-pipeline feedback.
 - Use `workflow scene-critique` when you want the fast combined read from the scene-facing expert lenses without manually chaining them.
 - Use `workflow quality-score` when the user wants a broad “how healthy is this project?” checkpoint across all expert lenses.
-- Use `workflow benchmark-report` when the user wants a stable scorecard or evidence artifact for GitHub, release notes, or regression tracking. Prefer writing the report to a file instead of copy-pasting huge CLI output blobs.
+- Use `workflow benchmark-report` when the user wants a stable scorecard or evidence artifact for GitHub, release notes, or regression tracking. Prefer writing the report to a file instead of copy-pasting huge CLI output blobs. The saved JSON now also carries a compact `queueDiagnostics` summary for recurring queue pressure.
 - If a route call fails from the normal CLI path, read the enriched error text before retrying. It now includes the failing route, derived tool, transport, port, and a suggested next debug command from recent backend history.
 - Use `workflow quality-fix` when a finding maps to a safe next step like guidance scaffolding, EditMode test scaffolding, sandbox-scene creation, adding a missing `EventSystem`, adding missing `CanvasScaler` components, scaffolding or wiring an Animator Controller, or repairing importer mismatches. By default it plans the next move; add `--apply` only for the bounded fixes that are explicitly supported.
 - If `workflow asset-audit` or `workflow bootstrap-guidance` is pointed at a direct project path, keep that run local. Do not expect or require Unity Console breadcrumbs for those offline scans.
@@ -93,6 +93,7 @@ If the user says something is broken, bugged, missing, invisible, not working, o
 6. If a recovery poll timed out, read the full CLI error first — it should now tell you which route was being recovered, which project/port was targeted, and which last transport error blocked recovery.
 7. If the failing transport is `queue`, run `agent queue` and `agent sessions` immediately after `debug doctor` so you can rule out contention before changing code.
 8. In `debug doctor`, read queue findings literally: `Queued Requests Pending` means backlog, `Active Unity Agents Running` means live worker churn. They look similar but imply different next checks.
+9. When you need GitHub evidence for queue stability, use `workflow benchmark-compare` and read the `Queue health` section in the Markdown summary instead of inferring queue changes from the generic recurring-diagnostics counts.
 
 Useful commands:
 

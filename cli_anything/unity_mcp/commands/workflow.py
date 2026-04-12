@@ -479,6 +479,52 @@ def _normalize_benchmark_diagnostic_entry(
     return key, normalized
 
 
+def _build_queue_diagnostics_summary(
+    recurring_operational_signals: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    queue_signals = [
+        dict(item)
+        for item in (recurring_operational_signals or [])
+        if isinstance(item, dict) and str(item.get("kind") or "").strip().lower() == "queue"
+    ]
+    queue_signals.sort(
+        key=lambda item: (
+            -int(item.get("seenCount") or 0),
+            str(item.get("key") or ""),
+        )
+    )
+    keys = [
+        key
+        for key in sorted(
+            {
+                str(item.get("key") or "").strip()
+                for item in queue_signals
+                if str(item.get("key") or "").strip()
+            }
+        )
+    ]
+    recurring_count = len(queue_signals)
+    if recurring_count <= 0:
+        return {
+            "status": "clear",
+            "recurringSignalCount": 0,
+            "keys": [],
+            "signals": [],
+            "summary": "No recurring queue pressure detected.",
+        }
+
+    summary = "Recurring queue-related signals are showing up in this project."
+    if "queue-contention" in keys:
+        summary = "Queue pressure has shown up repeatedly in this project."
+    return {
+        "status": "contention-observed" if "queue-contention" in keys else "queue-signals-observed",
+        "recurringSignalCount": recurring_count,
+        "keys": keys,
+        "signals": queue_signals[:5],
+        "summary": summary,
+    }
+
+
 def _compare_benchmark_reports(
     before_report: dict[str, Any],
     after_report: dict[str, Any],
@@ -590,6 +636,57 @@ def _compare_benchmark_reports(
     for collection in (new_operational, resolved_operational):
         collection.sort(key=lambda item: (str(item.get("kind") or ""), str(item.get("key") or "")))
 
+    before_queue_diagnostics = dict(before_report.get("queueDiagnostics") or {})
+    if not before_queue_diagnostics:
+        before_queue_diagnostics = _build_queue_diagnostics_summary(
+            list(before_diag.get("recurringOperationalSignals") or [])
+        )
+    after_queue_diagnostics = dict(after_report.get("queueDiagnostics") or {})
+    if not after_queue_diagnostics:
+        after_queue_diagnostics = _build_queue_diagnostics_summary(
+            list(after_diag.get("recurringOperationalSignals") or [])
+        )
+    before_queue_signal_source = list(before_queue_diagnostics.get("signals") or [])
+    if not before_queue_signal_source:
+        before_queue_signal_source = [
+            dict(item)
+            for item in before_operational.values()
+            if str(item.get("kind") or "").strip().lower() == "queue"
+        ]
+    after_queue_signal_source = list(after_queue_diagnostics.get("signals") or [])
+    if not after_queue_signal_source:
+        after_queue_signal_source = [
+            dict(item)
+            for item in after_operational.values()
+            if str(item.get("kind") or "").strip().lower() == "queue"
+        ]
+    before_queue_signals = {
+        _normalize_benchmark_diagnostic_entry(item, kind="operational")[0]: _normalize_benchmark_diagnostic_entry(
+            item,
+            kind="operational",
+        )[1]
+        for item in before_queue_signal_source
+        if isinstance(item, dict)
+    }
+    after_queue_signals = {
+        _normalize_benchmark_diagnostic_entry(item, kind="operational")[0]: _normalize_benchmark_diagnostic_entry(
+            item,
+            kind="operational",
+        )[1]
+        for item in after_queue_signal_source
+        if isinstance(item, dict)
+    }
+    new_queue_signals = [
+        after_queue_signals[key]
+        for key in after_queue_signals.keys() - before_queue_signals.keys()
+    ]
+    resolved_queue_signals = [
+        before_queue_signals[key]
+        for key in before_queue_signals.keys() - after_queue_signals.keys()
+    ]
+    for collection in (new_queue_signals, resolved_queue_signals):
+        collection.sort(key=lambda item: (str(item.get("kind") or ""), str(item.get("key") or "")))
+
     return {
         "available": True,
         "benchmarkVersion": str(after_report.get("benchmarkVersion") or before_report.get("benchmarkVersion") or ""),
@@ -620,6 +717,20 @@ def _compare_benchmark_reports(
             "resolvedRecurringCompilationErrors": resolved_compilation,
             "newRecurringOperationalSignals": new_operational,
             "resolvedRecurringOperationalSignals": resolved_operational,
+        },
+        "queueDiagnosticsDelta": {
+            "beforeStatus": before_queue_diagnostics.get("status"),
+            "afterStatus": after_queue_diagnostics.get("status"),
+            "beforeRecurringSignalCount": int(before_queue_diagnostics.get("recurringSignalCount") or 0),
+            "afterRecurringSignalCount": int(after_queue_diagnostics.get("recurringSignalCount") or 0),
+            "recurringSignalDelta": (
+                int(after_queue_diagnostics.get("recurringSignalCount") or 0)
+                - int(before_queue_diagnostics.get("recurringSignalCount") or 0)
+            ),
+            "newCount": len(new_queue_signals),
+            "resolvedCount": len(resolved_queue_signals),
+            "newSignals": new_queue_signals,
+            "resolvedSignals": resolved_queue_signals,
         },
     }
 
@@ -656,6 +767,7 @@ def _render_benchmark_compare_markdown(payload: dict[str, Any]) -> str:
             f"(`{_format_signed_delta(lens.get('scoreDelta'))}`)"
         )
     diagnostics = dict(payload.get("diagnosticsDelta") or {})
+    queue_diagnostics = dict(payload.get("queueDiagnosticsDelta") or {})
     lines.extend(
         [
             "",
@@ -664,6 +776,20 @@ def _render_benchmark_compare_markdown(payload: dict[str, Any]) -> str:
             f"- Resolved recurring compilation errors: {int(diagnostics.get('resolvedRecurringCompilationErrorCount') or 0)}",
             f"- New recurring operational signals: {int(diagnostics.get('newRecurringOperationalSignalCount') or 0)}",
             f"- Resolved recurring operational signals: {int(diagnostics.get('resolvedRecurringOperationalSignalCount') or 0)}",
+            "",
+            "### Queue health",
+            (
+                f"- Status: `{queue_diagnostics.get('beforeStatus')} -> "
+                f"{queue_diagnostics.get('afterStatus')}`"
+            ),
+            (
+                f"- Recurring queue signals: "
+                f"`{queue_diagnostics.get('beforeRecurringSignalCount')} -> "
+                f"{queue_diagnostics.get('afterRecurringSignalCount')}` "
+                f"(`{_format_signed_delta(queue_diagnostics.get('recurringSignalDelta'))}`)"
+            ),
+            f"- New recurring queue signals: {int(queue_diagnostics.get('newCount') or 0)}",
+            f"- Resolved recurring queue signals: {int(queue_diagnostics.get('resolvedCount') or 0)}",
         ]
     )
     return "\n".join(lines)
@@ -1778,6 +1904,7 @@ def workflow_benchmark_report_command(
         project_memory = ProjectMemory(resolved_project_root)
         recurring_compilation_errors = project_memory.get_recurring_compilation_errors()
         recurring_operational_signals = project_memory.get_recurring_operational_signals()
+        queue_diagnostics = _build_queue_diagnostics_summary(recurring_operational_signals)
 
         payload: dict[str, Any] = {
             "available": True,
@@ -1808,6 +1935,7 @@ def workflow_benchmark_report_command(
                 "recurringCompilationErrors": recurring_compilation_errors[:5],
                 "recurringOperationalSignals": recurring_operational_signals[:5],
             },
+            "queueDiagnostics": queue_diagnostics,
             "results": available_results,
         }
         if report_file is not None:

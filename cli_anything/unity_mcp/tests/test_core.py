@@ -1833,6 +1833,9 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Recurring Compilation Errors", titles)
             self.assertIn("Recurring Queue Contention", titles)
             self.assertIn("Recurring Bridge Port Hops", titles)
+            self.assertEqual(report["queueDiagnostics"]["status"], "backlog-and-active")
+            self.assertEqual(report["queueDiagnostics"]["recurringSignalCount"], 1)
+            self.assertIn("queued work pending", report["queueDiagnostics"]["summary"])
             self.assertIn(
                 "cli-anything-unity-mcp --json debug bridge --port 7892",
                 report["recommendedCommands"],
@@ -3652,6 +3655,22 @@ class CoreTests(unittest.TestCase):
                 written["diagnosticsMemory"]["recurringOperationalSignals"][0]["key"],
                 "queue-contention",
             )
+            self.assertEqual(
+                payload["queueDiagnostics"]["status"],
+                "contention-observed",
+            )
+            self.assertEqual(
+                payload["queueDiagnostics"]["recurringSignalCount"],
+                1,
+            )
+            self.assertEqual(
+                payload["queueDiagnostics"]["keys"],
+                ["queue-contention"],
+            )
+            self.assertIn(
+                "Queue pressure",
+                payload["queueDiagnostics"]["summary"],
+            )
         finally:
             if original_memory_dir is None:
                 os.environ.pop("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR", None)
@@ -3690,6 +3709,12 @@ class CoreTests(unittest.TestCase):
                         {"kind": "queue", "key": "queue-contention", "title": "Queue contention"}
                     ],
                 },
+                "queueDiagnostics": {
+                    "status": "contention-observed",
+                    "recurringSignalCount": 1,
+                    "keys": ["queue-contention"],
+                    "summary": "Queue pressure has shown up repeatedly in this project.",
+                },
             }
             after_payload = {
                 "available": True,
@@ -3712,6 +3737,12 @@ class CoreTests(unittest.TestCase):
                     "recurringOperationalSignals": [
                         {"kind": "bridge", "key": "bridge-port-hop", "title": "Bridge port hop"}
                     ],
+                },
+                "queueDiagnostics": {
+                    "status": "clear",
+                    "recurringSignalCount": 0,
+                    "keys": [],
+                    "summary": "No recurring queue pressure detected.",
                 },
             }
             before_file.write_text(json.dumps(before_payload, indent=2), encoding="utf-8")
@@ -3738,6 +3769,10 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(payload["findingDelta"]["resolvedCount"], 1)
             self.assertEqual(payload["diagnosticsDelta"]["newRecurringOperationalSignalCount"], 1)
             self.assertEqual(payload["diagnosticsDelta"]["resolvedRecurringCompilationErrorCount"], 1)
+            self.assertEqual(payload["queueDiagnosticsDelta"]["beforeStatus"], "contention-observed")
+            self.assertEqual(payload["queueDiagnosticsDelta"]["afterStatus"], "clear")
+            self.assertEqual(payload["queueDiagnosticsDelta"]["resolvedCount"], 1)
+            self.assertEqual(payload["queueDiagnosticsDelta"]["recurringSignalDelta"], -1)
             self.assertEqual(payload["lensDeltas"][0]["name"], "director")
             self.assertEqual(payload["lensDeltas"][0]["scoreDelta"], 12)
             self.assertEqual(payload["newFindings"][0]["title"], "Importer mismatch")
@@ -3746,6 +3781,7 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Overall score: `78.0 -> 86.0` (`+8.0`)", payload["markdownSummary"])
             self.assertIn("- New findings: 1", payload["markdownSummary"])
             self.assertIn("- Resolved findings: 1", payload["markdownSummary"])
+            self.assertIn("Queue health", payload["markdownSummary"])
             self.assertIn("Recurring diagnostics", markdown_file.read_text(encoding="utf-8"))
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
