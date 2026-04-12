@@ -257,6 +257,86 @@ class FileIPCClient:
         return cleaned
 
 
+# ── Context injector ─────────────────────────────────────────────────────────
+
+class ContextInjector:
+    """Fetches rich Unity project context once per session and caches it.
+
+    Call ``get()`` to retrieve the full context dict.
+    Call ``as_system_prompt()`` to get a compact string suitable for injecting
+    into an AI system prompt or MCP ``initialize`` instructions.
+    """
+
+    def __init__(self, client: "FileIPCClient") -> None:
+        self._client = client
+        self._context: Optional[dict] = None
+        self._context_is_full = False
+
+    def get(self, *, force: bool = False, full: bool = False) -> Dict[str, Any]:
+        """Return cached project context, fetching from Unity if needed."""
+        needs_refresh = self._context is None or force or (full and not self._context_is_full)
+        if needs_refresh:
+            try:
+                self._context = self._client.call_route("context", {"full": full})
+                self._context_is_full = bool(full)
+            except FileIPCError:
+                self._context = {}
+                self._context_is_full = False
+        return self._context
+
+    def invalidate(self) -> None:
+        """Clear the cache so the next ``get()`` re-fetches from Unity."""
+        self._context = None
+        self._context_is_full = False
+
+    def as_system_prompt(self) -> str:
+        """Return a compact system-prompt block describing the Unity project."""
+        ctx = self.get()
+        if not ctx:
+            return "## Unity Project Context\n(not connected)"
+
+        scene = ctx.get("scene") or {}
+        asset_counts = ctx.get("assetCounts") or {}
+        packages = ctx.get("packages") or []
+        compile_errors = ctx.get("compileErrors") or []
+        console_errors = ctx.get("recentConsoleErrors") or []
+        tags = ctx.get("tags") or []
+        scripts = ctx.get("scripts") or []
+
+        lines = [
+            "## Unity Project Context",
+            f"Project: {ctx.get('projectName', '?')}  |  Unity {ctx.get('unityVersion', '?')}  |  {ctx.get('renderPipeline', '?')}  |  {ctx.get('platform', '?')}",
+            f"Scene: {scene.get('name', '?')}  ({scene.get('objectCount', '?')} objects, roots: {', '.join(scene.get('rootObjects') or [])})",
+            f"Assets: {ctx.get('scriptCount', 0)} scripts | {asset_counts.get('prefabs', 0)} prefabs | {asset_counts.get('materials', 0)} materials | {asset_counts.get('textures', 0)} textures | {asset_counts.get('scenes', 0)} scenes",
+        ]
+
+        if scripts:
+            script_names = [s.get("name", "") for s in scripts[:30]]
+            lines.append(f"Scripts: {', '.join(script_names)}" + (" ..." if len(scripts) > 30 else ""))
+
+        if packages:
+            pkg_names = [p.get("name", "").replace("com.unity.", "") for p in packages[:10]]
+            lines.append(f"Packages: {', '.join(pkg_names)}")
+
+        if tags:
+            lines.append(f"Tags: {', '.join(str(t) for t in tags[:15])}")
+
+        if ctx.get("isCompiling"):
+            lines.append("⚠ Currently compiling...")
+
+        if compile_errors:
+            lines.append(f"⛔ COMPILE ERRORS ({len(compile_errors)}):")
+            for err in compile_errors[:3]:
+                msg = err.get("message", "") if isinstance(err, dict) else str(err)
+                lines.append(f"  • {msg[:120]}")
+
+        if console_errors and not compile_errors:
+            msg = console_errors[0].get("message", "") if isinstance(console_errors[0], dict) else str(console_errors[0])
+            lines.append(f"Recent error: {msg[:120]}")
+
+        return "\n".join(lines)
+
+
 # ── Discovery helper ─────────────────────────────────────────────────────────
 
 def discover_file_ipc_instances(

@@ -14,13 +14,14 @@ from .commands._shared import (
     UnityMCPClient,
     _build_agent_profile_store,
     _build_base_args,
+    _build_developer_profile_store,
     _default_agent_id,
     _run_repl,
-    _serialize_agent_profile,
     get_default_registry_path,
 )
 from .commands.instances import instances_command, select_command, status_command, ping_command
 from .commands.agent import agent_group
+from .commands.developer import developer_group
 from .commands.debug import debug_group
 from .commands.scene import (
     state_command,
@@ -96,6 +97,12 @@ from .commands.debug import _humanize_history_entry, _summarize_trace_entries
     help="Override the saved agent profile store path.",
 )
 @click.option(
+    "--developer-profiles-path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Override the saved developer profile store path.",
+)
+@click.option(
     "--port-range-start",
     type=int,
     default=lambda: int(os.environ.get("UNITY_PORT_RANGE_START", "7890")),
@@ -113,6 +120,11 @@ from .commands.debug import _humanize_history_entry, _summarize_trace_entries
     "--agent-profile",
     default=None,
     help="Use a saved optional agent profile by name.",
+)
+@click.option(
+    "--developer-profile",
+    default=None,
+    help="Use a saved developer profile by name. Defaults to `normal` when nothing is selected.",
 )
 @click.option(
     "--json",
@@ -152,9 +164,11 @@ def cli(
     registry_path: Path | None,
     session_path: Path | None,
     agent_profiles_path: Path | None,
+    developer_profiles_path: Path | None,
     port_range_start: int,
     port_range_end: int,
     agent_profile: str | None,
+    developer_profile: str | None,
     json_output: bool,
     agent_id: str | None,
     legacy: bool,
@@ -163,10 +177,22 @@ def cli(
 ) -> None:
     """Direct CLI client for Unity projects using the AnkleBreaker Unity MCP editor bridge."""
     profile_store = _build_agent_profile_store(session_path, agent_profiles_path)
+    developer_store = _build_developer_profile_store(session_path, developer_profiles_path)
     requested_profile_name = agent_profile or profile_store.load().selected_profile
     resolved_profile = profile_store.get_profile(requested_profile_name) if requested_profile_name else None
     if requested_profile_name and resolved_profile is None:
         raise click.ClickException(f"Agent profile `{requested_profile_name}` was not found.")
+
+    developer_profile_source = ctx.get_parameter_source("developer_profile")
+    requested_developer_profile_name = developer_profile or developer_store.load().selected_profile
+    if requested_developer_profile_name:
+        resolved_developer_profile = developer_store.get_profile(requested_developer_profile_name)
+        if resolved_developer_profile is None:
+            raise click.ClickException(f"Developer profile `{requested_developer_profile_name}` was not found.")
+        developer_source = "explicit" if developer_profile_source != ParameterSource.DEFAULT else "saved"
+    else:
+        resolved_developer_profile = developer_store.default_profile()
+        developer_source = "default"
 
     agent_id_source = ctx.get_parameter_source("agent_id")
     legacy_source = ctx.get_parameter_source("legacy")
@@ -212,18 +238,23 @@ def cli(
             registry_path=registry_path,
             session_path=session_path,
             agent_profiles_path=agent_profiles_path,
+            developer_profiles_path=developer_profiles_path,
             json_output=json_output,
             agent_id=resolved_agent_id if agent_source != "profile" else None,
             agent_profile=resolved_profile.name if resolved_profile else None,
+            developer_profile=resolved_developer_profile.name if developer_source != "default" else None,
             legacy=resolved_legacy,
             port_range_start=port_range_start,
             port_range_end=port_range_end,
         ),
         command_path=ctx.command_path or "cli-anything-unity-mcp",
         agent_profile_store=profile_store,
+        developer_profile_store=developer_store,
         agent_id=resolved_agent_id,
         agent_profile=resolved_profile,
+        developer_profile=resolved_developer_profile,
         agent_source=agent_source,
+        developer_source=developer_source,
         legacy_mode=resolved_legacy,
     )
     if ctx.invoked_subcommand is None:
@@ -237,6 +268,7 @@ cli.add_command(select_command)
 cli.add_command(status_command)
 cli.add_command(ping_command)
 cli.add_command(agent_group)
+cli.add_command(developer_group)
 cli.add_command(debug_group)
 cli.add_command(state_command)
 cli.add_command(project_info_command)

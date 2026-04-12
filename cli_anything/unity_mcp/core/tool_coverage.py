@@ -27,9 +27,9 @@ LIVE_TESTED_ROUTE_NOTES: Dict[str, str] = {
     "settings/time": "Verified against a real Unity editor through the advanced audit workflow.",
     "profiler/stats": "Verified against a real Unity editor through the advanced audit workflow.",
     "testing/list-tests": "Verified against a real Unity editor through the advanced audit workflow.",
-    "graphics/renderer-info": "Verified against a real Unity editor through the advanced audit workflow.",
+    "graphics/renderer-info": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, returning live renderer metadata for a scene object.",
     "graphics/mesh-info": "Verified against a real Unity editor through the advanced audit workflow.",
-    "graphics/material-info": "Verified against a real Unity editor through the advanced audit workflow.",
+    "graphics/material-info": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, returning live material shader properties from both asset and scene targets.",
     "physics/raycast": "Verified against a real Unity editor through the advanced audit workflow.",
     "ui/create-canvas": "Verified against a real Unity editor through the advanced audit workflow.",
     "ui/info": "Verified against a real Unity editor through the advanced audit workflow.",
@@ -40,8 +40,13 @@ LIVE_TESTED_ROUTE_NOTES: Dict[str, str] = {
     "animation/create-clip": "Verified against a real Unity editor through the advanced audit workflow.",
     "animation/set-clip-curve": "Verified against a real Unity editor through the advanced audit workflow.",
     "animation/add-layer": "Verified against a real Unity editor through the advanced audit workflow.",
-    "animation/add-state": "Verified against a real Unity editor through the advanced audit workflow.",
-    "animation/controller-info": "Verified against a real Unity editor through the advanced audit workflow.",
+    "animation/add-parameter": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
+    "animation/add-state": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
+    "animation/set-default-state": "Verified against a real Unity editor through the standalone File IPC animation authoring routes, flipping the Animator layer default state without adding fake entry transitions.",
+    "animation/add-transition": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
+    "animation/assign-controller": "Verified against a real Unity editor through the standalone File IPC animation wireup workflow.",
+    "animation/clip-info": "Verified against a real Unity editor through the standalone File IPC animation inspection routes.",
+    "animation/controller-info": "Verified against a real Unity editor through the standalone File IPC animation inspection and authoring routes.",
     "input/create": "Verified against a real Unity editor through the advanced audit workflow.",
     "input/info": "Verified against a real Unity editor through the advanced audit workflow.",
     "shadergraph/status": "Verified against a real Unity editor through the advanced audit workflow.",
@@ -51,6 +56,15 @@ LIVE_TESTED_ROUTE_NOTES: Dict[str, str] = {
     "terrain/info": "Verified against a real Unity editor through the advanced audit workflow.",
     "terrain/get-height": "Verified against a real Unity editor through the advanced audit workflow.",
     "navigation/info": "Verified against a real Unity editor through the advanced audit workflow.",
+    "search/by-component": "Verified against a real Unity editor through the standalone File IPC smoke pass, returning live scene object matches by component type.",
+    "selection/get": "Verified against a real Unity editor through the standalone File IPC smoke pass, returning the current Unity selection state.",
+    "selection/set": "Verified against a real Unity editor through the standalone File IPC smoke pass, selecting a live scene object by path.",
+    "selection/focus-scene-view": "Verified against a real Unity editor through the standalone File IPC smoke pass, focusing the Scene view on the selected live object.",
+    "asset/create-material": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, creating a disposable material asset on the public route surface.",
+    "asset/create-prefab": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, saving a live scene object as a prefab through the public route surface.",
+    "asset/instantiate-prefab": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, instantiating a disposable prefab into the active scene through the public route surface.",
+    "renderer/set-material": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, swapping a live renderer material through the public route surface.",
+    "prefab/info": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, reading both prefab asset metadata and connected scene-instance metadata.",
 }
 
 
@@ -68,8 +82,6 @@ COVERED_ROUTE_NOTES: Dict[str, str] = {
     "editor/execute-code": "Covered by automated tests and higher-level workflows.",
     "asset/list": "Covered by automated tests and higher-level workflows.",
     "asset/delete": "Covered by automated tests and higher-level workflows.",
-    "asset/create-prefab": "Covered by automated tests and higher-level workflows.",
-    "asset/instantiate-prefab": "Covered by automated tests and higher-level workflows.",
     "script/create": "Covered by automated tests and higher-level workflows.",
     "script/read": "Covered by automated tests and higher-level workflows.",
     "script/update": "Covered by automated tests and higher-level workflows.",
@@ -107,9 +119,6 @@ MOCK_ONLY_ROUTE_NOTES: Dict[str, str] = {
     "lighting/create-reflection-probe": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "lighting/set-environment": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "animation/add-event": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "animation/add-parameter": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "animation/add-transition": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "animation/clip-info": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "animation/get-curve-keyframes": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "animation/get-events": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "terrain/get-heights-region": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
@@ -152,11 +161,9 @@ MOCK_ONLY_ROUTE_NOTES: Dict[str, str] = {
     "animation/remove-parameter": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "animation/remove-state": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "animation/remove-transition": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "animation/assign-controller": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "animation/create-blend-tree": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "animation/set-clip-settings": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Prefab routes — disposable-prefab fixture coverage added
-    "prefab/info": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "prefab/apply-overrides": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "prefab/revert-overrides": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "prefab/create-variant": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
@@ -198,7 +205,6 @@ MOCK_ONLY_ROUTE_NOTES: Dict[str, str] = {
     "constraint/info": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Search routes (all read-only)
     "search/assets": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "search/by-component": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "search/by-layer": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "search/by-name": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "search/by-shader": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
@@ -232,9 +238,6 @@ MOCK_ONLY_ROUTE_NOTES: Dict[str, str] = {
     "input/remove-map": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Selection routes
     "selection/find-by-type": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "selection/focus-scene-view": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "selection/get": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "selection/set": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # ScriptableObject routes
     "scriptableobject/create": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     "scriptableobject/info": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
@@ -337,7 +340,6 @@ MOCK_ONLY_ROUTE_NOTES: Dict[str, str] = {
     "agents/log": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Asset additional routes
     "asset/import": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-    "asset/create-material": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Build route
     "build/start": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Editor ping
@@ -345,7 +347,6 @@ MOCK_ONLY_ROUTE_NOTES: Dict[str, str] = {
     # Execute menu item
     "editor/execute-menu-item": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Renderer additional
-    "renderer/set-material": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # Scene new
     "scene/new": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
     # SceneView set-camera

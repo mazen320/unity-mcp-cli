@@ -10,6 +10,7 @@ from ._shared import (
     UnityMCPClientError,
     _run_and_emit,
     _serialize_agent_profile,
+    _serialize_developer_profile,
 )
 
 
@@ -71,6 +72,10 @@ def status_command(ctx: click.Context, port: int | None) -> None:
                 "profile": _serialize_agent_profile(ctx.obj.agent_profile),
                 "source": ctx.obj.agent_source,
                 "legacy": ctx.obj.legacy_mode,
+            },
+            "developer": {
+                "profile": _serialize_developer_profile(ctx.obj.developer_profile),
+                "source": ctx.obj.developer_source,
             },
         }
         try:

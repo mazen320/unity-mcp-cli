@@ -11,11 +11,14 @@ from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from cli_anything.unity_mcp.core.agent_profiles import AgentProfileStore, derive_agent_profiles_path
+from cli_anything.unity_mcp.core.agent_chat import ChatBridge
+from cli_anything.unity_mcp.core.developer_profiles import DeveloperProfileStore, derive_developer_profiles_path
 from cli_anything.unity_mcp.core.debug_dashboard import DashboardConfig, serve_debug_dashboard
 from cli_anything.unity_mcp.core.debug_doctor import build_debug_doctor_report
 from cli_anything.unity_mcp.core.embedded_cli import EmbeddedCLIOptions, run_cli_json
 from cli_anything.unity_mcp.core.mcp_tools import get_mcp_tool, iter_mcp_tools
-from cli_anything.unity_mcp.core.project_insights import build_project_insights
+from cli_anything.unity_mcp.core.project_guidance import build_guidance_bundle, write_guidance_bundle
+from cli_anything.unity_mcp.core.project_insights import build_asset_audit_report, build_project_insights
 from cli_anything.unity_mcp.core.client import UnityMCPClientError, UnityMCPConnectionError, UnityMCPHTTPError
 from cli_anything.unity_mcp.core.memory import ProjectMemory
 from cli_anything.unity_mcp.core.routes import route_to_tool_name, tool_name_to_route
@@ -30,6 +33,7 @@ from scripts.run_live_mcp_pass import (
     _summarize_live_pass_report,
 )
 from cli_anything.unity_mcp.core.file_ipc import (
+    ContextInjector,
     FileIPCClient,
     FileIPCConnectionError,
     FileIPCError,
@@ -391,6 +395,48 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_developer_profile_store_defaults_to_normal_and_persists_selection(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            session_path = tmpdir / "session.json"
+            store = DeveloperProfileStore(derive_developer_profiles_path(session_path))
+
+            default_profile = store.default_profile()
+            self.assertEqual(default_profile.name, "normal")
+
+            state = store.list_profiles()
+            self.assertEqual(state.selected_profile, None)
+            self.assertEqual(
+                [profile.name for profile in state.profiles],
+                [
+                    "animator",
+                    "builder",
+                    "caveman",
+                    "director",
+                    "level-designer",
+                    "normal",
+                    "review",
+                    "systems",
+                    "tech-artist",
+                    "ui-designer",
+                ],
+            )
+
+            state = store.select_profile("caveman")
+            self.assertEqual(state.selected_profile, "caveman")
+
+            selected = store.get_profile(state.selected_profile)
+            self.assertIsNotNone(selected)
+            assert selected is not None
+            self.assertEqual(selected.token_strategy, "aggressive-saver")
+
+            cleared = store.clear_selection()
+            self.assertEqual(cleared.selected_profile, None)
+            self.assertEqual(store.default_profile().name, "normal")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_embedded_cli_runner_returns_json_payload(self) -> None:
         payload = run_cli_json(["tool-template", "unity_scene_stats"], EmbeddedCLIOptions())
 
@@ -412,6 +458,28 @@ class CoreTests(unittest.TestCase):
         full_payload = build_tool_coverage_matrix()
         all_tools = {tool["name"]: tool for tool in full_payload["tools"]}
         for name in (
+            "unity_animation_add_parameter",
+            "unity_animation_add_state",
+            "unity_animation_set_default_state",
+            "unity_animation_add_transition",
+            "unity_animation_assign_controller",
+            "unity_animation_clip_info",
+            "unity_animation_controller_info",
+            "unity_asset_create_prefab",
+            "unity_asset_instantiate_prefab",
+            "unity_graphics_material_info",
+            "unity_graphics_renderer_info",
+            "unity_material_create",
+            "unity_prefab_info",
+            "unity_renderer_set_material",
+        ):
+            self.assertEqual(all_tools[name]["coverageStatus"], "live-tested", name)
+            self.assertEqual(all_tools[name]["coverageBlocker"], "verified-live", name)
+            if name.startswith("unity_animation_"):
+                self.assertIn("standalone File IPC", all_tools[name]["coverageNote"], name)
+            else:
+                self.assertIn("standalone File IPC prefab/material/renderer parity probe", all_tools[name]["coverageNote"], name)
+        for name in (
             "unity_agents_list",
             "unity_advanced_tool",
             "unity_console_log",
@@ -421,6 +489,25 @@ class CoreTests(unittest.TestCase):
         ):
             self.assertEqual(all_tools[name]["coverageStatus"], "covered", name)
             self.assertEqual(all_tools[name]["coverageBlocker"], "verified-automated", name)
+
+    def test_file_ipc_bridge_owns_public_prefab_material_renderer_routes(self) -> None:
+        bridge_path = (
+            Path(__file__).resolve().parents[3]
+            / "unity-scripts"
+            / "Editor"
+            / "FileIPCBridge.cs"
+        )
+        source = bridge_path.read_text(encoding="utf-8")
+
+        for route in (
+            "asset/create-material",
+            "asset/create-prefab",
+            "asset/instantiate-prefab",
+            "renderer/set-material",
+            "graphics/material-info",
+            "graphics/renderer-info",
+        ):
+            self.assertIn(f'"{route}"', source)
 
     def test_tool_coverage_matrix_marks_mock_only_focused_routes(self) -> None:
         payload = build_tool_coverage_matrix()
@@ -434,9 +521,6 @@ class CoreTests(unittest.TestCase):
             "unity_lighting_create_reflection_probe",
             "unity_lighting_set_environment",
             "unity_animation_add_event",
-            "unity_animation_add_parameter",
-            "unity_animation_add_transition",
-            "unity_animation_clip_info",
             "unity_animation_get_curve_keyframes",
             "unity_animation_get_events",
             "unity_terrain_get_heights_region",
@@ -2162,6 +2246,231 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_agent_loop_prefers_backend_file_ipc_resolver(self) -> None:
+        from cli_anything.unity_mcp.commands.agent_loop_cmd import _resolve_file_ipc_client
+
+        sentinel = object()
+
+        class BackendStub:
+            def _resolve_file_ipc_client(self) -> object:
+                return sentinel
+
+        client = _resolve_file_ipc_client(BackendStub())
+        self.assertIs(client, sentinel)
+
+    def test_agent_loop_falls_back_to_selected_instance_project_path(self) -> None:
+        from cli_anything.unity_mcp.commands.agent_loop_cmd import _resolve_file_ipc_client
+
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        umcp = project / ".umcp"
+        umcp.mkdir(parents=True, exist_ok=True)
+        try:
+            session_store = SessionStore(tmpdir / "session.json")
+            session_store.save(
+                SessionState(
+                    selected_port=None,
+                    selected_instance={
+                        "projectName": "MyProject",
+                        "projectPath": str(project),
+                        "port": None,
+                        "transport": "file-ipc",
+                    },
+                    history=[],
+                )
+            )
+
+            class BackendStub:
+                def __init__(self, store: SessionStore) -> None:
+                    self.session_store = store
+
+            with patch.object(FileIPCClient, "is_alive", return_value=True):
+                client = _resolve_file_ipc_client(BackendStub(session_store))
+
+            self.assertIsInstance(client, FileIPCClient)
+            self.assertEqual(client.project_path, project)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_bridge_reads_queued_user_inbox_messages(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        inbox_dir = project / ".umcp" / "chat" / "user-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            first = inbox_dir / "20260411T1000000000000-first.json"
+            second = inbox_dir / "20260411T1000000000001-second.json"
+            first.write_text(json.dumps({"role": "user", "content": "first"}), encoding="utf-8")
+            second.write_text(json.dumps({"role": "user", "content": "second"}), encoding="utf-8")
+
+            bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+
+            message = bridge._read_inbox()
+
+            self.assertEqual(message["content"], "first")
+            self.assertFalse(first.exists())
+            self.assertTrue(second.exists())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_bridge_reads_bom_prefixed_queued_message(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        inbox_dir = project / ".umcp" / "chat" / "user-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            payload = json.dumps({"role": "user", "content": "bom-test"})
+            (inbox_dir / "20260411T1000000000000-bom.json").write_text("\ufeff" + payload, encoding="utf-8")
+
+            bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+            message = bridge._read_inbox()
+
+            self.assertEqual(message["content"], "bom-test")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_agent_chat_once_processes_one_message(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        inbox_dir = project / ".umcp" / "chat" / "user-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (inbox_dir / "20260411T1000000000000-msg.json").write_text(
+                json.dumps({"id": "msg-1", "role": "user", "content": "hello from unity"}),
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                ["workflow", "agent-chat", "--once", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["processed"])
+            self.assertEqual(payload["processedCount"], 1)
+            history_path = project / ".umcp" / "chat" / "history.json"
+            self.assertTrue(history_path.exists())
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+            self.assertEqual(history[0]["id"], "msg-1")
+            self.assertEqual(history[0]["role"], "user")
+            self.assertEqual(history[0]["content"], "hello from unity")
+            self.assertEqual(history[1]["role"], "ai")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_bridge_status_includes_pid(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+            bridge.write_status("idle", 0, 0, "")
+
+            status_path = project / ".umcp" / "agent-status.json"
+            self.assertTrue(status_path.exists())
+            payload = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["state"], "idle")
+            self.assertEqual(payload["pid"], os.getpid())
+            self.assertEqual(payload["projectPath"], str(project))
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_bridge_idle_poll_refreshes_status_heartbeat(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+            bridge._status_heartbeat_interval = 0.0
+
+            bridge.poll_once()
+            status_path = project / ".umcp" / "agent-status.json"
+            first = json.loads(status_path.read_text(encoding="utf-8"))
+
+            bridge.poll_once()
+            second = json.loads(status_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(second["state"], "idle")
+            self.assertNotEqual(first["lastUpdated"], second["lastUpdated"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_context_injector_refetches_for_full_context(self) -> None:
+        class ClientStub:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, dict[str, Any]]] = []
+
+            def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                self.calls.append((route, params))
+                return {"mode": "full" if params.get("full") else "summary"}
+
+        client = ClientStub()
+        injector = ContextInjector(client)  # type: ignore[arg-type]
+
+        summary = injector.get()
+        full = injector.get(full=True)
+
+        self.assertEqual(summary["mode"], "summary")
+        self.assertEqual(full["mode"], "full")
+        self.assertEqual(
+            client.calls,
+            [
+                ("context", {"full": False}),
+                ("context", {"full": True}),
+            ],
+        )
+
+    def test_mcp_server_context_prompt_uses_selected_instance_project_path(self) -> None:
+        from cli_anything.unity_mcp.mcp_server import UnityThinMCPServer
+
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        try:
+            session_path = tmpdir / "session.json"
+            session_path.parent.mkdir(parents=True, exist_ok=True)
+            session_path.write_text(
+                json.dumps(
+                    {
+                        "selected_instance": {
+                            "projectName": "DemoProject",
+                            "projectPath": "C:/Projects/DemoProject",
+                            "transport": "file-ipc",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            server = UnityThinMCPServer(EmbeddedCLIOptions(session_path=session_path))
+
+            with patch("cli_anything.unity_mcp.core.file_ipc.FileIPCClient") as file_client_cls:
+                with patch("cli_anything.unity_mcp.core.file_ipc.ContextInjector") as injector_cls:
+                    injector_cls.return_value.as_system_prompt.return_value = "ctx"
+
+                    prompt = server._get_context_prompt()
+
+            self.assertEqual(prompt, "ctx")
+            file_client_cls.assert_called_once_with("C:/Projects/DemoProject")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_build_project_insights_detects_guidance_and_asset_pipeline_gaps(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"
@@ -2175,8 +2484,58 @@ class CoreTests(unittest.TestCase):
             (project / "AGENTS.md").write_text("# Project instructions\nUse URP.\n", encoding="utf-8")
             (project / "Assets" / "Scripts" / "Player.cs").write_text("public class Player {}", encoding="utf-8")
             (project / "Assets" / "Art" / "Models" / "Hero.fbx").write_text("fbx", encoding="utf-8")
+            (project / "Assets" / "Art" / "Models" / "Hero.fbx.meta").write_text(
+                "\n".join(
+                    (
+                        "fileFormatVersion: 2",
+                        "guid: hero-guid",
+                        "ModelImporter:",
+                        "  materialImportMode: 0",
+                        "  importAnimation: 0",
+                        "  animationType: 3",
+                    )
+                ),
+                encoding="utf-8",
+            )
             for index in range(10):
                 (project / "Assets" / "Art" / "Textures" / f"HeroAlbedo_{index}.png").write_text("png", encoding="utf-8")
+                (project / "Assets" / "Art" / "Textures" / f"HeroAlbedo_{index}.png.meta").write_text(
+                    "\n".join(
+                        (
+                            "fileFormatVersion: 2",
+                            f"guid: hero-albedo-{index}",
+                            "TextureImporter:",
+                            "  textureType: 0",
+                        )
+                    ),
+                    encoding="utf-8",
+                )
+            (project / "Assets" / "Art" / "Textures" / "Hero_normal.png").write_text("png", encoding="utf-8")
+            (project / "Assets" / "Art" / "Textures" / "Hero_normal.png.meta").write_text(
+                "\n".join(
+                    (
+                        "fileFormatVersion: 2",
+                        "guid: hero-normal",
+                        "TextureImporter:",
+                        "  textureType: 0",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            (project / "Assets" / "UI" / "Icons").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "UI" / "Icons" / "HudIcon.png").write_text("png", encoding="utf-8")
+            (project / "Assets" / "UI" / "Icons" / "HudIcon.png.meta").write_text(
+                "\n".join(
+                    (
+                        "fileFormatVersion: 2",
+                        "guid: hud-icon",
+                        "TextureImporter:",
+                        "  textureType: 0",
+                        "  spriteMode: 0",
+                    )
+                ),
+                encoding="utf-8",
+            )
             (project / "Assets" / "Scenes" / "Main.unity").write_text("scene", encoding="utf-8")
             (project / "Packages" / "manifest.json").write_text(
                 json.dumps({"dependencies": {"com.unity.inputsystem": "1.8.0"}}),
@@ -2191,14 +2550,896 @@ class CoreTests(unittest.TestCase):
             self.assertTrue(insights["available"])
             self.assertTrue(insights["guidance"]["hasAgentsMd"])
             self.assertEqual(insights["assetScan"]["counts"]["models"], 1)
-            self.assertEqual(insights["assetScan"]["counts"]["textures"], 10)
+            self.assertEqual(insights["assetScan"]["counts"]["textures"], 12)
             self.assertEqual(insights["assetScan"]["counts"]["materials"], 0)
             self.assertEqual(insights["assetScan"]["packageCount"], 1)
+            self.assertEqual(insights["assetScan"]["importerAudit"]["modelImporterCount"], 1)
+            self.assertEqual(
+                insights["assetScan"]["importerAudit"]["modelImportMaterialDisabledCount"],
+                1,
+            )
+            self.assertEqual(
+                insights["assetScan"]["importerAudit"]["modelImportAnimationDisabledCount"],
+                1,
+            )
+            self.assertEqual(insights["assetScan"]["importerAudit"]["modelRigConfiguredCount"], 1)
+            self.assertEqual(insights["assetScan"]["importerAudit"]["textureImporterCount"], 12)
+            self.assertEqual(
+                insights["assetScan"]["importerAudit"]["potentialNormalMapMisconfiguredCount"],
+                1,
+            )
+            self.assertEqual(
+                insights["assetScan"]["importerAudit"]["potentialSpriteMisconfiguredCount"],
+                1,
+            )
             titles = {item["title"] for item in insights["recommendations"]}
             self.assertIn("Build A Material Library", titles)
             self.assertIn("Prefabize Imported Models", titles)
             self.assertIn("Audit Rig And Animation Pipeline", titles)
+            self.assertIn("Review Model Material Import", titles)
+            self.assertIn("Fix Likely Normal Map Imports", titles)
+            self.assertIn("Fix Likely Sprite Imports", titles)
             self.assertIn("Save Or Snapshot The Active Scene", titles)
             self.assertNotIn("Add Agent Guidance", titles)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_build_asset_audit_report_summarizes_focus_areas(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Art" / "Models").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Art" / "Textures").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+
+            (project / "AGENTS.md").write_text("# Project instructions\nUse URP.\n", encoding="utf-8")
+            (project / "Assets" / "Scripts" / "Player.cs").write_text("public class Player {}", encoding="utf-8")
+            (project / "Assets" / "Art" / "Models" / "Hero.fbx").write_text("fbx", encoding="utf-8")
+            (project / "Assets" / "Art" / "Models" / "Hero.fbx.meta").write_text(
+                "\n".join(
+                    (
+                        "fileFormatVersion: 2",
+                        "guid: hero-guid",
+                        "ModelImporter:",
+                        "  materialImportMode: 0",
+                        "  importAnimation: 0",
+                        "  animationType: 3",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            (project / "Assets" / "Art" / "Textures" / "Hero_normal.png").write_text("png", encoding="utf-8")
+            (project / "Assets" / "Art" / "Textures" / "Hero_normal.png.meta").write_text(
+                "\n".join(
+                    (
+                        "fileFormatVersion: 2",
+                        "guid: hero-normal",
+                        "TextureImporter:",
+                        "  textureType: 0",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            (project / "Assets" / "UI" / "Icons").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "UI" / "Icons" / "HudIcon.png").write_text("png", encoding="utf-8")
+            (project / "Assets" / "UI" / "Icons" / "HudIcon.png.meta").write_text(
+                "\n".join(
+                    (
+                        "fileFormatVersion: 2",
+                        "guid: hud-icon",
+                        "TextureImporter:",
+                        "  textureType: 0",
+                        "  spriteMode: 0",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            (project / "Assets" / "Scenes" / "Main.unity").write_text("scene", encoding="utf-8")
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.inputsystem": "1.8.0"}}),
+                encoding="utf-8",
+            )
+
+            report = build_asset_audit_report(
+                project,
+                inspect_payload={
+                    "summary": {
+                        "projectName": "DemoProject",
+                        "activeScene": "Main",
+                        "sceneDirty": True,
+                    },
+                    "project": {"renderPipeline": "UniversalRP"},
+                },
+                recommendation_limit=3,
+            )
+
+            self.assertTrue(report["available"])
+            self.assertEqual(report["summary"]["projectName"], "DemoProject")
+            self.assertEqual(report["summary"]["renderPipeline"], "UniversalRP")
+            self.assertEqual(report["summary"]["textureCount"], 2)
+            self.assertEqual(report["summary"]["modelCount"], 1)
+            self.assertEqual(report["summary"]["packageCount"], 1)
+            self.assertTrue(report["summary"]["hasGuidance"])
+            self.assertTrue(report["summary"]["hasImporterAudit"])
+            self.assertEqual(report["summary"]["highestPriority"], "medium")
+            self.assertEqual(report["summary"]["potentialNormalMapMisconfiguredCount"], 1)
+            self.assertEqual(report["summary"]["potentialSpriteMisconfiguredCount"], 1)
+            self.assertEqual(report["priorityBreakdown"]["high"], 0)
+            self.assertGreaterEqual(report["priorityBreakdown"]["medium"], 4)
+            self.assertEqual(len(report["topRecommendations"]), 3)
+            self.assertEqual(report["focusAreas"][0]["category"], "assets")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_build_guidance_bundle_creates_agents_and_context_templates(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text("public class Player {}", encoding="utf-8")
+            (project / "Assets" / "Scenes" / "Main.unity").write_text("scene", encoding="utf-8")
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.inputsystem": "1.8.0"}}),
+                encoding="utf-8",
+            )
+
+            bundle = build_guidance_bundle(
+                project,
+                inspect_payload={
+                    "summary": {
+                        "projectName": "DemoProject",
+                        "activeScene": "Main",
+                        "sceneDirty": True,
+                    },
+                    "project": {"renderPipeline": "UniversalRP"},
+                },
+            )
+
+            self.assertTrue(bundle["available"])
+            files = {item["relativePath"]: item for item in bundle["files"]}
+            self.assertIn("AGENTS.md", files)
+            self.assertIn("Assets/MCP/Context/ProjectSummary.md", files)
+            self.assertIn("Unity project `DemoProject`", files["AGENTS.md"]["content"])
+            self.assertIn("Render pipeline: UniversalRP", files["AGENTS.md"]["content"])
+            self.assertIn("Project Context", files["Assets/MCP/Context/ProjectSummary.md"]["content"])
+
+            write_result = write_guidance_bundle(bundle)
+            self.assertEqual(write_result["writeCount"], 2)
+            self.assertTrue((project / "AGENTS.md").is_file())
+            self.assertTrue((project / "Assets" / "MCP" / "Context" / "ProjectSummary.md").is_file())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_bootstrap_guidance_preview_works_with_direct_project_path(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text("public class Player {}", encoding="utf-8")
+            (project / "Assets" / "Scenes" / "Main.unity").write_text("scene", encoding="utf-8")
+            options = EmbeddedCLIOptions(
+                session_path=tmpdir / "session.json",
+                registry_path=tmpdir / "instances.json",
+            )
+
+            payload = run_cli_json(
+                ["workflow", "bootstrap-guidance", str(project)],
+                options,
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertEqual(payload["summary"]["projectName"], "DemoProject")
+            self.assertEqual(payload["writeResult"]["writeCount"], 0)
+            self.assertEqual(
+                {item["status"] for item in payload["writeResult"]["writes"]},
+                {"preview"},
+            )
+            self.assertFalse((project / "AGENTS.md").exists())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_developer_profiles_include_unity_expert_profiles(self) -> None:
+        store = DeveloperProfileStore(path=Path("test-developer-profiles.json"))
+
+        names = {profile.name for profile in store.list_profiles().profiles}
+
+        self.assertTrue(
+            {"director", "animator", "systems", "tech-artist", "ui-designer", "level-designer"} <= names
+        )
+
+    def test_expert_lens_registry_returns_expected_lenses(self) -> None:
+        from cli_anything.unity_mcp.core.expert_lenses import (
+            grade_score,
+            iter_builtin_expert_lenses,
+        )
+
+        names = {lens.name for lens in iter_builtin_expert_lenses()}
+
+        self.assertEqual(
+            names,
+            {"director", "systems", "animation", "tech-art", "ui", "level-art"},
+        )
+        self.assertEqual(grade_score(22), "poor")
+        self.assertEqual(grade_score(55), "weak")
+        self.assertEqual(grade_score(68), "workable")
+        self.assertEqual(grade_score(80), "strong")
+        self.assertEqual(grade_score(94), "excellent")
+
+    def test_build_expert_context_merges_audit_and_inspect(self) -> None:
+        from cli_anything.unity_mcp.core.expert_context import build_expert_context
+
+        inspect_payload = {
+            "available": True,
+            "summary": {
+                "projectName": "DemoGame",
+                "projectPath": "C:/Projects/DemoGame",
+                "activeScene": "Arena",
+                "renderPipeline": "URP",
+                "sceneDirty": False,
+            },
+            "state": {"isPlaying": False, "isCompiling": False},
+            "scene": {"activeScene": "Arena"},
+        }
+        audit_report = {
+            "available": True,
+            "summary": {
+                "projectName": "DemoGame",
+                "renderPipeline": "URP",
+                "materialCount": 8,
+                "modelCount": 2,
+                "animationCount": 1,
+                "testScriptCount": 0,
+            },
+            "topRecommendations": [
+                {"title": "Add tests", "detail": "No test scripts found."}
+            ],
+        }
+
+        context = build_expert_context(
+            inspect_payload=inspect_payload,
+            audit_report=audit_report,
+            lens_name="director",
+        )
+
+        self.assertEqual(context["project"]["name"], "DemoGame")
+        self.assertEqual(context["project"]["renderPipeline"], "URP")
+        self.assertEqual(context["lens"]["name"], "director")
+        self.assertEqual(context["assets"]["materialCount"], 8)
+        self.assertEqual(context["recommendations"][0]["title"], "Add tests")
+
+    def test_director_lens_flags_missing_guidance_and_tests(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.director import audit_director_lens
+
+        context = {
+            "assets": {"testScriptCount": 0},
+            "raw": {
+                "audit": {
+                    "guidance": {
+                        "hasAgentsMd": False,
+                        "hasContextFolder": False,
+                    }
+                }
+            },
+        }
+
+        result = audit_director_lens(context)
+        titles = {item["title"] for item in result["findings"]}
+
+        self.assertIn("Missing project guidance", titles)
+        self.assertIn("No test coverage detected", titles)
+
+    def test_animation_lens_flags_models_without_animation(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.animation import (
+            audit_animation_lens,
+        )
+
+        result = audit_animation_lens(
+            {"assets": {"modelCount": 3, "animationCount": 0}}
+        )
+
+        self.assertIn(
+            "Models found without animation evidence",
+            {item["title"] for item in result["findings"]},
+        )
+
+    def test_animation_lens_flags_clips_without_controller(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.animation import (
+            audit_animation_lens,
+        )
+
+        result = audit_animation_lens(
+            {
+                "assets": {
+                    "modelCount": 0,
+                    "animationCount": 2,
+                    "animatorControllerCount": 0,
+                }
+            }
+        )
+
+        self.assertIn(
+            "Animation clips without controller coverage",
+            {item["title"] for item in result["findings"]},
+        )
+
+    def test_animation_lens_flags_scene_without_animator_components(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.animation import (
+            audit_animation_lens,
+        )
+
+        result = audit_animation_lens(
+            {
+                "assets": {
+                    "animationCount": 1,
+                    "animatorControllerCount": 1,
+                },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {
+                                    "name": "PlayerRigRoot",
+                                    "components": ["Transform", "SkinnedMeshRenderer"],
+                                }
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertIn(
+            "No Animator components found in scene",
+            {item["title"] for item in result["findings"]},
+        )
+
+    def test_tech_art_lens_flags_importer_mismatches(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.tech_art import (
+            audit_tech_art_lens,
+        )
+
+        context = {
+            "raw": {
+                "audit": {
+                    "assetScan": {
+                        "importerAudit": {
+                            "potentialNormalMapMisconfiguredCount": 1,
+                            "potentialSpriteMisconfiguredCount": 1,
+                        }
+                    }
+                }
+            }
+        }
+
+        result = audit_tech_art_lens(context)
+
+        self.assertIn(
+            "Texture importer mismatches detected",
+            {item["title"] for item in result["findings"]},
+        )
+
+    def test_ui_lens_flags_canvas_without_scaler(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.ui import audit_ui_lens
+
+        context = {
+            "raw": {
+                "inspect": {
+                    "hierarchy": {
+                        "nodes": [
+                            {
+                                "name": "HUD",
+                                "components": ["Canvas", "GraphicRaycaster"],
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+        result = audit_ui_lens(context)
+
+        self.assertIn(
+            "Canvas without CanvasScaler",
+            {item["title"] for item in result["findings"]},
+        )
+
+    def test_build_quality_fix_plan_supports_guidance_and_sandbox(self) -> None:
+        from cli_anything.unity_mcp.core.expert_fixes import build_quality_fix_plan
+
+        context = {
+            "project": {"path": "C:/Projects/DemoGame", "name": "DemoGame"},
+            "raw": {
+                "audit": {
+                    "assetScan": {
+                        "packages": ["com.unity.inputsystem"],
+                    }
+                },
+                "inspect": {
+                    "hierarchy": {
+                        "nodes": [
+                            {
+                                "name": "Hero",
+                                "path": "/Hero",
+                                "components": ["Transform", "Animator"],
+                            }
+                        ]
+                    }
+                }
+            },
+        }
+
+        guidance_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="director",
+            fix_name="guidance",
+        )
+        test_scaffold_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="director",
+            fix_name="test-scaffold",
+        )
+        sandbox_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="level-art",
+            fix_name="sandbox-scene",
+        )
+        systems_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="systems",
+            fix_name="event-system",
+        )
+        tech_art_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="tech-art",
+            fix_name="texture-imports",
+        )
+        animation_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="animation",
+            fix_name="controller-scaffold",
+        )
+        animation_wireup_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="animation",
+            fix_name="controller-wireup",
+        )
+
+        self.assertEqual(guidance_plan["command"][0:2], ["workflow", "bootstrap-guidance"])
+        self.assertEqual(test_scaffold_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertTrue(test_scaffold_plan["requiresTestFrameworkPackage"])
+        self.assertEqual(test_scaffold_plan["fileCount"], 2)
+        self.assertTrue(str(test_scaffold_plan["scriptPath"]).endswith("DemoGameSmokeTests.cs"))
+        self.assertTrue(str(test_scaffold_plan["asmdefPath"]).endswith("DemoGame.EditMode.Tests.asmdef"))
+        self.assertEqual(sandbox_plan["command"][0:2], ["workflow", "create-sandbox-scene"])
+        self.assertEqual(systems_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertEqual(systems_plan["moduleType"], "InputSystemUIInputModule")
+        self.assertEqual(systems_plan["gameObjectName"], "EventSystem")
+        self.assertTrue(systems_plan["requiresLiveUnity"])
+        self.assertEqual(tech_art_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertEqual(animation_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertTrue(animation_plan["requiresLiveUnity"])
+        self.assertEqual(animation_wireup_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertEqual(animation_wireup_plan["targetGameObjectPath"], "/Hero")
+        self.assertTrue(animation_wireup_plan["requiresLiveUnity"])
+
+    def test_workflow_expert_audit_returns_lens_result(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Assets" / "Scenes" / "Main.unity").write_text(
+                "scene",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                ["workflow", "expert-audit", "--lens", "director", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertEqual(payload["lens"]["name"], "director")
+            self.assertIn("score", payload)
+            self.assertIn("findings", payload)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_expert_audit_returns_systems_findings_for_project_path(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Assets" / "Scenes" / "Main.unity").write_text(
+                "scene",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                ["workflow", "expert-audit", "--lens", "systems", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertEqual(payload["lens"]["name"], "systems")
+            self.assertIn(
+                "No sandbox scene detected",
+                {item["title"] for item in payload["findings"]},
+            )
+            self.assertIn(
+                "Scene-first content with no prefab coverage",
+                {item["title"] for item in payload["findings"]},
+            )
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_quality_fix_returns_plan_for_guidance(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "quality-fix",
+                    "--lens",
+                    "director",
+                    "--fix",
+                    "guidance",
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertEqual(payload["fix"]["name"], "guidance")
+            self.assertEqual(payload["plan"]["mode"], "workflow")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_quality_fix_apply_writes_guidance_for_project_path(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "quality-fix",
+                    "--lens",
+                    "director",
+                    "--fix",
+                    "guidance",
+                    "--apply",
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertTrue(payload["applyResult"]["applied"])
+            self.assertEqual(payload["applyResult"]["mode"], "workflow")
+            self.assertEqual(payload["applyResult"]["result"]["writeResult"]["writeCount"], 2)
+            self.assertTrue((project / "AGENTS.md").exists())
+            self.assertTrue((project / "Assets" / "MCP" / "Context" / "ProjectSummary.md").exists())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_quality_fix_apply_writes_test_scaffold_for_project_path(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.test-framework": "1.6.0"}}),
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "quality-fix",
+                    "--lens",
+                    "director",
+                    "--fix",
+                    "test-scaffold",
+                    "--apply",
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertTrue(payload["applyResult"]["applied"])
+            self.assertEqual(payload["applyResult"]["result"]["writeCount"], 2)
+            script_path = project / "Assets" / "Tests" / "EditMode" / "DemoProjectSmokeTests.cs"
+            asmdef_path = project / "Assets" / "Tests" / "EditMode" / "DemoProject.EditMode.Tests.asmdef"
+            self.assertTrue(script_path.exists())
+            self.assertTrue(asmdef_path.exists())
+            self.assertIn("NUnit.Framework", script_path.read_text(encoding="utf-8"))
+            asmdef_payload = json.loads(asmdef_path.read_text(encoding="utf-8"))
+            self.assertEqual(asmdef_payload["name"], "DemoProject.EditMode.Tests")
+            self.assertIn("TestAssemblies", asmdef_payload["optionalUnityReferences"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_build_quality_fix_plan_reads_test_framework_from_manifest_when_audit_packages_are_truncated(self) -> None:
+        from cli_anything.unity_mcp.core.expert_fixes import build_quality_fix_plan
+
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "dependencies": {
+                            "com.unity.inputsystem": "1.6.0",
+                            "com.unity.test-framework": "1.6.0",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            context = {
+                "project": {
+                    "path": str(project),
+                    "name": "DemoProject",
+                },
+                "raw": {
+                    "audit": {
+                        "assetScan": {
+                            "packages": ["com.unity.inputsystem"],
+                        }
+                    }
+                },
+            }
+
+            plan = build_quality_fix_plan(
+                context=context,
+                lens_name="director",
+                fix_name="test-scaffold",
+            )
+
+            self.assertEqual(plan["mode"], "workflow")
+            self.assertTrue(plan["hasTestFrameworkPackage"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_quality_fix_apply_reads_test_framework_from_manifest_when_audit_packages_are_truncated(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            dependencies = {
+                f"com.example.pkg{i:02d}": "1.0.0"
+                for i in range(30)
+            }
+            dependencies["com.unity.test-framework"] = "1.6.0"
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": dependencies}),
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "quality-fix",
+                    "--lens",
+                    "director",
+                    "--fix",
+                    "test-scaffold",
+                    "--apply",
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertTrue(payload["applyResult"]["applied"])
+            self.assertEqual(payload["applyResult"]["result"]["writeCount"], 2)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_quality_fix_returns_animation_controller_scaffold_plan(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Animations").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Characters").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Characters" / "Hero.fbx").write_bytes(b"fbx")
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "quality-fix",
+                    "--lens",
+                    "animation",
+                    "--fix",
+                    "controller-scaffold",
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertEqual(payload["fix"]["name"], "controller-scaffold")
+            self.assertEqual(payload["plan"]["mode"], "workflow")
+            self.assertTrue(payload["plan"]["requiresLiveUnity"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_scene_critique_returns_multiple_lenses(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                ["workflow", "scene-critique", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertGreaterEqual(len(payload["lenses"]), 3)
+            self.assertIn("findingCount", payload)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_quality_score_returns_overall_score(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                ["workflow", "quality-score", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertIsNotNone(payload["overallScore"])
+            self.assertGreaterEqual(len(payload["lensScores"]), 6)
+            self.assertIn("systems", {item["name"] for item in payload["lensScores"]})
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_benchmark_report_writes_stable_json_summary(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        report_file = tmpdir / "benchmark.json"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Assets" / "Scenes" / "Main.unity").write_text(
+                "scene",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "benchmark-report",
+                    "--report-file",
+                    str(report_file),
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertEqual(payload["benchmarkVersion"], "unity-mastery-v1")
+            self.assertIsNotNone(payload["overallScore"])
+            self.assertTrue(report_file.exists())
+            written = json.loads(report_file.read_text(encoding="utf-8"))
+            self.assertEqual(written["overallScore"], payload["overallScore"])
+            self.assertIn("systems", {item["name"] for item in payload["lensScores"]})
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_expert_audit_marks_ui_lens_live_context_unavailable_for_project_only(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                ["workflow", "expert-audit", "--lens", "ui", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertTrue(payload["lens"]["requiresLiveUnity"])
+            self.assertFalse(payload["lens"]["contextAvailable"])
+            self.assertIsNone(payload["score"])
+            self.assertIn(
+                "Live scene context unavailable",
+                {item["title"] for item in payload["findings"]},
+            )
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

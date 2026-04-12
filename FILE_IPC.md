@@ -112,20 +112,25 @@ The native `Window > CLI Anything` panel is the local cockpit for visibility and
 Standalone File IPC currently covers the core local route surface:
 
 - `ping`
-- `scene/info`, `scene/hierarchy`, `scene/save`, `scene/new`, `scene/stats`, `search/scene-stats`
+- `scene/info`, `scene/hierarchy`, `scene/save`, `scene/new`, `scene/create-sandbox`, `scene/stats`, `search/scene-stats`
 - `project/info`
 - `context`
 - `editor/state`, `editor/play-mode`, `editor/execute-menu-item`
 - `debug/breadcrumb`
 - `compilation/errors`
 - `console/log`, `console/clear`
-- `search/missing-references`
+- `search/assets`, `search/by-component`, `search/by-layer`, `search/by-name`, `search/by-tag`, `search/missing-references`
+- `selection/get`, `selection/set`, `selection/find-by-type`, `selection/focus-scene-view`
 - `gameobject/create`, `gameobject/delete`, `gameobject/info`, `gameobject/set-active`, `gameobject/set-transform`
 - `component/add`, `component/get-properties`
-- `asset/list`
+- `asset/list`, `asset/create-material`, `asset/create-prefab`, `asset/instantiate-prefab`
+- `animation/create-clip`, `animation/clip-info`, `animation/create-controller`, `animation/assign-controller`, `animation/controller-info`, `animation/add-parameter`, `animation/add-state`, `animation/set-default-state`, `animation/add-transition`
+- `material/create`, `material/set-property`, `material/get-properties`, `material/assign`, `material/list`
+- `renderer/set-material`
+- `prefab/save`, `prefab/instantiate`, `prefab/info`, `prefab/list`
 - `script/create`, `script/read`
 - `undo/perform`, `undo/redo`, `redo/perform`
-- `graphics/game-capture`, `graphics/scene-capture`, `screenshot/game`
+- `graphics/game-capture`, `graphics/scene-capture`, `graphics/material-info`, `graphics/renderer-info`, `screenshot/game`
 - `queue/info`, `agents/list`, `agents/log`
 
 `CliAnythingWindow.cs` is optional. Copy it into `Assets/Editor/` too if you want the native `Window > CLI Anything` panel.
@@ -137,7 +142,7 @@ The standalone File IPC bridge is not the full 328-tool advanced surface yet.
 Use the AnkleBreaker Unity plugin HTTP bridge when you need the broad advanced catalog today, especially:
 
 - terrain
-- animation
+- deeper animation authoring beyond clip/controller inspection, default-state edits, controller scaffold, and controller assignment
 - shader and shader graph
 - prefab-heavy workflows
 - package management
@@ -156,14 +161,31 @@ This path has been live-tested against the `OutsideTheBox` Unity project with:
 - `scene-info`
 - `search/scene-stats`
 - `search/missing-references`
+- `search/by-component`
+- `selection/get`
+- `selection/set`
+- `selection/focus-scene-view`
 - compact `hierarchy`
 - `compilation/errors`
+- `asset/create-material`
+- `graphics/material-info`
+- `graphics/renderer-info`
+- `renderer/set-material`
+- `asset/create-prefab`
+- `asset/instantiate-prefab`
+- `prefab/info` for both asset and scene-instance targets
 - `editor/execute-menu-item`
 - inactive-object `gameobject/info`
 - `gameobject/set-active`
 - `gameobject/create`
 - `gameobject/set-transform`
 - `component/add`
+- `animation/create-clip`
+- `animation/clip-info`
+- `animation/create-controller`
+- `animation/assign-controller`
+- `animation/controller-info`
+- `animation/set-default-state`
 - `debug breadcrumb` plus direct `console/log` readback
 - `debug capture --kind both`
 - `queue/info`, `agent queue`, `agent sessions`, `agent log`, `agent watch --iterations 1`
@@ -172,6 +194,7 @@ The latest visible proof also included:
 
 - a standalone breadcrumb written into Unity and read back through `console/log`
 - live `search/scene-stats` totals from the active `McpLiveFpsPass` scene
+- live `search/by-component` matches and direct selection/focus control on `/McpLiveFpsPass`
 - direct Game View and Scene View captures returned through File IPC as PNG data
 
 ## Mental Model

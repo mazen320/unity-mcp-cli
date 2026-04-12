@@ -143,6 +143,7 @@ class SessionStore:
         note: str | None = None,
         agent_id: str | None = None,
         agent_profile: str | None = None,
+        developer_profile: str | None = None,
         command_path: str | None = None,
         activity: str | None = None,
     ) -> SessionState:
@@ -165,6 +166,8 @@ class SessionStore:
             entry["agentId"] = agent_id
         if agent_profile:
             entry["agentProfile"] = agent_profile
+        if developer_profile:
+            entry["developerProfile"] = developer_profile
         if command_path:
             entry["commandPath"] = command_path
         if activity:

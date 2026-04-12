@@ -27,6 +27,81 @@ ASSET_CATEGORY_EXTENSIONS: dict[str, tuple[str, ...]] = {
     "shaderGraphs": (".shadergraph", ".shadersubgraph"),
 }
 
+RECOMMENDATION_PRIORITY_ORDER: dict[str, int] = {
+    "high": 0,
+    "medium": 1,
+    "low": 2,
+}
+
+IMPORTER_AUDIT_SAMPLE_KEYS: tuple[str, ...] = (
+    "modelMaterialImportDisabled",
+    "modelAnimationImportDisabled",
+    "modelRigConfigured",
+    "potentialNormalMapMisconfigured",
+    "potentialSpriteMisconfigured",
+)
+
+
+def _new_importer_audit() -> dict[str, Any]:
+    return {
+        "available": False,
+        "modelImporterCount": 0,
+        "modelImportMaterialDisabledCount": 0,
+        "modelImportAnimationDisabledCount": 0,
+        "modelRigConfiguredCount": 0,
+        "textureImporterCount": 0,
+        "potentialNormalMapCount": 0,
+        "potentialNormalMapMisconfiguredCount": 0,
+        "potentialSpriteCount": 0,
+        "potentialSpriteMisconfiguredCount": 0,
+        "samples": {name: [] for name in IMPORTER_AUDIT_SAMPLE_KEYS},
+    }
+
+
+def _priority_rank(priority: str | None) -> int:
+    return RECOMMENDATION_PRIORITY_ORDER.get(str(priority or "").lower(), 99)
+
+
+def _sort_recommendations(recommendations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        item
+        for _, item in sorted(
+            enumerate(recommendations),
+            key=lambda pair: (_priority_rank(pair[1].get("priority")), pair[0]),
+        )
+    ]
+
+
+def _build_priority_breakdown(recommendations: list[dict[str, Any]]) -> dict[str, int]:
+    breakdown = {"high": 0, "medium": 0, "low": 0}
+    for item in recommendations:
+        priority = str(item.get("priority") or "").lower()
+        if priority in breakdown:
+            breakdown[priority] += 1
+    return breakdown
+
+
+def _build_focus_areas(
+    recommendations: list[dict[str, Any]],
+    *,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    category_counts: dict[str, int] = {}
+    for item in recommendations:
+        category = str(item.get("category") or "").strip().lower()
+        if not category:
+            continue
+        category_counts[category] = category_counts.get(category, 0) + 1
+
+    ranked = sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))
+    return [
+        {
+            "category": category,
+            "count": count,
+        }
+        for category, count in ranked[:limit]
+    ]
+
 
 def _read_preview(path: Path, preview_chars: int) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -38,6 +113,138 @@ def _read_preview(path: Path, preview_chars: int) -> dict[str, Any]:
         "chars": len(text),
         "preview": preview,
     }
+
+
+def _append_sample(samples: list[str], path: str, sample_limit: int) -> None:
+    if len(samples) < sample_limit:
+        samples.append(path)
+
+
+def _read_asset_meta(asset_path: Path) -> str | None:
+    meta_path = Path(f"{asset_path}.meta")
+    if not meta_path.is_file():
+        return None
+    return meta_path.read_text(encoding="utf-8", errors="replace")
+
+
+def _extract_meta_scalar(meta_text: str | None, key: str) -> str | None:
+    if not meta_text:
+        return None
+    prefix = f"{key}:"
+    for raw_line in meta_text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith(prefix):
+            continue
+        return line[len(prefix) :].split("#", 1)[0].strip()
+    return None
+
+
+def _looks_like_normal_map(file_name: str, normalized_path: str) -> bool:
+    return (
+        "/normal" in normalized_path
+        or "/normals/" in normalized_path
+        or "_n." in file_name
+        or "_normal." in file_name
+        or file_name.endswith("normal.png")
+        or file_name.endswith("normal.tga")
+    )
+
+
+def _looks_like_sprite(file_name: str, normalized_path: str) -> bool:
+    return (
+        "/sprites/" in normalized_path
+        or "/ui/" in normalized_path
+        or "sprite" in file_name
+        or "icon" in file_name
+    )
+
+
+def _is_normal_map_import(meta_text: str | None) -> bool:
+    texture_type = (_extract_meta_scalar(meta_text, "textureType") or "").lower()
+    convert_to_normal_map = _extract_meta_scalar(meta_text, "convertToNormalMap")
+    return texture_type in {"1", "normalmap"} or convert_to_normal_map == "1"
+
+
+def _is_sprite_import(meta_text: str | None) -> bool:
+    texture_type = (_extract_meta_scalar(meta_text, "textureType") or "").lower()
+    sprite_mode = _extract_meta_scalar(meta_text, "spriteMode")
+    return texture_type in {"8", "sprite"} or (
+        sprite_mode is not None and sprite_mode not in {"0", ""}
+    )
+
+
+def _audit_model_importer(
+    file_path: Path,
+    *,
+    relative_path: str,
+    importer_audit: dict[str, Any],
+    sample_limit: int,
+) -> None:
+    importer_audit["available"] = True
+    importer_audit["modelImporterCount"] += 1
+
+    meta_text = _read_asset_meta(file_path)
+    material_import_mode = _extract_meta_scalar(meta_text, "materialImportMode")
+    import_materials = _extract_meta_scalar(meta_text, "importMaterials")
+    if material_import_mode == "0" or import_materials == "0":
+        importer_audit["modelImportMaterialDisabledCount"] += 1
+        _append_sample(
+            importer_audit["samples"]["modelMaterialImportDisabled"],
+            relative_path,
+            sample_limit,
+        )
+
+    if _extract_meta_scalar(meta_text, "importAnimation") == "0":
+        importer_audit["modelImportAnimationDisabledCount"] += 1
+        _append_sample(
+            importer_audit["samples"]["modelAnimationImportDisabled"],
+            relative_path,
+            sample_limit,
+        )
+
+    animation_type = (_extract_meta_scalar(meta_text, "animationType") or "").lower()
+    if animation_type in {"2", "3", "generic", "human", "humanoid"}:
+        importer_audit["modelRigConfiguredCount"] += 1
+        _append_sample(
+            importer_audit["samples"]["modelRigConfigured"],
+            relative_path,
+            sample_limit,
+        )
+
+
+def _audit_texture_importer(
+    file_path: Path,
+    *,
+    relative_path: str,
+    importer_audit: dict[str, Any],
+    sample_limit: int,
+) -> None:
+    importer_audit["available"] = True
+    importer_audit["textureImporterCount"] += 1
+
+    normalized_path = relative_path.lower()
+    file_name = file_path.name.lower()
+    meta_text = _read_asset_meta(file_path)
+
+    if _looks_like_normal_map(file_name, normalized_path):
+        importer_audit["potentialNormalMapCount"] += 1
+        if meta_text and not _is_normal_map_import(meta_text):
+            importer_audit["potentialNormalMapMisconfiguredCount"] += 1
+            _append_sample(
+                importer_audit["samples"]["potentialNormalMapMisconfigured"],
+                relative_path,
+                sample_limit,
+            )
+
+    if _looks_like_sprite(file_name, normalized_path):
+        importer_audit["potentialSpriteCount"] += 1
+        if meta_text and not _is_sprite_import(meta_text):
+            importer_audit["potentialSpriteMisconfiguredCount"] += 1
+            _append_sample(
+                importer_audit["samples"]["potentialSpriteMisconfigured"],
+                relative_path,
+                sample_limit,
+            )
 
 
 def collect_project_guidance(
@@ -102,6 +309,7 @@ def scan_project_assets(
     counts["testScripts"] = 0
     samples: dict[str, list[str]] = {name: [] for name in ASSET_CATEGORY_EXTENSIONS}
     top_level_folders: list[str] = []
+    importer_audit = _new_importer_audit()
 
     if not assets_root.is_dir():
         return {
@@ -109,6 +317,7 @@ def scan_project_assets(
             "assetsRoot": "Assets",
             "counts": counts,
             "samples": samples,
+            "importerAudit": importer_audit,
             "topLevelFolders": top_level_folders,
             "packageCount": 0,
             "packages": [],
@@ -137,6 +346,22 @@ def scan_project_assets(
         if suffix == ".cs" and ("/Tests/" in relative_path or normalized_name.endswith("tests.cs")):
             counts["testScripts"] += 1
 
+        if suffix in ASSET_CATEGORY_EXTENSIONS["models"]:
+            _audit_model_importer(
+                file_path,
+                relative_path=relative_path,
+                importer_audit=importer_audit,
+                sample_limit=sample_limit_per_category,
+            )
+
+        if suffix in ASSET_CATEGORY_EXTENSIONS["textures"]:
+            _audit_texture_importer(
+                file_path,
+                relative_path=relative_path,
+                importer_audit=importer_audit,
+                sample_limit=sample_limit_per_category,
+            )
+
     manifest_path = project_root / "Packages" / "manifest.json"
     packages: list[str] = []
     if manifest_path.is_file():
@@ -153,6 +378,7 @@ def scan_project_assets(
         "assetsRoot": "Assets",
         "counts": counts,
         "samples": samples,
+        "importerAudit": importer_audit,
         "topLevelFolders": top_level_folders,
         "packageCount": len(packages),
         "packages": packages[:25],
@@ -166,6 +392,7 @@ def build_project_recommendations(
     inspect_payload: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     counts = dict(asset_scan.get("counts") or {})
+    importer_audit = dict(asset_scan.get("importerAudit") or {})
     recommendations: list[dict[str, Any]] = []
 
     def add(priority: str, category: str, title: str, detail: str) -> None:
@@ -218,12 +445,40 @@ def build_project_recommendations(
             "The project has model assets but no .anim clips or Animator Controllers were detected. If characters are planned, this is a good time to define rig import settings, avatar setup, and animation ownership.",
         )
 
+    if (
+        importer_audit.get("modelImporterCount", 0) > 0
+        and importer_audit.get("modelImportMaterialDisabledCount", 0) > 0
+        and counts.get("materials", 0) == 0
+    ):
+        add(
+            "medium",
+            "assets",
+            "Review Model Material Import",
+            "One or more model importers appear to have material import disabled while the project still has no material library. Decide whether materials should be extracted, generated, or owned manually.",
+        )
+
     if counts.get("animations", 0) > 0 and counts.get("animatorControllers", 0) == 0:
         add(
             "medium",
             "animation",
             "Create Animator Controllers",
             "Animation clips exist but no Animator Controllers were detected. Add controllers or a runtime animation state layer so those clips are actually reusable in scene logic.",
+        )
+
+    if importer_audit.get("potentialNormalMapMisconfiguredCount", 0) > 0:
+        add(
+            "medium",
+            "assets",
+            "Fix Likely Normal Map Imports",
+            "Some texture assets look like normal maps by folder or filename, but their import settings do not appear to mark them as Normal Map textures.",
+        )
+
+    if importer_audit.get("potentialSpriteMisconfiguredCount", 0) > 0:
+        add(
+            "medium",
+            "assets",
+            "Fix Likely Sprite Imports",
+            "Some texture assets live in sprite-like folders or use sprite-style names, but their import settings do not appear to mark them as Sprite textures.",
         )
 
     if counts.get("audio", 0) > 0 and counts.get("mixers", 0) == 0:
@@ -286,6 +541,80 @@ def build_project_insights(
     return {
         "available": True,
         "projectRoot": str(root),
+        "guidance": guidance,
+        "assetScan": asset_scan,
+        "recommendations": recommendations,
+    }
+
+
+def build_asset_audit_report(
+    project_root: str | Path | None,
+    *,
+    inspect_payload: dict[str, Any] | None = None,
+    recommendation_limit: int = 6,
+) -> dict[str, Any]:
+    insights = build_project_insights(project_root, inspect_payload=inspect_payload)
+    if not insights.get("available"):
+        return insights
+
+    asset_scan = dict(insights.get("assetScan") or {})
+    counts = dict(asset_scan.get("counts") or {})
+    importer_audit = dict(asset_scan.get("importerAudit") or {})
+    guidance = dict(insights.get("guidance") or {})
+    recommendations = list(insights.get("recommendations") or [])
+    ordered_recommendations = _sort_recommendations(recommendations)
+    priority_breakdown = _build_priority_breakdown(recommendations)
+    focus_areas = _build_focus_areas(recommendations)
+
+    inspect_summary = dict((inspect_payload or {}).get("summary") or {})
+    inspect_project = dict((inspect_payload or {}).get("project") or {})
+    project_name = (
+        inspect_summary.get("projectName")
+        or inspect_project.get("productName")
+        or Path(str(insights.get("projectRoot") or project_root)).name
+    )
+
+    summary = {
+        "projectName": project_name,
+        "projectRoot": insights.get("projectRoot"),
+        "renderPipeline": inspect_project.get("renderPipeline") or inspect_project.get("currentRenderPipeline"),
+        "activeScene": inspect_summary.get("activeScene"),
+        "sceneDirty": bool(inspect_summary.get("sceneDirty")),
+        "hasGuidance": bool(guidance.get("found")),
+        "guidanceFileCount": int(guidance.get("fileCount") or 0),
+        "topLevelFolderCount": len(asset_scan.get("topLevelFolders") or []),
+        "sceneCount": int(counts.get("scenes") or 0),
+        "scriptCount": int(counts.get("scripts") or 0),
+        "testScriptCount": int(counts.get("testScripts") or 0),
+        "asmdefCount": int(counts.get("asmdefs") or 0),
+        "prefabCount": int(counts.get("prefabs") or 0),
+        "materialCount": int(counts.get("materials") or 0),
+        "textureCount": int(counts.get("textures") or 0),
+        "modelCount": int(counts.get("models") or 0),
+        "animationCount": int(counts.get("animations") or 0),
+        "animatorControllerCount": int(counts.get("animatorControllers") or 0),
+        "audioCount": int(counts.get("audio") or 0),
+        "packageCount": int(asset_scan.get("packageCount") or 0),
+        "hasImporterAudit": bool(importer_audit.get("available")),
+        "modelImporterCount": int(importer_audit.get("modelImporterCount") or 0),
+        "textureImporterCount": int(importer_audit.get("textureImporterCount") or 0),
+        "potentialNormalMapMisconfiguredCount": int(
+            importer_audit.get("potentialNormalMapMisconfiguredCount") or 0
+        ),
+        "potentialSpriteMisconfiguredCount": int(
+            importer_audit.get("potentialSpriteMisconfiguredCount") or 0
+        ),
+        "recommendationCount": len(recommendations),
+        "highestPriority": ordered_recommendations[0].get("priority") if ordered_recommendations else None,
+    }
+
+    return {
+        "available": True,
+        "projectRoot": insights.get("projectRoot"),
+        "summary": summary,
+        "priorityBreakdown": priority_breakdown,
+        "focusAreas": focus_areas,
+        "topRecommendations": ordered_recommendations[: max(1, recommendation_limit)],
         "guidance": guidance,
         "assetScan": asset_scan,
         "recommendations": recommendations,

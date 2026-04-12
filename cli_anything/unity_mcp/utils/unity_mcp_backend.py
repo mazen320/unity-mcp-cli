@@ -69,6 +69,7 @@ class UnityMCPBackend:
         self._file_ipc_clients: Dict[str, FileIPCClient] = {}
         self.runtime_agent_id: str | None = None
         self.runtime_agent_profile: str | None = None
+        self.runtime_developer_profile: str | None = None
         self.runtime_command_path: str | None = None
         self.runtime_activity: str | None = None
 
@@ -77,11 +78,13 @@ class UnityMCPBackend:
         *,
         agent_id: str | None = None,
         agent_profile: str | None = None,
+        developer_profile: str | None = None,
         command_path: str | None = None,
         activity: str | None = None,
     ) -> None:
         self.runtime_agent_id = agent_id
         self.runtime_agent_profile = agent_profile
+        self.runtime_developer_profile = developer_profile
         self.runtime_command_path = command_path
         self.runtime_activity = activity
 
@@ -108,6 +111,7 @@ class UnityMCPBackend:
             note=note,
             agent_id=self.runtime_agent_id,
             agent_profile=self.runtime_agent_profile,
+            developer_profile=self.runtime_developer_profile,
             command_path=self.runtime_command_path,
             activity=self.runtime_activity,
         )

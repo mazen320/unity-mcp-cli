@@ -10,25 +10,64 @@ It focuses on three outcomes:
 
 ## Current Baseline
 
-As of 2026-04-10:
+As of 2026-04-12:
 
-- `96/96` automated tests passing
+- `142/142` automated tests passing
 - heavy live MCP pass passing `15/15`
-- tool coverage: `32` live-tested, `37` covered, `215` mock-only, `38` deferred, `6` unsupported
+- tool coverage: `40` live-tested, `37` covered, `207` mock-only, `38` deferred, `6` unsupported
 - `unsupported` currently maps to the Unity Hub surface only
 - deferred tools carry blocker labels like `stateful-live-audit`, `package-dependent-live-audit`, `unity-hub-integration`
 - thin MCP adapter is working
 - upstream coverage matrix exists in code and JSON form
 - live debug reports via `scripts/run_live_mcp_pass.py --debug --report-file ...`
 
+## Latest CLI Layer Pass
+
+- Added a first-class developer-profile layer to the CLI itself, not just the Unity panel.
+- New built-in profiles: `normal`, `builder`, `review`, `caveman`.
+- New CLI commands: `developer list`, `developer current`, `developer use`, `developer clear`.
+- New top-level flags: `--developer-profile` and `--developer-profiles-path`.
+- Status output now reports the resolved developer profile alongside the agent identity.
+- Runtime command history now records `developerProfile` so future trace/debug tooling can reason about which mode produced a command.
+- Non-default developer profiles now influence Unity-side breadcrumb labels without breaking agent-first trace filtering.
+
+## Latest Unity Mastery Pass
+
+- Added expert lens foundations in `core/expert_lenses.py` and `core/expert_context.py`.
+- Added built-in expert lenses: `director`, `animation`, `tech-art`, `ui`, `level-art`.
+- Added a broader `systems` expert lens for Unity-wide scene architecture, runtime hygiene, and playability-hook audits.
+- Added specialist rule modules in `core/expert_rules/` for direction, animation-readiness, tech-art importer hints, UI canvas scaling, and level-art density/readability.
+- Added benchmark output via `workflow benchmark-report` so expert scoring can be saved as a stable JSON snapshot for GitHub or regression tracking.
+- Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
+- Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.
+- Added a `systems` developer profile so the CLI can bias toward runtime hygiene, scene architecture, and testability instead of genre-specific advice.
+- `workflow quality-fix` can now apply the bounded `guidance`, `test-scaffold`, `sandbox-scene`, `event-system`, `ui-canvas-scaler`, `texture-imports`, `controller-scaffold`, and `controller-wireup` fixes directly with `--apply`, while keeping the riskier/manual fixes planner-only.
+- Scene-dependent expert lenses now report missing live context honestly instead of returning optimistic scores from project-path-only runs.
+- The `animation` lens now looks for both asset-side pipeline gaps and scene-side `Animator` coverage when live hierarchy data is available.
+- The `animation` fix path can now scaffold a generated Animator Controller asset through Unity when audit findings show controller-coverage gaps.
+- Added specialist developer profiles: `director`, `animator`, `tech-artist`, `ui-designer`, `level-designer`.
+- Added workflow trace wording for the new expert commands so breadcrumbs stay readable in Unity and `debug trace`.
+
 ## Latest Standalone-First File IPC Pass
 
 - `FileIPCBridge.cs` now prefers the standalone handler first for the direct core route set instead of only using it as a weak last fallback.
 - `StandaloneRouteHandler.cs` now covers `context`, `search/scene-stats`, `search/missing-references`, `debug/breadcrumb`, `graphics/game-capture`, `graphics/scene-capture`, and `undo/redo` in the no-plugin path.
+- `StandaloneRouteHandler.cs` now also covers `search/by-component`, `selection/get`, `selection/set`, and `selection/focus-scene-view` on the standalone File IPC path, so agents can search the live scene and drive selection without the plugin.
 - `UnityMCPBackend.get_context()` no longer falls through to `127.0.0.1:0` when the selected transport is file IPC.
 - `emit_unity_breadcrumb()` now uses the standalone File IPC route directly when the selected instance is file transport.
-- `scripts/run_file_ipc_smoke.py` now gives us a reusable no-plugin smoke pass instead of ad-hoc manual testing.
+- `scripts/run_file_ipc_smoke.py` now gives us a reusable no-plugin smoke pass instead of ad-hoc manual testing, including live component search plus selection/set/focus validation.
+- Standalone Unity dispatch now trims incoming route names before matching, which makes the file route path more resilient to invisible whitespace in command payloads.
 - `workflow inspect` now includes local project guidance + asset structure analysis and returns improvement suggestions for docs, scenes, tests, materials, prefabization, and animation pipeline gaps.
+- Standalone File IPC now supports `animation/assign-controller`, and the animation quality-fix workflow can create a generated Animator Controller and assign it to a live Animator without using the plugin path.
+- Standalone File IPC now also supports `animation/create-clip`, `animation/clip-info`, and `animation/controller-info`, so the CLI can inspect lightweight animation assets without leaving the no-plugin path.
+- Standalone File IPC now also supports `animation/add-parameter`, `animation/add-state`, and `animation/add-transition`, so the CLI can author a minimal Animator Controller graph directly in live Unity without the plugin path.
+- Standalone File IPC now also supports `animation/set-default-state`, and `animation/controller-info` reports default-state, entry-transition, any-state, and per-state transition details so the CLI can reason about Animator state-machine semantics directly.
+- `workflow inspect` now also audits adjacent model/texture `.meta` files, so the CLI-side scan can flag disabled model material import plus likely normal-map and sprite-import mismatches without needing the native Unity panel first.
+- `workflow asset-audit` now exposes that project scan as a dedicated CLI workflow, with a tighter summary, priority buckets, focus areas, and top recommendations. It works from a live Unity selection or a direct project path.
+- `workflow bootstrap-guidance` now turns the audit output into a preview-first `AGENTS.md` and optional `Assets/MCP/Context/ProjectSummary.md` scaffold, so the CLI can fix the common "missing project guidance" recommendation itself.
+- `workflow create-sandbox-scene` now turns another common audit recommendation into a real CLI action: it creates or reopens a saved sandbox scene, works on the standalone File IPC path, and restores the original scene by default unless `--open` is requested.
+- `CliAnythingWindow.cs` now owns Agent-tab bridge startup too: it has a `Connect` action, persistent harness-root / Python-launcher settings, and an auto-start-on-send path that launches the chat bridge from source with `PYTHONPATH=<agent-harness>` instead of relying on a preinstalled global module.
+- direct-path `workflow asset-audit` and `workflow bootstrap-guidance` runs now stay local and skip Unity Console breadcrumbs instead of touching whichever editor happens to be selected.
 - single discovered File IPC projects now auto-select for higher-level workflows, so `workflow inspect` works directly with `--transport file --file-ipc-path ...` without a separate select step.
 - Live-tested in `OutsideTheBox`: `state`, `context`, `search/scene-stats`, `search/missing-references`, `debug breadcrumb`, `console/log` breadcrumb readback, and `debug capture --kind both`.
 - Saved capture proof:
@@ -147,7 +186,7 @@ Coverage moved from `47.9%` → `86.6%` (215 mock-only, 38 deferred, out of 328 
 - **`core/file_ipc.py`** — `FileIPCClient` with atomic JSON writes, heartbeat-based ping, response polling, stale file cleanup, and `discover_file_ipc_instances()`.
 - **`unity-scripts/Editor/FileIPCBridge.cs`** — Unity `[InitializeOnLoad]` script that polls `.umcp/inbox/` on the main thread, dispatches to the existing MCP plugin (via reflection) or falls back to `StandaloneRouteHandler`, writes responses to `.umcp/outbox/`, and refreshes `.umcp/ping.json` heartbeat every 2 seconds.
 - **`unity-scripts/Editor/StandaloneRouteHandler.cs`** — ~27 core routes without the full plugin: `ping`, `scene/info`, `scene/hierarchy`, `scene/save`, `scene/new`, `scene/stats`, `project/info`, `editor/state`, `editor/play-mode`, `editor/execute-menu-item`, `compilation/errors`, `console/log`, `console/clear`, `gameobject/create|delete|info|set-active|set-transform`, `component/add|get-properties`, `asset/list`, `script/create|read`, `undo/perform`, `redo/perform`, `screenshot/game`. Includes a `MiniJson` parser for dictionaries and simple public-field result objects.
-- **`unity-scripts/Editor/CliAnythingWindow.cs`** — optional native Unity panel at `Window > CLI Anything`; cached hierarchy/search/stats, inspector editing with Undo, and common scene actions without bridge polling.
+- **`unity-scripts/Editor/CliAnythingWindow.cs`** — optional native Unity panel at `Window > CLI Anything`; now includes a local `Goal Assistant` tab, copyable agent brief, suggested CLI command handoff, a real local `Codex` provider path through the installed Codex CLI session, lightweight importer audit for models/materials/textures, Unity 6-safe object-query/importer API usage, cached hierarchy/search/stats, inspector editing with Undo, bridge tools, and common scene actions without bridge polling.
 - **Backend integration** — `UnityMCPBackend` gained `transport` (`auto|http|file`), `file_ipc_paths`, `_file_ipc_clients` cache. `discover_instances()` merges HTTP and file IPC results (deduplicates by project path, prefers HTTP). `call_route()` checks `_resolve_file_ipc_client()` first and delegates to `FileIPCClient.call_route()` for file IPC instances.
 - **File IPC params fix** — Python now writes route params as a raw JSON string so Unity's `JsonUtility` does not drop params as an empty object.
 - **Fallback fix** — `FileIPCBridge` now falls back to standalone routes when the full plugin returns an unknown-route result.
@@ -167,6 +206,7 @@ From this point forward, every batch of changes must update:
 - Don't rebuild memory from scratch — `core/memory.py` already handles it
 - Don't add error code heuristics inline in doctor — use `core/error_heuristics.py`
 - Don't put new commands in the entrypoint — use the `commands/` modules
+- Don't add one-off behavior flags when a mode belongs in the developer-profile layer. Use the built-in developer profiles or extend that system cleanly.
 - Don't reimplement missing-ref tracking — `record_missing_references()` and `get_recurring_missing_refs()` already exist in `core/memory.py`
 - Don't add mock bridge handlers without also adding them to `MOCK_ONLY_ROUTE_NOTES` in `tool_coverage.py` AND adding test assertions in `test_mock_only_advanced_routes_work_against_mock_bridge`
 - Don't promote a route to `mock-only` without a corresponding mock bridge handler in `test_full_e2e.py`

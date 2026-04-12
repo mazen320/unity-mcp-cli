@@ -1,12 +1,12 @@
 {
   "summary": {
     "catalogVersion": "unknown",
-    "generatedAt": "2026-04-10T08:44:31.005887+00:00",
-    "totalTools": 328,
+    "generatedAt": "2026-04-11T17:19:27.177589+00:00",
+    "totalTools": 329,
     "countsByStatus": {
-      "live-tested": 32,
-      "covered": 37,
-      "mock-only": 215,
+      "live-tested": 46,
+      "covered": 35,
+      "mock-only": 204,
       "unsupported": 6,
       "deferred": 38
     },
@@ -44,10 +44,10 @@
         "deferred": 23
       },
       "animation": {
-        "total": 24,
-        "live-tested": 6,
+        "total": 25,
+        "live-tested": 11,
         "covered": 0,
-        "mock-only": 18,
+        "mock-only": 14,
         "unsupported": 0,
         "deferred": 0
       },
@@ -61,8 +61,8 @@
       },
       "asset": {
         "total": 5,
-        "live-tested": 0,
-        "covered": 4,
+        "live-tested": 2,
+        "covered": 2,
         "mock-only": 1,
         "unsupported": 0,
         "deferred": 0
@@ -213,9 +213,9 @@
       },
       "material": {
         "total": 1,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 0,
-        "mock-only": 1,
+        "mock-only": 0,
         "unsupported": 0,
         "deferred": 0
       },
@@ -285,9 +285,9 @@
       },
       "prefab": {
         "total": 18,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 0,
-        "mock-only": 18,
+        "mock-only": 17,
         "unsupported": 0,
         "deferred": 0
       },
@@ -325,9 +325,9 @@
       },
       "renderer": {
         "total": 1,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 0,
-        "mock-only": 1,
+        "mock-only": 0,
         "unsupported": 0,
         "deferred": 0
       },
@@ -373,9 +373,9 @@
       },
       "search": {
         "total": 7,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 1,
-        "mock-only": 6,
+        "mock-only": 5,
         "unsupported": 0,
         "deferred": 0
       },
@@ -389,9 +389,9 @@
       },
       "selection": {
         "total": 4,
-        "live-tested": 0,
+        "live-tested": 3,
         "covered": 0,
-        "mock-only": 4,
+        "mock-only": 1,
         "unsupported": 0,
         "deferred": 0
       },
@@ -1381,9 +1381,9 @@
           "parameterType"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_add_state",
@@ -1428,7 +1428,7 @@
         ]
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -1518,9 +1518,9 @@
           "destinationState"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_assign_controller",
@@ -1551,9 +1551,9 @@
           "controllerPath"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation wireup workflow.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_clip_info",
@@ -1576,9 +1576,9 @@
           "path"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation inspection routes.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_controller_info",
@@ -1602,7 +1602,7 @@
         ]
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation inspection and authoring routes.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -2212,6 +2212,40 @@
       "coverageBlocker": "verified-mock"
     },
     {
+      "name": "unity_animation_set_default_state",
+      "description": "Set the default state for an Animator Controller layer without creating a transition.",
+      "category": "animation",
+      "tier": "advanced",
+      "route": "animation/set-default-state",
+      "execution": "route",
+      "unsupported": false,
+      "bridgeFunction": "setAnimationDefaultState",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "controllerPath": {
+            "type": "string",
+            "description": "Asset path of the Animator Controller"
+          },
+          "stateName": {
+            "type": "string",
+            "description": "Name of the state to make default"
+          },
+          "layerIndex": {
+            "type": "number",
+            "description": "Layer index (default: 0)"
+          }
+        },
+        "required": [
+          "controllerPath",
+          "stateName"
+        ]
+      },
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes, flipping the Animator layer default state without adding fake entry transitions.",
+      "coverageBlocker": "verified-live"
+    },
+    {
       "name": "unity_asmdef_add_references",
       "description": "Add assembly references to an existing .asmdef file. Supports assembly names (e.g. 'Unity.TextMeshPro') which are auto-resolved to GUID format, or direct GUID refs.",
       "category": "asmdef",
@@ -2570,9 +2604,9 @@
           "savePath"
         ]
       },
-      "coverageStatus": "covered",
-      "coverageNote": "Covered by automated tests and higher-level workflows.",
-      "coverageBlocker": "verified-automated"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, saving a live scene object as a prefab through the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_asset_delete",
@@ -2686,9 +2720,9 @@
           "prefabPath"
         ]
       },
-      "coverageStatus": "covered",
-      "coverageNote": "Covered by automated tests and higher-level workflows.",
-      "coverageBlocker": "verified-automated"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, instantiating a disposable prefab into the active scene through the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_asset_list",
@@ -4009,7 +4043,7 @@
         }
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, returning live material shader properties from both asset and scene targets.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -4105,7 +4139,7 @@
         ]
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, returning live renderer metadata for a scene object.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -5071,9 +5105,9 @@
           "path"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, creating a disposable material asset on the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_memory_breakdown",
@@ -6577,9 +6611,9 @@
           }
         }
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, reading both prefab asset metadata and connected scene-instance metadata.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_prefab_remove_component",
@@ -7113,9 +7147,9 @@
           "materialPath"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, swapping a live renderer material through the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_scene_hierarchy",
@@ -7662,9 +7696,9 @@
           "componentType"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, returning live scene object matches by component type.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_search_by_layer",
@@ -7927,9 +7961,9 @@
           }
         }
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, focusing the Scene view on the selected live object.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_selection_get",
@@ -7944,9 +7978,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, returning the current Unity selection state.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_selection_set",
@@ -7977,9 +8011,9 @@
           }
         }
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, selecting a live scene object by path.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_set_object_reference",

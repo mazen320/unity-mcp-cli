@@ -12,13 +12,17 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import click
-from click.core import ParameterSource
 
 from .. import __version__
 from ..core.agent_profiles import AgentProfile, AgentProfileStore, derive_agent_profiles_path
 from ..core.client import UnityMCPClient, UnityMCPClientError
 from ..core.debug_dashboard import DashboardConfig, serve_debug_dashboard
 from ..core.debug_doctor import build_debug_doctor_report
+from ..core.developer_profiles import (
+    DeveloperProfile,
+    DeveloperProfileStore,
+    derive_developer_profiles_path,
+)
 from ..core.memory import ALL_CATEGORIES, ProjectMemory, memory_for_session
 from ..core.routes import route_to_tool_name
 from ..core.session import SessionStore
@@ -53,9 +57,12 @@ class CLIContext:
     base_args: tuple[str, ...]
     command_path: str
     agent_profile_store: AgentProfileStore
+    developer_profile_store: DeveloperProfileStore
     agent_id: str
     agent_profile: AgentProfile | None
+    developer_profile: DeveloperProfile
     agent_source: str
+    developer_source: str
     legacy_mode: bool
 
 
@@ -246,6 +253,67 @@ def _describe_cli_activity(ctx: click.Context) -> str:
                     else ""
                 ),
             )
+        if second == "asset-audit":
+            return _with_details(
+                "auditing Unity assets",
+                _path_name(params.get("project_root")) if params.get("project_root") else "",
+                (
+                    f"top {params.get('top_recommendations')} recommendations"
+                    if params.get("top_recommendations") is not None
+                    else ""
+                ),
+            )
+        if second == "expert-audit":
+            return _with_details(
+                "running expert Unity audit",
+                f"lens {params.get('lens_name')}" if params.get("lens_name") else "",
+                _path_name(params.get("project_root")) if params.get("project_root") else "",
+            )
+        if second == "scene-critique":
+            return _with_details(
+                "running scene critique",
+                (
+                    f"lenses {_csv(params.get('lens_names'))}"
+                    if params.get("lens_names")
+                    else "default critique lenses"
+                ),
+                _path_name(params.get("project_root")) if params.get("project_root") else "",
+            )
+        if second == "quality-score":
+            return _with_details(
+                "scoring project quality",
+                (
+                    f"lenses {_csv(params.get('lens_names'))}"
+                    if params.get("lens_names")
+                    else "all expert lenses"
+                ),
+                _path_name(params.get("project_root")) if params.get("project_root") else "",
+            )
+        if second == "quality-fix":
+            return _with_details(
+                "planning quality fix",
+                f"lens {params.get('lens_name')}" if params.get("lens_name") else "",
+                f"fix {params.get('fix_name')}" if params.get("fix_name") else "",
+                "apply now" if params.get("apply_fix") else "plan only",
+                _path_name(params.get("project_root")) if params.get("project_root") else "",
+            )
+        if second == "bootstrap-guidance":
+            return _with_details(
+                "bootstrapping Unity guidance",
+                _path_name(params.get("project_root")) if params.get("project_root") else "",
+                "write files" if params.get("write_files") else "preview only",
+                "include MCP context" if params.get("include_context") else "agents only",
+                "overwrite existing" if params.get("overwrite") else "",
+            )
+        if second == "create-sandbox-scene":
+            return _with_details(
+                "creating sandbox scene",
+                f"name {params.get('name')}" if params.get("name") else "",
+                f"folder {params.get('folder')}" if params.get("folder") else "",
+                "leave sandbox open" if params.get("open_scene") else "restore original scene",
+                "save dirty scene first" if params.get("save_if_dirty") else "",
+                "discard unsaved changes" if params.get("discard_unsaved") else "",
+            )
         if second == "reset-scene":
             return _with_details(
                 "reloading the active scene",
@@ -402,6 +470,8 @@ def _describe_cli_activity(ctx: click.Context) -> str:
 
 
 def _should_auto_breadcrumb(ctx: click.Context) -> bool:
+    if bool((getattr(ctx, "meta", None) or {}).get("disable_auto_breadcrumbs")):
+        return False
     tokens = _normalized_command_tokens(ctx)
     if not tokens:
         return False
@@ -421,6 +491,8 @@ def _should_auto_breadcrumb(ctx: click.Context) -> bool:
 def _friendly_agent_label(ctx: click.Context) -> str:
     if ctx.obj.agent_profile:
         return ctx.obj.agent_profile.name
+    if ctx.obj.developer_profile and ctx.obj.developer_source != "default":
+        return ctx.obj.developer_profile.name
     agent_id = str(ctx.obj.agent_id or "").strip()
     if not agent_id:
         return "CLI"
@@ -475,6 +547,7 @@ def _run_and_emit(ctx: click.Context, callback: Callable[[], Any]) -> None:
     ctx.obj.backend.set_runtime_context(
         agent_id=ctx.obj.agent_id,
         agent_profile=ctx.obj.agent_profile.name if ctx.obj.agent_profile else None,
+        developer_profile=ctx.obj.developer_profile.name if ctx.obj.developer_profile else None,
         command_path=_normalized_command_path(ctx),
         activity=activity,
     )
@@ -496,6 +569,8 @@ def _record_progress_step(
     level: str = "info",
     port: int | None = None,
 ) -> None:
+    if bool((getattr(ctx, "meta", None) or {}).get("disable_auto_breadcrumbs")):
+        return
     agent_label = _friendly_agent_label(ctx)
     ctx.obj.backend.record_progress(
         message=message,
@@ -525,6 +600,17 @@ def _build_agent_profile_store(
     return AgentProfileStore()
 
 
+def _build_developer_profile_store(
+    session_path: Path | None,
+    developer_profiles_path: Path | None,
+) -> DeveloperProfileStore:
+    if developer_profiles_path:
+        return DeveloperProfileStore(developer_profiles_path)
+    if session_path:
+        return DeveloperProfileStore(derive_developer_profiles_path(session_path))
+    return DeveloperProfileStore()
+
+
 def _slugify_agent_profile_name(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
     return slug or "sidecar"
@@ -538,15 +624,21 @@ def _serialize_agent_profile(profile: AgentProfile | None) -> dict[str, Any] | N
     return asdict(profile) if profile is not None else None
 
 
+def _serialize_developer_profile(profile: DeveloperProfile | None) -> dict[str, Any] | None:
+    return asdict(profile) if profile is not None else None
+
+
 def _build_base_args(
     host: str,
     default_port: int,
     registry_path: Path | None,
     session_path: Path | None,
     agent_profiles_path: Path | None,
+    developer_profiles_path: Path | None,
     json_output: bool,
     agent_id: str | None,
     agent_profile: str | None,
+    developer_profile: str | None,
     legacy: bool,
     port_range_start: int,
     port_range_end: int,
@@ -569,10 +661,14 @@ def _build_base_args(
         parts.extend(["--session-path", str(session_path)])
     if agent_profiles_path:
         parts.extend(["--agent-profiles-path", str(agent_profiles_path)])
+    if developer_profiles_path:
+        parts.extend(["--developer-profiles-path", str(developer_profiles_path)])
     if json_output:
         parts.append("--json")
     if agent_profile:
         parts.extend(["--agent-profile", agent_profile])
+    if developer_profile:
+        parts.extend(["--developer-profile", developer_profile])
     if legacy:
         parts.append("--legacy")
     return tuple(parts)

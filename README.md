@@ -25,13 +25,18 @@ It talks directly to Unity through either the plugin's local HTTP bridge or the 
 
 - discovers running Unity editors
 - inspects project, scene, hierarchy, console, compilation, queue, and editor state
-- scans local project guidance and asset structure during `workflow inspect`, including `AGENTS.md`, `Assets/MCP/Context`, scenes, scripts, materials, models, animations, tests, and package manifest data
+- scans local project guidance, asset structure, and importer hints during `workflow inspect`, including `AGENTS.md`, `Assets/MCP/Context`, scenes, scripts, materials, models, texture/model `.meta` settings, animations, tests, and package manifest data
+- adds a dedicated `workflow asset-audit` command for focused asset-pipeline, importer, and recommendation reporting from either a live Unity selection or a direct project path
+- adds `workflow bootstrap-guidance` to preview or write `AGENTS.md` plus optional `Assets/MCP/Context/ProjectSummary.md` from the audit results
+- adds `workflow create-sandbox-scene` so the CLI can create a safe disposable scene for probes and agent passes instead of only recommending one
+- adds expert content-quality workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`
 - creates and edits scripts, scene objects, components, references, and prefabs
 - captures Game View and Scene View screenshots
 - explains likely Unity problems with `debug doctor`
 - shows recent CLI activity with `debug trace`
 - reads the real Unity `Editor.log`
 - reads optional Unity MCP project context without using the plugin's main-thread-unsafe direct context endpoint first
+- supports built-in developer profiles so the CLI itself can stay in `normal`, `builder`, `review`, or `caveman` mode across sessions
 - exposes an optional thin MCP adapter when a client still needs MCP transport
 
 ## What This Repo Is
@@ -76,6 +81,16 @@ Optional thin MCP adapter:
 cli-anything-unity-mcp-mcp --default-port <port> --port-range-start <port> --port-range-end <port>
 ```
 
+Developer profile helpers:
+
+```powershell
+cli-anything-unity-mcp --json developer list
+cli-anything-unity-mcp --json developer current
+cli-anything-unity-mcp --json developer use builder
+cli-anything-unity-mcp --json developer clear
+cli-anything-unity-mcp --json --developer-profile caveman workflow inspect --port <port>
+```
+
 ## Quick Start
 
 1. Open your Unity project.
@@ -90,6 +105,12 @@ From this repo, the plugin HTTP path looks like:
 cli-anything-unity-mcp instances
 cli-anything-unity-mcp select <port>
 cli-anything-unity-mcp --json workflow inspect --port <port>
+cli-anything-unity-mcp --json workflow asset-audit --port <port>
+cli-anything-unity-mcp --json workflow bootstrap-guidance --port <port>
+cli-anything-unity-mcp --json workflow create-sandbox-scene --port <port>
+cli-anything-unity-mcp --json workflow expert-audit --lens director --port <port>
+cli-anything-unity-mcp --json workflow quality-score --port <port>
+cli-anything-unity-mcp --json workflow benchmark-report --port <port>
 cli-anything-unity-mcp --json debug doctor --port <port>
 cli-anything-unity-mcp --json debug capture --kind both --port <port>
 ```
@@ -112,11 +133,46 @@ python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame" --js
 
 `CliAnythingWindow.cs` is optional. Copy it into `Assets/Editor/` if you want a native Unity panel at `Window > CLI Anything`.
 
-Standalone File IPC is intentionally smaller than the full plugin route surface. It is good for core local control such as editor state, scene info, hierarchy, console, compilation errors, GameObject basics, component basics, script read/create, undo/redo, screenshots, agent session/log visibility, and opening the native CLI Anything panel. Use the AnkleBreaker plugin HTTP bridge when you need the full advanced catalog across terrain, animation, shaders, prefabs, packages, and other deep Unity systems.
+That panel now includes:
+- a real local `Codex` provider path that uses the machine's Codex CLI login instead of pretending ChatGPT session tokens are API keys
+- a `Goal Assistant` tab for local project scans and ranked improvement suggestions
+- an Agent tab `Connect` path that can launch the Python chat bridge from the `agent-harness` source tree with a configurable harness root plus Python launcher, instead of assuming `python -m cli_anything.unity_mcp` already works in the user's shell
+- a copyable `Agent Brief` so you can hand the current project context to the CLI agent quickly
+- generated `Suggested CLI Commands` based on the current project path and selected object
+- lightweight importer audit for model material ownership and likely normal-map or sprite import mismatches
+- the older cached `Scene`, `Inspector`, `Actions`, and `Bridge` tabs for direct editor work without polling
 
-Recent standalone File IPC live verification in `OutsideTheBox` also covered direct `context`, `search/scene-stats`, `search/missing-references`, `debug breadcrumb`, `console/log` breadcrumb readback, and `debug capture --kind both`.
+Standalone File IPC is intentionally smaller than the full plugin route surface. It is good for core local control such as editor state, scene info, hierarchy, console, compilation errors, asset search, scene object search, selection control, GameObject basics, component basics, script read/create, undo/redo, screenshots, agent session/log visibility, sandbox-scene creation, lightweight animation clip/controller creation and inspection, lightweight animation controller scaffolding/wireup, lightweight parameter/state/transition authoring, explicit default-state edits, and opening the native CLI Anything panel. Use the AnkleBreaker plugin HTTP bridge when you need the full advanced catalog across terrain, deeper animation systems, shaders, prefabs, packages, and other deep Unity systems.
+
+Recent standalone File IPC live verification in `OutsideTheBox` also covered direct `context`, `search/scene-stats`, `search/missing-references`, `search/by-component`, `selection/get`, `selection/set`, `selection/focus-scene-view`, `animation/create-clip`, `animation/clip-info`, `animation/create-controller`, `animation/assign-controller`, `animation/controller-info`, `animation/add-parameter`, `animation/add-state`, `animation/set-default-state`, `animation/add-transition`, `debug breadcrumb`, `console/log` breadcrumb readback, and `debug capture --kind both`.
 
 Agents still work on the File IPC path. The agent process runs the CLI, the CLI tags commands with an `agentId`, and the Unity-side File IPC bridge records lightweight `agent sessions` / `agent log` state without background polling. File IPC executes directly on Unity's main thread, so it does not need the old HTTP queue for core routes.
+
+## Developer Profiles
+
+The CLI now has a first-class developer-profile layer for shaping how the assistant behaves, reports, and prioritizes work.
+
+- `normal` is the default balanced mode.
+- `builder` is action-first for implementation and fast shipping.
+- `review` is risk-first for bugs, regressions, and test gaps.
+- `caveman` is the terse low-token mode.
+- `director`, `systems`, `animator`, `tech-artist`, `ui-designer`, and `level-designer` are specialist Unity content modes that pair well with the expert audit workflows.
+
+Use them either persistently:
+
+```powershell
+cli-anything-unity-mcp --json developer use review
+cli-anything-unity-mcp --json developer current
+```
+
+Or per invocation:
+
+```powershell
+cli-anything-unity-mcp --json --developer-profile builder workflow create-sandbox-scene --port <port>
+cli-anything-unity-mcp --json --developer-profile caveman debug doctor --port <port>
+```
+
+If no developer profile is selected, the CLI resolves to `normal`. Non-default developer profiles also show up in CLI status output and can label Unity-side trace breadcrumbs more clearly during active sessions.
 
 ## Using This With Codex
 
@@ -140,7 +196,75 @@ python .\scripts\run_live_mcp_pass.py --port <port> --summary-only
 
 - guidance sources such as `AGENTS.md`, `README.md`, and `Assets/MCP/Context`
 - asset/layout counts for scenes, scripts, asmdefs, prefabs, materials, models, animations, audio, shaders, and tests
+- disk-based importer heuristics from adjacent `.meta` files, including model material-import state plus likely normal-map and sprite-import mismatches
 - improvement suggestions such as adding agent guidance, adding tests, prefabizing imported models, auditing rig/animation setup, or creating a sandbox scene
+
+When you want the project-scan part without the full scene snapshot, use:
+
+```powershell
+cli-anything-unity-mcp --json workflow asset-audit --port <port>
+cli-anything-unity-mcp --json workflow asset-audit C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow bootstrap-guidance C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow bootstrap-guidance C:/Projects/MyUnityGame --write
+cli-anything-unity-mcp --json workflow create-sandbox-scene --port <port>
+cli-anything-unity-mcp --json workflow create-sandbox-scene --name GameplayLab --folder Assets/Scenes/Sandboxes --open --port <port>
+cli-anything-unity-mcp --json workflow expert-audit --lens tech-art --port <port>
+cli-anything-unity-mcp --json workflow expert-audit --lens systems --port <port>
+cli-anything-unity-mcp --json workflow scene-critique --port <port>
+cli-anything-unity-mcp --json workflow quality-score C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow benchmark-report C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow benchmark-report --report-file .cli-anything-unity-mcp/benchmarks/my-project.json --port <port>
+cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance --apply C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow quality-fix --lens director --fix test-scaffold --apply C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow quality-fix --lens director --fix sandbox-scene --apply --port <port>
+cli-anything-unity-mcp --json workflow quality-fix --lens systems --fix event-system --apply --port <port>
+cli-anything-unity-mcp --json workflow quality-fix --lens animation --fix controller-scaffold --apply --port <port>
+cli-anything-unity-mcp --json workflow quality-fix --lens animation --fix controller-wireup --apply --port <port>
+```
+
+`workflow asset-audit` returns a tighter summary for guidance coverage, asset counts, importer-hint counts, priority buckets, focus areas, and the top recommendations to tackle first.
+
+`workflow bootstrap-guidance` uses that same audit to generate a starter `AGENTS.md` and, by default, `Assets/MCP/Context/ProjectSummary.md`. Preview mode is the default so you can inspect the generated files first; add `--write` when you want the CLI to create them.
+
+`workflow create-sandbox-scene` creates or reopens a saved sandbox scene under `Assets/Scenes` by default. It restores the original scene after creation unless you pass `--open`, which makes it safer to scaffold test space without throwing away your current working context.
+
+`workflow expert-audit` runs one specialist lens at a time, such as `director`, `systems`, `animation`, `tech-art`, `ui`, or `level-art`, and returns a lens-specific score, findings, supported follow-up fixes, and the relevant project summary context.
+
+The new `systems` lens is intentionally Unity-wide, not genre-specific. It looks for scene architecture and runtime hygiene issues such as missing sandbox coverage, scene-only setup with no prefab coverage, duplicate `AudioListener` usage, UI canvases without an `EventSystem`, likely player objects with no movement foundation, collider gaps in scenes that already look interactive, and disposable probe/demo objects left in the scene.
+
+`ui` and `level-art` are scene-dependent lenses. If you run them against a bare project path without a live selected Unity editor, they now report that the live scene context is unavailable instead of pretending the scene is healthy.
+
+The `animation` lens now checks both the asset pipeline and the inspected scene. It can flag models with no animation evidence, clips without Animator Controller coverage, and scenes that still have no `Animator` components even though animation assets exist.
+
+When that audit points to a missing controller scaffold, `workflow quality-fix --lens animation --fix controller-scaffold --apply` creates a generated Animator Controller asset through Unity at a safe default path under `Assets/Animations/Generated/`.
+
+When the scene already has a live `Animator`, `workflow quality-fix --lens animation --fix controller-wireup --apply` now creates or reuses that generated controller and assigns it through Unity to the first detected Animator in the inspected scene.
+
+`workflow scene-critique` bundles the high-signal scene-facing lenses together so you can get a fast content-direction review without manually calling each one.
+
+`workflow quality-score` scores the whole project across all built-in expert lenses and returns per-lens grades plus an overall average.
+
+`workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It is meant for GitHub snapshots, local regression tracking, or sharing benchmark results without hand-editing CLI output.
+
+`workflow quality-fix` is intentionally a planner first. It turns a supported expert finding into the safest next CLI action instead of silently editing the project.
+
+For the `director` lens, `workflow quality-fix --lens director --fix test-scaffold --apply` now writes a minimal EditMode smoke test plus a matching test assembly definition under `Assets/Tests/EditMode/`. It only auto-applies when `com.unity.test-framework` is already present, so it does not introduce compile errors into projects that have not installed the Unity Test Framework yet.
+
+For the `systems` lens, `workflow quality-fix --lens systems --fix event-system --apply` now adds a bounded UI input foundation when a live scene has Canvas objects but no `EventSystem`. It creates or repairs an `EventSystem` GameObject and chooses `InputSystemUIInputModule` when the project depends on `com.unity.inputsystem`, otherwise it falls back to `StandaloneInputModule`.
+
+When you add `--apply`, the first bounded fixes can run directly:
+
+- `guidance` writes the generated `AGENTS.md` and optional `Assets/MCP/Context/ProjectSummary.md`
+- `sandbox-scene` runs the sandbox-scene workflow with the same safety flags (`--open`, `--save-if-dirty`, `--discard-unsaved`)
+- `ui-canvas-scaler` finds live Canvas objects that are missing `CanvasScaler` and adds the component in-place when a Unity editor is selected
+- `texture-imports` repairs likely normal-map and sprite importer mismatches through Unity using the importer-audit sample paths
+- `controller-scaffold` creates a generated Animator Controller asset through Unity when the animation audit finds controller coverage gaps
+- `controller-wireup` creates or reuses the generated Animator Controller asset and assigns it to the first live Animator in the inspected scene
+
+Manual-only fixes still stay planner-only and return a clear error if you try to auto-apply them.
+
+When you pass a direct project path to `workflow asset-audit` or `workflow bootstrap-guidance`, the run stays local to that project scan and does not emit Unity Console breadcrumbs into whichever editor you currently have selected.
 
 Normal commands now emit visible Unity-side `[CLI-TRACE]` breadcrumbs, so you can watch agent activity in the Unity Console or Editor log:
 

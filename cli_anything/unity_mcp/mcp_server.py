@@ -76,6 +76,37 @@ class UnityThinMCPServer:
     def __init__(self, options: EmbeddedCLIOptions) -> None:
         self.options = options
         self.stream = StdioMessageStream()
+        self._context_injector: Any | None = None  # lazy-init on first initialize
+
+    def _get_context_prompt(self) -> str:
+        """Try to fetch project context from Unity via File IPC for injection into AI instructions."""
+        try:
+            from .core.file_ipc import FileIPCClient, ContextInjector, FileIPCError
+            if self._context_injector is None:
+                # Try to discover a Unity project via the session path
+                session_path = self.options.session_path
+                client = None
+                if session_path and session_path.exists():
+                    import json as _json
+                    try:
+                        sess = _json.loads(session_path.read_text())
+                        selected_instance = sess.get("selected_instance") or {}
+                        project_path = (
+                            selected_instance.get("projectPath")
+                            or selected_instance.get("project_path")
+                            or sess.get("selectedProjectPath")
+                            or sess.get("projectPath")
+                        )
+                        if project_path:
+                            client = FileIPCClient(project_path)
+                    except Exception:
+                        pass
+                if client is None:
+                    return ""
+                self._context_injector = ContextInjector(client)
+            return self._context_injector.as_system_prompt()
+        except Exception:
+            return ""
 
     def serve_forever(self) -> None:
         while True:
@@ -127,6 +158,19 @@ class UnityThinMCPServer:
             "result": result,
         }
 
+    def _build_instructions(self) -> str:
+        base = (
+            "You are a Unity AI developer assistant connected to a live Unity Editor via File IPC.\n"
+            "You can read and write scripts, create/modify GameObjects, manage materials, prefabs, "
+            "physics, lighting, and more — all through the available tools.\n"
+            "When the user asks you to build or change something in Unity, make a plan and execute it "
+            "step by step using the tools. Always verify results before declaring success.\n\n"
+        )
+        ctx = self._get_context_prompt()
+        if ctx:
+            return base + ctx
+        return base.strip()
+
     def _dispatch(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if method == "initialize":
             requested_version = params.get("protocolVersion")
@@ -141,10 +185,7 @@ class UnityThinMCPServer:
                     "name": "unity-mcp-cli-thin",
                     "version": __version__,
                 },
-                "instructions": (
-                    "Thin MCP adapter for unity-mcp-cli. It exposes a curated high-level tool set "
-                    "plus a generic unity_tool_call escape hatch instead of mirroring hundreds of tools."
-                ),
+                "instructions": self._build_instructions(),
             }
         if method == "ping":
             return {}

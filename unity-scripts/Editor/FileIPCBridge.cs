@@ -36,7 +36,7 @@ public static class FileIPCBridge
     // Poll inbox every 100ms, heartbeat every 2s
     private const double PollInterval = 0.1;
     private const double HeartbeatInterval = 2.0;
-    private const string BridgeVersion = "standalone-first-v3";
+    private const string BridgeVersion = "standalone-first-v6";
     private const int MaxAgentActions = 200;
 
     // Cached reflection for plugin route dispatch
@@ -51,6 +51,7 @@ public static class FileIPCBridge
         "scene/hierarchy",
         "scene/save",
         "scene/new",
+        "scene/create-sandbox",
         "scene/stats",
         "search/scene-stats",
         "project/info",
@@ -62,7 +63,16 @@ public static class FileIPCBridge
         "compilation/errors",
         "console/log",
         "console/clear",
+        "search/assets",
+        "search/by-component",
+        "search/by-layer",
+        "search/by-name",
+        "search/by-tag",
         "search/missing-references",
+        "selection/get",
+        "selection/set",
+        "selection/find-by-type",
+        "selection/focus-scene-view",
         "gameobject/create",
         "gameobject/delete",
         "gameobject/info",
@@ -71,8 +81,55 @@ public static class FileIPCBridge
         "component/add",
         "component/get-properties",
         "asset/list",
+        "animation/create-clip",
+        "animation/create-controller",
+        "animation/assign-controller",
+        "animation/clip-info",
+        "animation/controller-info",
+        "animation/add-parameter",
+        "animation/add-state",
+        "animation/set-default-state",
+        "animation/add-transition",
+        "animation/remove-transition",
         "script/create",
         "script/read",
+        "script/update",
+        "script/list",
+        "script/delete",
+        "component/set-property",
+        "component/remove",
+        "component/list",
+        "component/wire-reference",
+        "gameobject/duplicate",
+        "gameobject/reparent",
+        "gameobject/find",
+        "gameobject/rename",
+        "gameobject/set-tag",
+        "gameobject/set-layer",
+        "material/create",
+        "material/set-property",
+        "material/get-properties",
+        "material/assign",
+        "material/list",
+        "asset/create-material",
+        "prefab/save",
+        "prefab/instantiate",
+        "prefab/info",
+        "prefab/list",
+        "asset/create-prefab",
+        "asset/instantiate-prefab",
+        "renderer/set-material",
+        "graphics/material-info",
+        "graphics/renderer-info",
+        "physics/set-rigidbody",
+        "physics/set-collider",
+        "lighting/set-ambient",
+        "lighting/set-sun",
+        "asset/create-folder",
+        "asset/move",
+        "asset/delete",
+        "tag/add",
+        "layer/add",
         "undo/perform",
         "undo/redo",
         "redo/perform",
@@ -132,6 +189,7 @@ public static class FileIPCBridge
                 platform = Application.platform.ToString(),
                 processId = System.Diagnostics.Process.GetCurrentProcess().Id,
                 lastHeartbeat = DateTime.UtcNow.ToString("o"),
+                bridgeVersion = BridgeVersion,
                 transport = "file-ipc"
             };
 
@@ -154,6 +212,7 @@ public static class FileIPCBridge
                     platform = Application.platform.ToString(),
                     processId = System.Diagnostics.Process.GetCurrentProcess().Id,
                     lastHeartbeat = DateTime.UtcNow.ToString("o"),
+                    bridgeVersion = BridgeVersion,
                     transport = "file-ipc"
                 };
                 File.WriteAllText(PingPath, JsonUtility.ToJson(ping, false));
@@ -232,6 +291,7 @@ public static class FileIPCBridge
 
     private static object Dispatch(string route, string paramsJson, string agentId)
     {
+        route = (route ?? string.Empty).Trim();
         if (route == "queue/info")
             return BuildQueueInfo(agentId);
         if (route == "agents/list")
@@ -356,7 +416,7 @@ public static class FileIPCBridge
         int limit = 100;
         try
         {
-            var payload = MiniJson.Deserialize(paramsJson);
+            var payload = StandaloneRouteHandler.MiniJson.Deserialize(paramsJson);
             if (payload.TryGetValue("agentId", out object requestedAgent) && requestedAgent != null)
                 agentId = NormalizeAgentId(requestedAgent.ToString());
             if (payload.TryGetValue("limit", out object requestedLimit) && requestedLimit != null)
@@ -527,9 +587,9 @@ public static class FileIPCBridge
             }
             else
             {
-                // Use MiniJson.Serialize so Dictionary<string,object> round-trips correctly.
+                // Use StandaloneRouteHandler.MiniJson.Serialize so Dictionary<string,object> round-trips correctly.
                 // JsonUtility.ToJson cannot serialize dictionaries and always returns {}.
-                string resultJson = MiniJson.Serialize(result);
+                string resultJson = StandaloneRouteHandler.MiniJson.Serialize(result);
                 json = "{\"id\":\"" + EscapeJson(commandId) + "\",\"result\":" + resultJson + "}";
             }
 
@@ -572,6 +632,7 @@ public static class FileIPCBridge
         public string platform;
         public int processId;
         public string lastHeartbeat;
+        public string bridgeVersion;
         public string transport;
     }
 

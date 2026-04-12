@@ -280,7 +280,7 @@ def _humanize_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
         payload["phase"] = str(args.get("phase") or "run")
         payload["summary"] = summary
         payload["target"] = None
-        payload["actor"] = payload.get("agentProfile") or payload.get("agentId")
+        payload["actor"] = payload.get("agentProfile") or payload.get("agentId") or payload.get("developerProfile")
         payload["amount"] = None
         payload["commandKind"] = "progress"
         return payload
@@ -307,7 +307,7 @@ def _humanize_history_entry(entry: dict[str, Any]) -> dict[str, Any]:
     payload["phase"] = phase
     payload["summary"] = summary
     payload["target"] = target
-    payload["actor"] = payload.get("agentProfile") or payload.get("agentId")
+    payload["actor"] = payload.get("agentProfile") or payload.get("agentId") or payload.get("developerProfile")
     payload["commandKind"] = "route" if route_name else "command"
     if route_name:
         payload["routeName"] = route_name
@@ -352,7 +352,7 @@ def _format_trace_watch_line(entry: dict[str, Any]) -> str:
     phase = str(entry.get("phase") or "run").strip().lower()
     command = str(entry.get("command") or "").strip()
     transport = str(entry.get("transport") or "").strip()
-    actor = str(entry.get("actor") or entry.get("agentProfile") or entry.get("agentId") or "").strip()
+    actor = str(entry.get("actor") or entry.get("agentProfile") or entry.get("agentId") or entry.get("developerProfile") or "").strip()
     category = str(entry.get("category") or "").strip()
     route_name = str(entry.get("routeName") or "").strip()
     tool_name = str(entry.get("toolName") or "").strip()
