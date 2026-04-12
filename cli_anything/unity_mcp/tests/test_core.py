@@ -2598,6 +2598,103 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_bridge_greeting_reply_mentions_capabilities(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    if route == "context":
+                        return {
+                            "projectName": "DemoProject",
+                            "unityVersion": "6000.0.1",
+                            "renderPipeline": "URP",
+                            "scene": {"name": "MainScene", "objectCount": 12},
+                            "assetCounts": {"prefabs": 1, "materials": 3},
+                            "scriptCount": 4,
+                            "compileErrors": [],
+                            "recentConsoleErrors": [],
+                        }
+                    return {}
+
+            bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "hi"})
+
+            self.assertEqual(bridge._history[-1]["role"], "ai")
+            self.assertIn("I", bridge._history[-1]["content"])
+            self.assertIn("inspect project", bridge._history[-1]["content"])
+            self.assertIn("create sandbox scene", bridge._history[-1]["content"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_agent_chat_once_runs_project_audit_reply(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        inbox_dir = project / ".umcp" / "chat" / "user-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Assets" / "Scenes" / "Main.unity").write_text(
+                "scene",
+                encoding="utf-8",
+            )
+            (inbox_dir / "20260411T1000000000000-msg.json").write_text(
+                json.dumps({"id": "msg-1", "role": "user", "content": "inspect project"}),
+                encoding="utf-8",
+            )
+
+            run_cli_json(
+                ["workflow", "agent-chat", "--once", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            history = json.loads((project / ".umcp" / "chat" / "history.json").read_text(encoding="utf-8"))
+            self.assertEqual(history[-1]["role"], "ai")
+            self.assertIn("Overall quality:", history[-1]["content"])
+            self.assertIn("Best next moves:", history[-1]["content"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_agent_chat_once_can_write_guidance(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        inbox_dir = project / ".umcp" / "chat" / "user-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (inbox_dir / "20260411T1000000000000-msg.json").write_text(
+                json.dumps({"id": "msg-1", "role": "user", "content": "create guidance"}),
+                encoding="utf-8",
+            )
+
+            run_cli_json(
+                ["workflow", "agent-chat", "--once", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue((project / "AGENTS.md").exists())
+            self.assertTrue((project / "Assets" / "MCP" / "Context" / "ProjectSummary.md").exists())
+            history = json.loads((project / ".umcp" / "chat" / "history.json").read_text(encoding="utf-8"))
+            self.assertIn("Guidance written", history[-1]["content"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_bridge_status_includes_pid(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "MyProject"

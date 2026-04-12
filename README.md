@@ -196,6 +196,7 @@ That panel now includes:
 - a real local `Codex` provider path that uses the machine's Codex CLI login instead of pretending ChatGPT session tokens are API keys
 - a `Goal Assistant` tab for local project scans and ranked improvement suggestions
 - an Agent tab `Connect` path that can launch the Python chat bridge from the `agent-harness` source tree with a configurable harness root plus Python launcher, instead of assuming `python -m cli_anything.unity_mcp` already works in the user's shell
+- an offline project-aware Agent chat layer that can answer greetings/help, inspect the project, run quality scores and benchmarks, scaffold guidance/tests, create sandbox scenes, save scenes, read compiler state, and create simple primitives even without external API keys
 - a copyable `Agent Brief` so you can hand the current project context to the CLI agent quickly
 - generated `Suggested CLI Commands` based on the current project path and selected object
 - lightweight importer audit for model material ownership and likely normal-map or sprite import mismatches

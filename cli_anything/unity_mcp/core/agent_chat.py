@@ -15,12 +15,464 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
+from .agent_loop import AgentLoop, format_results
 from .file_ipc import FileIPCClient, ContextInjector
+
+if TYPE_CHECKING:
+    from .embedded_cli import EmbeddedCLIOptions
+
+
+class _OfflineUnityAssistant:
+    """Project-aware offline assistant for the Unity Agent tab.
+
+    This keeps the Agent tab useful without requiring API keys. It routes
+    project-wide requests through embedded CLI workflows and keeps fast live
+    scene actions on direct File IPC.
+    """
+
+    _GREETING_RE = re.compile(r"^(hi|hello|hey|yo|sup)\b", re.IGNORECASE)
+    _CREATE_PRIMITIVE_RE = re.compile(
+        r"\bcreate(?:\s+a|\s+an)?\s+(cube|sphere|capsule|cylinder|plane|quad|empty)\b",
+        re.IGNORECASE,
+    )
+    _POSITION_RE = re.compile(
+        r"\bat\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\b",
+        re.IGNORECASE,
+    )
+
+    def __init__(
+        self,
+        bridge: "ChatBridge",
+        *,
+        embedded_options: "EmbeddedCLIOptions | None" = None,
+    ) -> None:
+        self.bridge = bridge
+        self.embedded_options = embedded_options
+
+    def handle_message(self, content: str, bridge: "ChatBridge") -> None:
+        try:
+            reply = self._dispatch(content)
+        except Exception as exc:
+            bridge.append_message("ai", f"I hit an error while processing that: {exc}")
+        else:
+            bridge.append_message("ai", reply)
+        finally:
+            bridge.write_status("idle", 0, 0, "")
+
+    def _dispatch(self, content: str) -> str:
+        normalized = " ".join((content or "").strip().split())
+        lowered = normalized.lower()
+        if not normalized:
+            return self._help_reply()
+        if self._GREETING_RE.match(normalized) or lowered in {"help", "what can you do", "what do you do"}:
+            return self._greeting_reply()
+        if lowered in {"context", "project context", "project info", "what do you know about the project"}:
+            return self._context_reply()
+        if any(phrase in lowered for phrase in ("inspect project", "audit project", "analyze project", "review project")):
+            return self._project_audit_reply()
+        if "quality score" in lowered or "project score" in lowered or "how healthy" in lowered:
+            return self._quality_score_reply()
+        if "benchmark" in lowered or "scorecard" in lowered:
+            return self._benchmark_reply()
+        if "scene critique" in lowered or "critique scene" in lowered:
+            return self._scene_critique_reply()
+        if lowered in {"compile errors", "compilation errors", "errors", "compiler errors"}:
+            return self._compile_errors_reply()
+        if lowered in {"scene info", "scene", "scene/info"}:
+            return self._scene_info_reply()
+        if lowered in {"list scripts", "scripts"}:
+            return self._scripts_reply()
+        if lowered in {"hierarchy", "scene hierarchy"}:
+            return self._hierarchy_reply()
+        if lowered in {"save scene", "save"}:
+            return self._save_scene_reply()
+        if "sandbox" in lowered and any(word in lowered for word in ("create", "make", "add")):
+            return self._create_sandbox_reply()
+        if "guidance" in lowered and any(word in lowered for word in ("create", "write", "bootstrap", "scaffold", "add")):
+            return self._guidance_reply()
+        if ("test scaffold" in lowered or "scaffold test" in lowered or "create tests" in lowered or "add tests" in lowered):
+            return self._test_scaffold_reply()
+        create_match = self._CREATE_PRIMITIVE_RE.search(normalized)
+        if create_match:
+            return self._create_primitive_reply(create_match.group(1), normalized)
+        return self._best_effort_agent_reply(normalized)
+
+    def _run_embedded_cli(self, argv: list[str]) -> dict[str, Any]:
+        if self.embedded_options is None:
+            raise RuntimeError("Embedded CLI options are unavailable for this chat session.")
+        from .embedded_cli import run_cli_json
+
+        return dict(run_cli_json(argv, self.embedded_options) or {})
+
+    def _set_status(self, action: str, *, current: int = 0, total: int = 1) -> None:
+        self.bridge.write_status("executing", current, total, action)
+
+    def _context_payload(self) -> dict[str, Any]:
+        self._set_status("Reading Unity project context")
+        return dict(self.bridge._context.get(force=True) or {})
+
+    def _compact_findings(self, findings: list[dict[str, Any]], *, limit: int = 3) -> list[str]:
+        lines: list[str] = []
+        for finding in findings[:limit]:
+            title = str(finding.get("title") or "Finding").strip()
+            detail = str(finding.get("detail") or "").strip()
+            lines.append(f"- {title}: {detail}" if detail else f"- {title}")
+        return lines
+
+    def _compact_recommendations(self, recommendations: list[dict[str, Any]], *, limit: int = 3) -> list[str]:
+        lines: list[str] = []
+        for item in recommendations[:limit]:
+            title = str(item.get("title") or "Recommendation").strip()
+            detail = str(item.get("detail") or "").strip()
+            lines.append(f"- {title}: {detail}" if detail else f"- {title}")
+        return lines
+
+    def _score_lines(self, lens_scores: list[dict[str, Any]], *, limit: int = 3) -> list[str]:
+        scored = [dict(item) for item in lens_scores if isinstance(item, dict)]
+        scored.sort(
+            key=lambda item: (
+                item.get("score") is None,
+                int(item.get("score") or 999),
+                str(item.get("name") or ""),
+            )
+        )
+        lines: list[str] = []
+        for item in scored[:limit]:
+            score = item.get("score")
+            grade = str(item.get("grade") or "").strip()
+            lines.append(f"- {item.get('name')}: {score} ({grade})" if score is not None else f"- {item.get('name')}: no live score")
+        return lines
+
+    def _project_name(self) -> str:
+        try:
+            context = self.bridge._context.get()
+        except Exception:
+            context = {}
+        return str(context.get("projectName") or self.bridge.project_path.name)
+
+    def _active_scene_name(self) -> str:
+        try:
+            context = self.bridge._context.get()
+        except Exception:
+            context = {}
+        scene = dict(context.get("scene") or {})
+        return str(scene.get("name") or "unknown")
+
+    def _greeting_reply(self) -> str:
+        project_name = self._project_name()
+        active_scene = self._active_scene_name()
+        return (
+            f"I’m connected to `{project_name}` and the current scene looks like `{active_scene}`.\n\n"
+            "I can inspect the project, score quality, run benchmarks, check compile errors, "
+            "show scene info or hierarchy, save the scene, create sandbox scenes, scaffold guidance/tests, "
+            "and create basic primitives directly in Unity.\n\n"
+            "Try asking:\n"
+            "- inspect project\n"
+            "- quality score\n"
+            "- benchmark\n"
+            "- compile errors\n"
+            "- create sandbox scene\n"
+            "- create guidance\n"
+            "- create cube at 0 1 0"
+        )
+
+    def _help_reply(self) -> str:
+        return self._greeting_reply()
+
+    def _context_reply(self) -> str:
+        context = self._context_payload()
+        scene = dict(context.get("scene") or {})
+        asset_counts = dict(context.get("assetCounts") or {})
+        compile_errors = list(context.get("compileErrors") or [])
+        recent_console_errors = list(context.get("recentConsoleErrors") or [])
+        lines = [
+            self.bridge._context.as_system_prompt(),
+            "",
+            f"Scene roots: {', '.join(scene.get('rootObjects') or []) or 'n/a'}",
+            (
+                "Assets: "
+                f"{asset_counts.get('scripts', 0)} scripts, "
+                f"{asset_counts.get('prefabs', 0)} prefabs, "
+                f"{asset_counts.get('materials', 0)} materials, "
+                f"{asset_counts.get('scenes', 0)} scenes"
+            ),
+        ]
+        if compile_errors:
+            lines.append(f"Compile errors: {len(compile_errors)}")
+        elif recent_console_errors:
+            lines.append("Recent console issue: " + str(recent_console_errors[0].get("message") or "")[:140])
+        else:
+            lines.append("Compiler state looks clean right now.")
+        return "\n".join(lines)
+
+    def _project_audit_reply(self) -> str:
+        if self.embedded_options is None:
+            return self._context_reply()
+        self._set_status("Running project audit")
+        quality = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
+        systems = self._run_embedded_cli(
+            ["workflow", "expert-audit", "--lens", "systems", str(self.bridge.project_path)]
+        )
+        lines = [
+            f"Overall quality: {quality.get('overallScore')}."
+        ]
+        lens_scores = list(quality.get("lensScores") or [])
+        if lens_scores:
+            lines.append("Weakest lenses:")
+            lines.extend(self._score_lines(lens_scores))
+        findings = list(systems.get("findings") or [])
+        if findings:
+            lines.append("")
+            lines.append("Top systems findings:")
+            lines.extend(self._compact_findings(findings))
+        recommendations = list(systems.get("topRecommendations") or [])
+        if recommendations:
+            lines.append("")
+            lines.append("Best next moves:")
+            lines.extend(self._compact_recommendations(recommendations))
+        return "\n".join(lines)
+
+    def _quality_score_reply(self) -> str:
+        if self.embedded_options is None:
+            return "Quality scoring needs the embedded CLI path, which is unavailable in this chat session."
+        self._set_status("Scoring project quality")
+        payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
+        lines = [f"Overall quality score: {payload.get('overallScore')}."]
+        lens_scores = list(payload.get("lensScores") or [])
+        if lens_scores:
+            lines.append("Weakest lenses:")
+            lines.extend(self._score_lines(lens_scores))
+        return "\n".join(lines)
+
+    def _benchmark_reply(self) -> str:
+        if self.embedded_options is None:
+            return "Benchmark reporting needs the embedded CLI path, which is unavailable in this chat session."
+        self._set_status("Building benchmark report")
+        payload = self._run_embedded_cli(["workflow", "benchmark-report", str(self.bridge.project_path)])
+        lines = [
+            f"Benchmark score: {payload.get('overallScore')} ({payload.get('overallGrade')}).",
+        ]
+        weakest = list(payload.get("weakestLenses") or [])
+        if weakest:
+            lines.append("Weakest lenses:")
+            lines.extend(
+                f"- {item.get('name')}: {item.get('score')} ({item.get('grade')})"
+                for item in weakest[:3]
+            )
+        queue_diagnostics = dict(payload.get("queueDiagnostics") or {})
+        if queue_diagnostics:
+            lines.append("")
+            lines.append("Queue health:")
+            lines.append(f"- {queue_diagnostics.get('summary')}")
+        queue_trend = dict(payload.get("queueTrend") or {})
+        if queue_trend:
+            lines.append(f"- Queue trend: {queue_trend.get('summary')}")
+        top_findings = list(payload.get("topFindings") or [])
+        if top_findings:
+            lines.append("")
+            lines.append("Top findings:")
+            lines.extend(self._compact_findings(top_findings))
+        return "\n".join(lines)
+
+    def _scene_critique_reply(self) -> str:
+        if self.embedded_options is None:
+            return "Scene critique needs the embedded CLI path, which is unavailable in this chat session."
+        self._set_status("Running scene critique")
+        payload = self._run_embedded_cli(["workflow", "scene-critique", str(self.bridge.project_path)])
+        lines = [
+            f"Scene critique average score: {payload.get('averageScore')}.",
+            f"Finding count: {payload.get('findingCount')}.",
+        ]
+        findings = list(payload.get("findings") or [])
+        if findings:
+            lines.append("Top critique findings:")
+            lines.extend(self._compact_findings(findings))
+        return "\n".join(lines)
+
+    def _compile_errors_reply(self) -> str:
+        self._set_status("Reading compilation errors")
+        result = dict(self.bridge.client.call_route("compilation/errors", {}))
+        if not result.get("hasErrors"):
+            return "No compilation errors found right now."
+        entries = list(result.get("entries") or [])
+        lines = [f"{result.get('count')} compilation error(s):"]
+        for entry in entries[:5]:
+            lines.append("- " + str(entry.get("message") or "").strip())
+        return "\n".join(lines)
+
+    def _scene_info_reply(self) -> str:
+        self._set_status("Reading scene info")
+        result = dict(self.bridge.client.call_route("scene/info", {}))
+        active_scene = result.get("sceneName") or result.get("name") or "unknown"
+        lines = [f"Active scene: {active_scene}."]
+        if result.get("path"):
+            lines.append(f"Path: {result.get('path')}")
+        if result.get("isDirty") is not None:
+            lines.append(f"Dirty: {result.get('isDirty')}")
+        if result.get("rootCount") is not None:
+            lines.append(f"Root objects: {result.get('rootCount')}")
+        return "\n".join(lines)
+
+    def _scripts_reply(self) -> str:
+        self._set_status("Listing scripts")
+        result = dict(self.bridge.client.call_route("script/list", {}))
+        scripts = list(result.get("scripts") or [])
+        lines = [f"{result.get('count', len(scripts))} scripts found:"]
+        for script in scripts[:12]:
+            lines.append(f"- {script.get('name')} ({script.get('path')})")
+        return "\n".join(lines)
+
+    def _hierarchy_reply(self) -> str:
+        self._set_status("Reading scene hierarchy")
+        result = dict(self.bridge.client.call_route("scene/hierarchy", {"maxNodes": 100}))
+        nodes = list(result.get("nodes") or [])
+        lines = [f"Scene: {result.get('sceneName')} ({result.get('totalTraversed')} objects)"]
+        for node in nodes[:20]:
+            components = ", ".join(node.get("components") or [])
+            lines.append(f"- {node.get('name')} [{components}]".rstrip())
+        return "\n".join(lines)
+
+    def _save_scene_reply(self) -> str:
+        self._set_status("Saving scene")
+        result = dict(self.bridge.client.call_route("scene/save", {}))
+        return f"Scene saved: {result.get('scene') or result.get('sceneName') or 'active scene'}."
+
+    def _create_sandbox_reply(self) -> str:
+        self._set_status("Creating sandbox scene")
+        result = dict(
+            self.bridge.client.call_route(
+                "scene/create-sandbox",
+                {"saveIfDirty": True, "open": False},
+            )
+        )
+        if result.get("error"):
+            return f"Could not create the sandbox scene: {result.get('error')}"
+        return (
+            f"Sandbox scene ready at {result.get('path')}.\n"
+            f"Kept open: {result.get('keptOpen')} | Restored original: {result.get('reopenedOriginal')}"
+        )
+
+    def _guidance_reply(self) -> str:
+        if self.embedded_options is None:
+            return "Guidance scaffolding needs the embedded CLI path, which is unavailable in this chat session."
+        self._set_status("Writing project guidance")
+        payload = self._run_embedded_cli(
+            [
+                "workflow",
+                "quality-fix",
+                "--lens",
+                "director",
+                "--fix",
+                "guidance",
+                "--apply",
+                str(self.bridge.project_path),
+            ]
+        )
+        apply_result = dict(payload.get("applyResult") or {})
+        result = dict(apply_result.get("result") or {})
+        write_result = dict(result.get("writeResult") or {})
+        written_paths = [str(item.get("path") or "") for item in (write_result.get("files") or []) if isinstance(item, dict)]
+        lines = [f"Guidance written: {write_result.get('writeCount', 0)} file(s)."]
+        if written_paths:
+            lines.extend(f"- {path}" for path in written_paths[:4])
+        return "\n".join(lines)
+
+    def _test_scaffold_reply(self) -> str:
+        if self.embedded_options is None:
+            return "Test scaffolding needs the embedded CLI path, which is unavailable in this chat session."
+        self._set_status("Scaffolding tests")
+        payload = self._run_embedded_cli(
+            [
+                "workflow",
+                "quality-fix",
+                "--lens",
+                "director",
+                "--fix",
+                "test-scaffold",
+                "--apply",
+                str(self.bridge.project_path),
+            ]
+        )
+        apply_result = dict(payload.get("applyResult") or {})
+        result = dict(apply_result.get("result") or {})
+        return (
+            f"EditMode test scaffold written: {result.get('writeCount', 0)} file(s).\n"
+            f"Folder: {result.get('folder') or 'Assets/Tests/EditMode'}"
+        )
+
+    def _create_primitive_reply(self, primitive_name: str, original_text: str) -> str:
+        primitive = primitive_name.capitalize()
+        params: dict[str, Any] = {"name": primitive, "primitiveType": primitive}
+        position_match = self._POSITION_RE.search(original_text)
+        if position_match:
+            params["position"] = {
+                "x": float(position_match.group(1)),
+                "y": float(position_match.group(2)),
+                "z": float(position_match.group(3)),
+            }
+        self._set_status(f"Creating {primitive}")
+        loop = AgentLoop(self.bridge.client, max_retries=1, status_path=self.bridge._status_path)
+        results = loop.execute(
+            [
+                {
+                    "step": 1,
+                    "description": f"Create {primitive}",
+                    "route": "gameobject/create",
+                    "params": params,
+                    "onError": "abort",
+                }
+            ]
+        )
+        summary = format_results(results, color=False)
+        if results and results[0].status == "ok":
+            created = dict(results[0].result or {})
+            return (
+                f"Created {primitive} `{created.get('name') or primitive}`.\n\n"
+                f"{summary}"
+            )
+        return f"Could not create {primitive}.\n\n{summary}"
+
+    def _best_effort_agent_reply(self, content: str) -> str:
+        planned = self._try_model_backed_plan(content)
+        if planned:
+            return planned
+        return (
+            "I can help with project audits, quality scoring, benchmarks, compile errors, "
+            "scene info, hierarchy, saving scenes, sandbox scenes, guidance/test scaffolding, "
+            "and basic primitive creation right now.\n\n"
+            "Try asking:\n"
+            "- inspect project\n"
+            "- benchmark\n"
+            "- compile errors\n"
+            "- create sandbox scene\n"
+            "- create guidance\n"
+            "- create cube at 0 1 0\n\n"
+            "For more open-ended build tasks, connect a model provider so I can turn the request into an agent loop plan."
+        )
+
+    def _try_model_backed_plan(self, content: str) -> str | None:
+        try:
+            from ..commands.agent_loop_cmd import _generate_plan_from_intent
+        except Exception:
+            return None
+        if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+            return None
+        self._set_status("Planning task with model")
+        steps = _generate_plan_from_intent(content, model=None)
+        if not isinstance(steps, list) or not steps:
+            return None
+        loop = AgentLoop(self.bridge.client, max_retries=1, status_path=self.bridge._status_path)
+        results = loop.execute(steps)
+        return (
+            f"I planned {len(steps)} step(s) and executed them.\n\n"
+            f"{format_results(results, color=False)}"
+        )
 
 
 # ── ChatBridge ────────────────────────────────────────────────────────────────
@@ -38,11 +490,13 @@ class ChatBridge:
         project_path: str | Path,
         file_client: FileIPCClient,
         handler: Optional[Callable[[str, "ChatBridge"], None]] = None,
+        embedded_options: "EmbeddedCLIOptions | None" = None,
         poll_interval: float = 0.25,
     ) -> None:
         self.project_path = Path(project_path)
         self.client = file_client
-        self.handler = handler or self._default_handler
+        self._assistant = _OfflineUnityAssistant(self, embedded_options=embedded_options)
+        self.handler = handler or self._assistant.handle_message
         self.poll_interval = poll_interval
 
         self._umcp = self.project_path / ".umcp"

@@ -32,13 +32,30 @@ def agent_chat_command(
     poll_interval: float,
 ) -> None:
     """Run the File IPC chat bridge for the Unity Agent tab."""
+    from ..core.embedded_cli import EmbeddedCLIOptions
+
     if project_root is not None:
         file_client = FileIPCClient(project_root)
     else:
         file_client = _resolve_file_ipc_client(ctx.obj.backend)
         project_root = Path(file_client.project_path)
 
-    bridge = ChatBridge(project_root, file_client, poll_interval=max(0.05, float(poll_interval)))
+    embedded_options = EmbeddedCLIOptions(
+        host=getattr(ctx.obj.backend.client, "host", "127.0.0.1"),
+        default_port=int(getattr(ctx.obj.backend, "default_port", 7890)),
+        registry_path=getattr(ctx.obj.backend, "registry_path", None),
+        session_path=getattr(ctx.obj.backend.session_store, "path", None),
+        port_range_start=int(getattr(ctx.obj.backend, "port_range_start", 7890)),
+        port_range_end=int(getattr(ctx.obj.backend, "port_range_end", 7899)),
+        agent_id=ctx.obj.agent_id,
+        legacy=ctx.obj.legacy_mode,
+    )
+    bridge = ChatBridge(
+        project_root,
+        file_client,
+        embedded_options=embedded_options,
+        poll_interval=max(0.05, float(poll_interval)),
+    )
 
     if once or iterations is not None:
         loops = 1 if once else max(0, int(iterations or 0))
