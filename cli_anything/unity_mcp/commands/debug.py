@@ -1267,6 +1267,10 @@ def debug_doctor_command(
                 operational_signals,
                 active_scene,
             )
+            tracking_payload["queueTrendTracking"] = mem.record_queue_snapshot(
+                queue_payload,
+                active_scene,
+            )
 
         report = build_debug_doctor_report(
             payload,

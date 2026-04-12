@@ -306,7 +306,7 @@ When the scene already has a live `Animator`, `workflow quality-fix --lens anima
 
 `workflow quality-score` scores the whole project across all built-in expert lenses and returns per-lens grades plus an overall average.
 
-`workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It also includes bounded recurring diagnostics memory for repeat compiler failures and repeat queue/bridge instability, plus a dedicated `queueDiagnostics` block for recurring queue pressure, so GitHub snapshots and local benchmark artifacts keep the long-running health signal instead of only the current pass.
+`workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It also includes bounded recurring diagnostics memory for repeat compiler failures and repeat queue/bridge instability, a dedicated `queueDiagnostics` block for recurring queue pressure, and a `queueTrend` block for longer-horizon queue history, so GitHub snapshots and local benchmark artifacts keep the long-running health signal instead of only the current pass.
 
 `workflow benchmark-compare` compares two saved benchmark-report JSON files and returns overall score delta, per-lens score deltas, new vs resolved findings, recurring-diagnostics churn, and queue-health deltas. It also emits a compact Markdown summary, and `--markdown-file` writes that summary directly for GitHub regressions, milestone writeups, or proving that a fix batch improved the benchmark instead of only generating a fresh snapshot.
 
@@ -314,7 +314,7 @@ When a CLI command fails on a Unity route, the error text now reuses the latest 
 
 When recovery polling itself times out, the backend now reports the route it was trying to recover, the selected project or port it was waiting on, and the last transport error that blocked recovery. Combined with the normal failure-hint layer, that turns a dead bridge or stale port into an actionable message instead of a bare socket exception.
 
-`debug doctor` now separates queue backlog from active worker state. `Queued Requests Pending` means work is waiting to start, while `Active Unity Agents Running` means Unity is still mutating state during inspection. It also returns a compact `queueDiagnostics` block so queue health is easier to read from benchmark artifacts, agent tooling, and issue reports.
+`debug doctor` now separates queue backlog from active worker state. `Queued Requests Pending` means work is waiting to start, while `Active Unity Agents Running` means Unity is still mutating state during inspection. It also returns a compact `queueDiagnostics` block plus a `queueTrend` block, so queue health is easier to read from benchmark artifacts, agent tooling, and issue reports.
 
 `workflow quality-fix` is intentionally a planner first. It turns a supported expert finding into the safest next CLI action instead of silently editing the project.
 

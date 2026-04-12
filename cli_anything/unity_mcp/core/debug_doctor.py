@@ -343,6 +343,7 @@ def build_debug_doctor_report(
     total_queued = int(queue.get("totalQueued") or 0)
     active_agents = int(queue.get("activeAgents") or 0)
     recurring_signals: dict[tuple[str, str], dict[str, Any]] = {}
+    queue_trend: dict[str, Any] | None = None
     if total_queued > 0:
         findings.append(
             _finding(
@@ -453,6 +454,7 @@ def build_debug_doctor_report(
             (str(issue.get("kind") or "").strip().lower(), str(issue.get("key") or "").strip()): issue
             for issue in memory.get_recurring_operational_signals(min_seen=2)
         }
+        queue_trend = memory.get_queue_trend_summary()
         if (
             (int(queue.get("totalQueued") or 0) > 0 or int(queue.get("activeAgents") or 0) > 0)
             and ("queue", "queue-contention") in recurring_signals
@@ -490,6 +492,24 @@ def build_debug_doctor_report(
                 )
             )
             add_command(f"cli-anything-unity-mcp --json debug bridge{port_suffix}")
+        queue_trend_status = str((queue_trend or {}).get("status") or "")
+        if queue_trend_status in {"persistent-backlog", "stalled-backlog-suspected"}:
+            findings.append(
+                _finding(
+                    "warning",
+                    "Queue backlog trend looks persistent",
+                    str((queue_trend or {}).get("summary") or "Queue backlog has persisted across repeated samples."),
+                    f"cli-anything-unity-mcp --json agent queue{port_suffix}",
+                    {
+                        "sampleCount": (queue_trend or {}).get("sampleCount"),
+                        "consecutiveBacklogSamples": (queue_trend or {}).get("consecutiveBacklogSamples"),
+                        "peakQueued": (queue_trend or {}).get("peakQueued"),
+                        "peakActiveAgents": (queue_trend or {}).get("peakActiveAgents"),
+                    },
+                )
+            )
+            add_command(f"cli-anything-unity-mcp --json agent queue{port_suffix}")
+            add_command(f"cli-anything-unity-mcp --json agent sessions{port_suffix}")
 
     if findings:
         severity_rank = {"info": 0, "warning": 1, "error": 2}
@@ -511,6 +531,18 @@ def build_debug_doctor_report(
     comp_entries = list(compilation.get("entries") or [])
     comp_summary_block = summarize_compilation_errors(comp_entries) if comp_entries else None
     queue_diagnostics = _build_queue_diagnostics_summary(queue, recurring_signals)
+    if queue_trend is None:
+        queue_trend = {
+            "status": "no-history",
+            "sampleCount": 0,
+            "backlogSamples": 0,
+            "activeSamples": 0,
+            "peakQueued": 0,
+            "peakActiveAgents": 0,
+            "latestTotalQueued": total_queued,
+            "latestActiveAgents": active_agents,
+            "summary": "No queue history recorded yet.",
+        }
 
     return {
         "title": "Unity Debug Doctor",
@@ -523,6 +555,7 @@ def build_debug_doctor_report(
         "findings": findings,
         "compilationSummary": comp_summary_block,
         "queueDiagnostics": queue_diagnostics,
+        "queueTrend": queue_trend,
         "recentCommands": list(recent_history or []),
         "recommendedCommands": recommended_commands,
         "snapshot": snapshot,

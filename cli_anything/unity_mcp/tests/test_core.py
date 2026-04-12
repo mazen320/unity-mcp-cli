@@ -364,6 +364,23 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_project_memory_summarizes_queue_trends(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            memory = ProjectMemory("C:/Projects/Demo", store_root=tmpdir, allow_fallback=False)
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
+            summary = memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
+
+            self.assertEqual(summary["status"], "stalled-backlog-suspected")
+            self.assertEqual(summary["sampleCount"], 3)
+            self.assertEqual(summary["consecutiveBacklogSamples"], 3)
+            self.assertEqual(summary["peakQueued"], 2)
+            self.assertEqual(summary["latestActiveAgents"], 1)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_project_memory_selection_summary_is_compact_and_public(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         tmpdir.mkdir(parents=True, exist_ok=True)
@@ -1808,6 +1825,9 @@ class CoreTests(unittest.TestCase):
                 ],
                 "MainScene",
             )
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
 
             snapshot = {
                 "summary": {"port": 7892, "consoleEntryCount": 0, "sceneDirty": False},
@@ -1833,9 +1853,12 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Recurring Compilation Errors", titles)
             self.assertIn("Recurring Queue Contention", titles)
             self.assertIn("Recurring Bridge Port Hops", titles)
+            self.assertIn("Queue backlog trend looks persistent", titles)
             self.assertEqual(report["queueDiagnostics"]["status"], "backlog-and-active")
             self.assertEqual(report["queueDiagnostics"]["recurringSignalCount"], 1)
             self.assertIn("queued work pending", report["queueDiagnostics"]["summary"])
+            self.assertEqual(report["queueTrend"]["status"], "stalled-backlog-suspected")
+            self.assertEqual(report["queueTrend"]["sampleCount"], 3)
             self.assertIn(
                 "cli-anything-unity-mcp --json debug bridge --port 7892",
                 report["recommendedCommands"],
@@ -3616,6 +3639,9 @@ class CoreTests(unittest.TestCase):
             memory.record_compilation_errors([compilation_entry], "MainScene")
             memory.record_operational_signals([queue_signal], "MainScene")
             memory.record_operational_signals([queue_signal], "MainScene")
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
+            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
             os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(memory_root)
 
             payload = run_cli_json(
@@ -3670,6 +3696,14 @@ class CoreTests(unittest.TestCase):
             self.assertIn(
                 "Queue pressure",
                 payload["queueDiagnostics"]["summary"],
+            )
+            self.assertEqual(
+                payload["queueTrend"]["status"],
+                "stalled-backlog-suspected",
+            )
+            self.assertEqual(
+                payload["queueTrend"]["sampleCount"],
+                3,
             )
         finally:
             if original_memory_dir is None:

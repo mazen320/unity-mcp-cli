@@ -40,6 +40,7 @@ As of 2026-04-12:
 - Added benchmark output via `workflow benchmark-report` so expert scoring can be saved as a stable JSON snapshot for GitHub or regression tracking.
 - `workflow benchmark-report` now also carries bounded recurring diagnostics memory so saved benchmark JSON can show recurring compiler failures and recurring queue/bridge instability, not just current lens scores.
 - `workflow benchmark-report` now also emits a dedicated `queueDiagnostics` summary so queue pressure can be tracked separately from the broader recurring-operational-signal list.
+- `workflow benchmark-report` now also emits `queueTrend`, a longer-horizon queue history summary with sample count, peak backlog, peak active agents, and consecutive backlog runs.
 - Added `workflow benchmark-compare` so two saved benchmark JSON snapshots can be diffed into score deltas, lens deltas, finding churn, and recurring-diagnostics churn without re-running Unity.
 - `workflow benchmark-compare` now also emits a compact Markdown summary and can write it to `--markdown-file` for GitHub comments, PR descriptions, or release notes.
 - `workflow benchmark-compare` now includes `queueDiagnosticsDelta`, so recurring queue-pressure regressions and fixes can be shown directly in GitHub-friendly evidence.
@@ -322,7 +323,7 @@ We should consider the tool layer "done enough" when all of these are true:
 ### P1
 
 - Better route-level timeouts and bridge recovery hints now report the route being recovered, the selected project/port, and the last blocking transport error. Queue-backed failures now also point at `agent queue` and `agent sessions`; deeper queue diagnostics still need expansion.
-- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning, and now returns a compact `queueDiagnostics` block. Next queue work should focus on stalled-queue heuristics and longer-horizon trend summaries beyond the current recurring-signal snapshot.
+- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning, returns a compact `queueDiagnostics` block, and records queue history into a `queueTrend` summary. Next queue work should focus on richer stalled-queue heuristics and benchmark comparisons that reason about queue trends, not just recurring-signal counts.
 - Expand issue-specific helper commands for common Unity failures.
 - Make tool errors more actionable by surfacing route, category, likely blocker, and suggested retry path.
 - Continue expanding `core/error_heuristics.py` with edge-case Unity failures as they appear in real projects.

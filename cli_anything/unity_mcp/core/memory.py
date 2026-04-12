@@ -666,6 +666,125 @@ class ProjectMemory:
         results.sort(key=lambda item: (-int(item.get("seenCount", 0)), item.get("kind", ""), item.get("key", "")))
         return results
 
+    def record_queue_snapshot(
+        self,
+        queue: Dict[str, Any],
+        scene_name: str,
+        *,
+        max_samples: int = 20,
+    ) -> Dict[str, Any]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_queue_samples"
+        samples = list(
+            data["entries"].get(tracker_key, {}).get("content", {}).get("value", []) or []
+        )
+        samples.append(
+            {
+                "timestamp": self._now_iso(),
+                "scene": scene_name,
+                "totalQueued": int(queue.get("totalQueued") or 0),
+                "activeAgents": int(queue.get("activeAgents") or 0),
+            }
+        )
+        if max_samples > 0 and len(samples) > max_samples:
+            samples = samples[-max_samples:]
+        self.save(CATEGORY_PATTERN, "_queue_samples", {"value": samples})
+        return self.get_queue_trend_summary()
+
+    def get_queue_trend_summary(
+        self,
+        *,
+        min_stalled_samples: int = 3,
+    ) -> Dict[str, Any]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_queue_samples"
+        samples = list(
+            data["entries"].get(tracker_key, {}).get("content", {}).get("value", []) or []
+        )
+        if not samples:
+            return {
+                "status": "no-history",
+                "sampleCount": 0,
+                "backlogSamples": 0,
+                "activeSamples": 0,
+                "peakQueued": 0,
+                "peakActiveAgents": 0,
+                "latestTotalQueued": 0,
+                "latestActiveAgents": 0,
+                "summary": "No queue history recorded yet.",
+            }
+
+        normalized_samples = [
+            {
+                "timestamp": str(sample.get("timestamp") or ""),
+                "scene": str(sample.get("scene") or ""),
+                "totalQueued": int(sample.get("totalQueued") or 0),
+                "activeAgents": int(sample.get("activeAgents") or 0),
+            }
+            for sample in samples
+            if isinstance(sample, dict)
+        ]
+        latest = normalized_samples[-1]
+        backlog_samples = [
+            sample for sample in normalized_samples if int(sample.get("totalQueued") or 0) > 0
+        ]
+        active_samples = [
+            sample for sample in normalized_samples if int(sample.get("activeAgents") or 0) > 0
+        ]
+
+        trailing_backlog_samples: list[Dict[str, Any]] = []
+        for sample in reversed(normalized_samples):
+            if int(sample.get("totalQueued") or 0) <= 0:
+                break
+            trailing_backlog_samples.append(sample)
+        trailing_backlog_samples.reverse()
+
+        is_stalled = (
+            len(trailing_backlog_samples) >= max(1, int(min_stalled_samples))
+            and len(
+                {
+                    (
+                        int(sample.get("totalQueued") or 0),
+                        int(sample.get("activeAgents") or 0),
+                    )
+                    for sample in trailing_backlog_samples
+                }
+            )
+            == 1
+        )
+
+        if is_stalled:
+            status = "stalled-backlog-suspected"
+            summary = "Queue backlog has stayed non-zero with the same shape across repeated samples."
+        elif len(trailing_backlog_samples) >= max(1, int(min_stalled_samples)):
+            status = "persistent-backlog"
+            summary = "Queue backlog has stayed non-zero across repeated samples."
+        elif backlog_samples:
+            status = "intermittent-backlog"
+            summary = "Queue backlog has appeared in recent samples, but it is not persisting every run."
+        elif active_samples:
+            status = "active-workers-observed"
+            summary = "Queue backlog is clear, but active Unity workers were seen in recent samples."
+        else:
+            status = "clear"
+            summary = "Recent queue samples stayed clear."
+
+        return {
+            "status": status,
+            "sampleCount": len(normalized_samples),
+            "backlogSamples": len(backlog_samples),
+            "activeSamples": len(active_samples),
+            "peakQueued": max(int(sample.get("totalQueued") or 0) for sample in normalized_samples),
+            "peakActiveAgents": max(int(sample.get("activeAgents") or 0) for sample in normalized_samples),
+            "latestTotalQueued": int(latest.get("totalQueued") or 0),
+            "latestActiveAgents": int(latest.get("activeAgents") or 0),
+            "latestTimestamp": str(latest.get("timestamp") or ""),
+            "latestScene": str(latest.get("scene") or ""),
+            "consecutiveBacklogSamples": len(trailing_backlog_samples),
+            "summary": summary,
+            "recentSamples": normalized_samples[-5:],
+        }
+
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 

@@ -1905,6 +1905,7 @@ def workflow_benchmark_report_command(
         recurring_compilation_errors = project_memory.get_recurring_compilation_errors()
         recurring_operational_signals = project_memory.get_recurring_operational_signals()
         queue_diagnostics = _build_queue_diagnostics_summary(recurring_operational_signals)
+        queue_trend = project_memory.get_queue_trend_summary()
 
         payload: dict[str, Any] = {
             "available": True,
@@ -1936,6 +1937,7 @@ def workflow_benchmark_report_command(
                 "recurringOperationalSignals": recurring_operational_signals[:5],
             },
             "queueDiagnostics": queue_diagnostics,
+            "queueTrend": queue_trend,
             "results": available_results,
         }
         if report_file is not None:
