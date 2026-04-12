@@ -253,6 +253,8 @@ When the scene already has a live `Animator`, `workflow quality-fix --lens anima
 
 When a CLI command fails on a Unity route, the error text now reuses the latest backend history entry to show which route failed, which derived tool it maps to, which transport/port was involved, and which debug command to try next. That keeps normal CLI failures closer to `debug doctor` quality instead of dropping users into raw bridge exception text.
 
+When recovery polling itself times out, the backend now reports the route it was trying to recover, the selected project or port it was waiting on, and the last transport error that blocked recovery. Combined with the normal failure-hint layer, that turns a dead bridge or stale port into an actionable message instead of a bare socket exception.
+
 `workflow quality-fix` is intentionally a planner first. It turns a supported expert finding into the safest next CLI action instead of silently editing the project.
 
 For the `director` lens, `workflow quality-fix --lens director --fix test-scaffold --apply` now writes a minimal EditMode smoke test plus a matching test assembly definition under `Assets/Tests/EditMode/`. It only auto-applies when `com.unity.test-framework` is already present, so it does not introduce compile errors into projects that have not installed the Unity Test Framework yet.

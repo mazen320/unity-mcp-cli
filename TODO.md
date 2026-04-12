@@ -319,7 +319,7 @@ We should consider the tool layer "done enough" when all of these are true:
 
 ### P1
 
-- Add better route-level timeouts, bridge recovery hints, and queue diagnostics.
+- Better route-level timeouts and bridge recovery hints now report the route being recovered, the selected project/port, and the last blocking transport error. Queue diagnostics still need expansion.
 - Expand issue-specific helper commands for common Unity failures.
 - Make tool errors more actionable by surfacing route, category, likely blocker, and suggested retry path.
 - Continue expanding `core/error_heuristics.py` with edge-case Unity failures as they appear in real projects.
@@ -420,7 +420,7 @@ These are the best moves right now, in order:
 - `P0` Keep bridge discovery/rebind reliable so stale selected ports do not confuse day-to-day use.
 - `P0` **Always update `CHANGELOG.md`, `TODO.md`, and `AGENTS.md` when making changes** — this is now a hard rule.
 - `P1` Add category-level live-pass presets that contributors can run without knowing the whole harness.
-- `P1` Improve error wording so route failures always mention route, tool, transport, and suggested next command.
+- `P1` Route failures now mention route, tool, transport, and suggested next command. Next improvement is better queue/timeout-specific triage beyond the current recovery message.
 - ~~`P1` Add more Unity-specific heuristics to `error_heuristics.py` (serialization, prefab, asset import).~~ **Done** — 25 CS codes, 19 Unity patterns.
 - `P2` Start separating future custom-backend work from current CLI-layer work in issues and docs.
 

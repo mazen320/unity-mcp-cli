@@ -159,6 +159,11 @@ class RebindingBackend(UnityMCPBackend):
         ]
 
 
+class NeverRecoveringBackend(UnityMCPBackend):
+    def discover_instances(self) -> list[dict]:
+        return []
+
+
 class DashboardBackendStub:
     def __init__(self) -> None:
         self.preferences = {
@@ -1290,6 +1295,47 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(result["port"], 7891)
             self.assertEqual(client.route_calls, [7890, 7891])
             self.assertEqual(store.load().selected_port, 7891)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_call_route_with_recovery_times_out_with_route_context(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            session_path = tmpdir / "session.json"
+            store = SessionStore(session_path)
+            store.update_selection(
+                {
+                    "port": 7890,
+                    "projectName": "Demo",
+                    "projectPath": "C:/Projects/Demo",
+                    "unityVersion": "6000.0.0f1",
+                    "platform": "WindowsEditor",
+                    "isClone": False,
+                    "cloneIndex": -1,
+                    "processId": 111,
+                    "source": "registry",
+                }
+            )
+
+            client = RebindingClient({})
+            backend = NeverRecoveringBackend(
+                client=client,
+                session_store=store,
+                registry_path=tmpdir / "instances.json",
+            )
+
+            with self.assertRaises(BackendSelectionError) as ctx:
+                backend.call_route_with_recovery(
+                    "editor/state",
+                    recovery_timeout=0.02,
+                    recovery_interval=0.01,
+                )
+
+            message = str(ctx.exception)
+            self.assertIn("editor/state", message)
+            self.assertIn("C:/Projects/Demo", message)
+            self.assertIn("old port is unavailable", message)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -3732,6 +3778,35 @@ class CoreTests(unittest.TestCase):
             )
             message = _format_cli_exception_message(ctx, RuntimeError("totally different failure"))
             self.assertEqual(message, "totally different failure")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_cli_exception_message_appends_route_hint_for_recovery_timeout(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            store = SessionStore(tmpdir / "session.json")
+            store.record_command(
+                "editor/state",
+                port=7890,
+                status="error",
+                error="old port is unavailable",
+                transport="queue",
+            )
+            ctx = SimpleNamespace(
+                obj=SimpleNamespace(
+                    backend=SimpleNamespace(session_store=store),
+                )
+            )
+            message = _format_cli_exception_message(
+                ctx,
+                BackendSelectionError(
+                    "Timed out recovering route editor/state for project C:/Projects/Demo "
+                    "after 0.02s. Last error: old port is unavailable"
+                ),
+            )
+            self.assertIn("Timed out recovering route editor/state", message)
+            self.assertIn("Try: cli-anything-unity-mcp --json debug doctor --port 7890", message)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
