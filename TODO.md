@@ -40,6 +40,7 @@ As of 2026-04-12:
 - Added benchmark output via `workflow benchmark-report` so expert scoring can be saved as a stable JSON snapshot for GitHub or regression tracking.
 - `workflow benchmark-report` now also carries bounded recurring diagnostics memory so saved benchmark JSON can show recurring compiler failures and recurring queue/bridge instability, not just current lens scores.
 - Added `workflow benchmark-compare` so two saved benchmark JSON snapshots can be diffed into score deltas, lens deltas, finding churn, and recurring-diagnostics churn without re-running Unity.
+- `workflow benchmark-compare` now also emits a compact Markdown summary and can write it to `--markdown-file` for GitHub comments, PR descriptions, or release notes.
 - Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
 - Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.
 - Added a `systems` developer profile so the CLI can bias toward runtime hygiene, scene architecture, and testability instead of genre-specific advice.

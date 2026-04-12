@@ -624,6 +624,51 @@ def _compare_benchmark_reports(
     }
 
 
+def _format_signed_delta(value: float | int | None) -> str:
+    if value is None:
+        return "n/a"
+    numeric = float(value)
+    if numeric > 0:
+        return f"+{numeric:.1f}" if isinstance(value, float) or numeric % 1 else f"+{int(numeric)}"
+    if numeric < 0:
+        return f"{numeric:.1f}" if isinstance(value, float) or numeric % 1 else f"{int(numeric)}"
+    return "0.0" if isinstance(value, float) else "0"
+
+
+def _render_benchmark_compare_markdown(payload: dict[str, Any]) -> str:
+    lines = [
+        "## Benchmark Comparison",
+        "",
+        f"- Before: `{payload.get('beforeLabel') or Path(str(payload.get('beforeFile') or '')).stem}`",
+        f"- After: `{payload.get('afterLabel') or Path(str(payload.get('afterFile') or '')).stem}`",
+        (
+            f"- Overall score: `{payload.get('beforeOverallScore')} -> {payload.get('afterOverallScore')}` "
+            f"(`{_format_signed_delta(payload.get('overallScoreDelta'))}`)"
+        ),
+        f"- New findings: {int((payload.get('findingDelta') or {}).get('newCount') or 0)}",
+        f"- Resolved findings: {int((payload.get('findingDelta') or {}).get('resolvedCount') or 0)}",
+        "",
+        "### Top Lens Deltas",
+    ]
+    for lens in (payload.get("lensDeltas") or [])[:3]:
+        lines.append(
+            f"- `{lens.get('name')}`: `{lens.get('beforeScore')} -> {lens.get('afterScore')}` "
+            f"(`{_format_signed_delta(lens.get('scoreDelta'))}`)"
+        )
+    diagnostics = dict(payload.get("diagnosticsDelta") or {})
+    lines.extend(
+        [
+            "",
+            "### Recurring diagnostics",
+            f"- New recurring compilation errors: {int(diagnostics.get('newRecurringCompilationErrorCount') or 0)}",
+            f"- Resolved recurring compilation errors: {int(diagnostics.get('resolvedRecurringCompilationErrorCount') or 0)}",
+            f"- New recurring operational signals: {int(diagnostics.get('newRecurringOperationalSignalCount') or 0)}",
+            f"- Resolved recurring operational signals: {int(diagnostics.get('resolvedRecurringOperationalSignalCount') or 0)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _collect_expert_audit_results(
     ctx: click.Context,
     *,
@@ -1789,12 +1834,19 @@ def workflow_benchmark_report_command(
     default=None,
     help="Optional JSON file path to write the comparison report to.",
 )
+@click.option(
+    "--markdown-file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Optional Markdown file path to write a compact GitHub-friendly summary to.",
+)
 @click.pass_context
 def workflow_benchmark_compare_command(
     ctx: click.Context,
     before_file: Path,
     after_file: Path,
     report_file: Path | None,
+    markdown_file: Path | None,
 ) -> None:
     """Compare two saved benchmark-report JSON files without talking to Unity."""
 
@@ -1809,10 +1861,15 @@ def workflow_benchmark_compare_command(
             before_file=before_file,
             after_file=after_file,
         )
+        payload["markdownSummary"] = _render_benchmark_compare_markdown(payload)
         if report_file is not None:
             report_file.parent.mkdir(parents=True, exist_ok=True)
             report_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             payload["reportFile"] = str(report_file)
+        if markdown_file is not None:
+            markdown_file.parent.mkdir(parents=True, exist_ok=True)
+            markdown_file.write_text(str(payload.get("markdownSummary") or ""), encoding="utf-8")
+            payload["markdownFile"] = str(markdown_file)
         return payload
 
     _run_and_emit(ctx, _callback)

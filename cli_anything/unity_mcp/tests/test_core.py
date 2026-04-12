@@ -3592,6 +3592,7 @@ class CoreTests(unittest.TestCase):
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         before_file = tmpdir / "before.json"
         after_file = tmpdir / "after.json"
+        markdown_file = tmpdir / "compare.md"
         try:
             tmpdir.mkdir(parents=True, exist_ok=True)
             before_payload = {
@@ -3649,6 +3650,8 @@ class CoreTests(unittest.TestCase):
                 [
                     "workflow",
                     "benchmark-compare",
+                    "--markdown-file",
+                    str(markdown_file),
                     str(before_file),
                     str(after_file),
                 ],
@@ -3668,6 +3671,11 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(payload["lensDeltas"][0]["scoreDelta"], 12)
             self.assertEqual(payload["newFindings"][0]["title"], "Importer mismatch")
             self.assertEqual(payload["resolvedFindings"][0]["title"], "No tests")
+            self.assertTrue(markdown_file.exists())
+            self.assertIn("Overall score: `78.0 -> 86.0` (`+8.0`)", payload["markdownSummary"])
+            self.assertIn("- New findings: 1", payload["markdownSummary"])
+            self.assertIn("- Resolved findings: 1", payload["markdownSummary"])
+            self.assertIn("Recurring diagnostics", markdown_file.read_text(encoding="utf-8"))
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

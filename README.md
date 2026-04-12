@@ -215,6 +215,7 @@ cli-anything-unity-mcp --json workflow quality-score C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow benchmark-report C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow benchmark-report --report-file .cli-anything-unity-mcp/benchmarks/my-project.json --port <port>
 cli-anything-unity-mcp --json workflow benchmark-compare .cli-anything-unity-mcp/benchmarks/before.json .cli-anything-unity-mcp/benchmarks/after.json
+cli-anything-unity-mcp --json workflow benchmark-compare --markdown-file .cli-anything-unity-mcp/benchmarks/compare.md .cli-anything-unity-mcp/benchmarks/before.json .cli-anything-unity-mcp/benchmarks/after.json
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance --apply C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix test-scaffold --apply C:/Projects/MyUnityGame
@@ -248,7 +249,7 @@ When the scene already has a live `Animator`, `workflow quality-fix --lens anima
 
 `workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It also includes bounded recurring diagnostics memory for repeat compiler failures and repeat queue/bridge instability, so GitHub snapshots and local benchmark artifacts keep the long-running health signal instead of only the current pass.
 
-`workflow benchmark-compare` compares two saved benchmark-report JSON files and returns overall score delta, per-lens score deltas, new vs resolved findings, and recurring-diagnostics churn. It is meant for GitHub regressions, milestone writeups, or proving that a fix batch improved the benchmark instead of only generating a fresh snapshot.
+`workflow benchmark-compare` compares two saved benchmark-report JSON files and returns overall score delta, per-lens score deltas, new vs resolved findings, and recurring-diagnostics churn. It also emits a compact Markdown summary, and `--markdown-file` writes that summary directly for GitHub regressions, milestone writeups, or proving that a fix batch improved the benchmark instead of only generating a fresh snapshot.
 
 `workflow quality-fix` is intentionally a planner first. It turns a supported expert finding into the safest next CLI action instead of silently editing the project.
 
