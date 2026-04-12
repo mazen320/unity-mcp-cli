@@ -452,6 +452,89 @@ class _OfflineUnityAssistant:
         dependencies = dict(payload.get("dependencies") or {})
         return "com.unity.test-framework" in dependencies
 
+    def _uses_input_system(self) -> bool:
+        manifest_path = self.bridge.project_path / "Packages" / "manifest.json"
+        if not manifest_path.exists():
+            return False
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        dependencies = dict(payload.get("dependencies") or {})
+        return "com.unity.inputsystem" in dependencies
+
+    def _hierarchy_nodes(self) -> list[dict[str, Any]]:
+        payload = dict(self.bridge.client.call_route("scene/hierarchy", {"maxNodes": 500}))
+        raw_nodes = payload.get("nodes") or payload.get("hierarchy") or []
+        flattened: list[dict[str, Any]] = []
+        stack = [node for node in raw_nodes if isinstance(node, dict)]
+        while stack:
+            node = stack.pop(0)
+            flattened.append(node)
+            children = node.get("children") or []
+            if isinstance(children, list):
+                stack.extend(child for child in children if isinstance(child, dict))
+        return flattened
+
+    def _event_system_target_path(self, node: dict[str, Any]) -> str:
+        return str(
+            node.get("path")
+            or node.get("hierarchyPath")
+            or node.get("gameObjectPath")
+            or node.get("name")
+            or "EventSystem"
+        ).strip()
+
+    def _repair_event_system_setup(self) -> dict[str, Any] | None:
+        nodes = self._hierarchy_nodes()
+        canvas_nodes = [
+            node for node in nodes if "Canvas" in {str(component) for component in (node.get("components") or [])}
+        ]
+        if not canvas_nodes:
+            return None
+
+        event_nodes = [
+            node for node in nodes if "EventSystem" in {str(component) for component in (node.get("components") or [])}
+        ]
+        if event_nodes:
+            return {
+                "applied": False,
+                "reason": "Scene EventSystem already exists.",
+                "moduleType": None,
+            }
+
+        named_event_node = next(
+            (node for node in nodes if str(node.get("name") or "").strip() == "EventSystem"),
+            None,
+        )
+        created = False
+        if named_event_node is not None:
+            target_path = self._event_system_target_path(named_event_node)
+        else:
+            create_result = dict(
+                self.bridge.client.call_route(
+                    "gameobject/create",
+                    {"name": "EventSystem", "primitiveType": "Empty"},
+                )
+            )
+            target_path = str(create_result.get("path") or create_result.get("name") or "EventSystem").strip()
+            created = True
+
+        module_type = "InputSystemUIInputModule" if self._uses_input_system() else "StandaloneInputModule"
+        for component_type in ("EventSystem", module_type):
+            self.bridge.client.call_route(
+                "component/add",
+                {"gameObjectPath": target_path, "componentType": component_type},
+            )
+
+        return {
+            "applied": True,
+            "gameObjectPath": target_path,
+            "moduleType": module_type,
+            "created": created,
+            "canvasCount": len(canvas_nodes),
+        }
+
     def _has_live_unity(self) -> bool:
         is_alive = getattr(self.bridge.client, "is_alive", None)
         if callable(is_alive):
@@ -484,7 +567,7 @@ class _OfflineUnityAssistant:
         skipped: list[str] = []
         baseline_score: float | None = None
         final_score: float | None = None
-        total_steps = 4 if self.embedded_options is not None else 3
+        total_steps = 5 if self.embedded_options is not None else 4
 
         if self.embedded_options is not None:
             try:
@@ -541,6 +624,28 @@ class _OfflineUnityAssistant:
                 skipped.append(f"Sandbox scene skipped: {exc}")
 
         self._set_status("Running safe project improvement pass", current=2, total=total_steps)
+        if not self._has_live_unity():
+            skipped.append("EventSystem fix skipped because no live Unity session is available.")
+        else:
+            try:
+                event_result = self._repair_event_system_setup()
+                if event_result is None:
+                    skipped.append("EventSystem fix not needed because no Canvas UI was found.")
+                elif event_result.get("applied"):
+                    applied.append(
+                        "Repaired scene EventSystem setup"
+                        + (
+                            f" with {event_result.get('moduleType')}."
+                            if event_result.get("moduleType")
+                            else "."
+                        )
+                    )
+                else:
+                    skipped.append(str(event_result.get("reason") or "Scene EventSystem already exists."))
+            except Exception as exc:
+                skipped.append(f"EventSystem fix skipped: {exc}")
+
+        self._set_status("Running safe project improvement pass", current=3, total=total_steps)
         if self._project_has_tests():
             skipped.append("Tests already exist.")
         elif not self._project_has_test_framework():
@@ -577,7 +682,7 @@ class _OfflineUnityAssistant:
             lines.extend(f"- {item}" for item in skipped)
         if self.embedded_options is not None:
             try:
-                self._set_status("Scoring project after safe improvements", current=3, total=total_steps)
+                self._set_status("Scoring project after safe improvements", current=4, total=total_steps)
                 score_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
                 score_raw = score_payload.get("overallScore")
                 final_score = float(score_raw) if score_raw is not None else None
