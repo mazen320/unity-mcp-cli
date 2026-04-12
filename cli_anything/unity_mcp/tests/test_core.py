@@ -1621,8 +1621,31 @@ class CoreTests(unittest.TestCase):
         self.assertGreaterEqual(report["summary"]["findingCount"], 4)
         self.assertEqual(report["recentCommands"][0]["command"], "workflow/inspect")
         self.assertTrue(any(item["title"] == "Missing References" for item in report["findings"]))
-        self.assertTrue(any(item["title"] == "Queue Activity Detected" for item in report["findings"]))
+        self.assertTrue(any(item["title"] == "Queued Requests Pending" for item in report["findings"]))
+        self.assertTrue(any(item["title"] == "Active Unity Agents Running" for item in report["findings"]))
         self.assertIn("cli-anything-unity-mcp --json play stop --port 7892", report["recommendedCommands"])
+        self.assertIn("cli-anything-unity-mcp --json agent queue --port 7892", report["recommendedCommands"])
+        self.assertIn("cli-anything-unity-mcp --json agent sessions --port 7892", report["recommendedCommands"])
+
+    def test_debug_doctor_distinguishes_backlog_without_active_agents(self) -> None:
+        snapshot = {
+            "summary": {"port": 7892, "consoleEntryCount": 0, "sceneDirty": False},
+            "editorState": {"isPlaying": False, "isCompiling": False},
+            "console": {"entries": []},
+            "consoleSummary": {"highestSeverity": "info"},
+            "compilation": {"count": 0, "entries": []},
+            "missingReferences": {"totalFound": 0, "results": []},
+            "queue": {"totalQueued": 3, "activeAgents": 0},
+        }
+
+        report = build_debug_doctor_report(snapshot, [], 7892)
+
+        titles = [item["title"] for item in report["findings"]]
+        self.assertIn("Queued Requests Pending", titles)
+        self.assertNotIn("Active Unity Agents Running", titles)
+        backlog = next(item for item in report["findings"] if item["title"] == "Queued Requests Pending")
+        self.assertEqual(backlog["evidence"]["totalQueued"], 3)
+        self.assertEqual(backlog["evidence"]["activeAgents"], 0)
 
     def test_debug_doctor_flags_skybox_camera_using_renderer2d(self) -> None:
         snapshot = {

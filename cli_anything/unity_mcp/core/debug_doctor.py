@@ -305,20 +305,35 @@ def build_debug_doctor_report(
         )
         add_command(f"cli-anything-unity-mcp --json scene-save{port_suffix}")
 
-    if int(queue.get("totalQueued") or 0) > 0 or int(queue.get("activeAgents") or 0) > 0:
+    total_queued = int(queue.get("totalQueued") or 0)
+    active_agents = int(queue.get("activeAgents") or 0)
+    if total_queued > 0:
         findings.append(
             _finding(
                 "warning",
-                "Queue Activity Detected",
-                "Unity still has queued or active agent work, which can delay or distort current results.",
+                "Queued Requests Pending",
+                "Unity still has queued work waiting to run, which usually means the bridge is backlogged or waiting on worker capacity.",
                 f"cli-anything-unity-mcp --json agent queue{port_suffix}",
                 {
-                    "totalQueued": int(queue.get("totalQueued") or 0),
-                    "activeAgents": int(queue.get("activeAgents") or 0),
+                    "totalQueued": total_queued,
+                    "activeAgents": active_agents,
                 },
             )
         )
         add_command(f"cli-anything-unity-mcp --json agent queue{port_suffix}")
+    if active_agents > 0:
+        findings.append(
+            _finding(
+                "warning",
+                "Active Unity Agents Running",
+                "Unity still has active agent work in flight, so scene or console state can keep changing while you inspect it.",
+                f"cli-anything-unity-mcp --json agent sessions{port_suffix}",
+                {
+                    "totalQueued": total_queued,
+                    "activeAgents": active_agents,
+                },
+            )
+        )
         add_command(f"cli-anything-unity-mcp --json agent sessions{port_suffix}")
 
     bridge_ports = _distinct_history_ports(recent_history)
@@ -420,6 +435,8 @@ def build_debug_doctor_report(
                     },
                 )
             )
+            add_command(f"cli-anything-unity-mcp --json agent queue{port_suffix}")
+            add_command(f"cli-anything-unity-mcp --json agent sessions{port_suffix}")
         if len(bridge_ports) > 1 and ("bridge", "bridge-port-hop") in recurring_signals:
             recurring_bridge = recurring_signals[("bridge", "bridge-port-hop")]
             findings.append(

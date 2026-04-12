@@ -92,6 +92,7 @@ If the user says something is broken, bugged, missing, invisible, not working, o
 5. Only then propose or apply a fix.
 6. If a recovery poll timed out, read the full CLI error first — it should now tell you which route was being recovered, which project/port was targeted, and which last transport error blocked recovery.
 7. If the failing transport is `queue`, run `agent queue` and `agent sessions` immediately after `debug doctor` so you can rule out contention before changing code.
+8. In `debug doctor`, read queue findings literally: `Queued Requests Pending` means backlog, `Active Unity Agents Running` means live worker churn. They look similar but imply different next checks.
 
 Useful commands:
 

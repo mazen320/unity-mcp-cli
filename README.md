@@ -255,6 +255,8 @@ When a CLI command fails on a Unity route, the error text now reuses the latest 
 
 When recovery polling itself times out, the backend now reports the route it was trying to recover, the selected project or port it was waiting on, and the last transport error that blocked recovery. Combined with the normal failure-hint layer, that turns a dead bridge or stale port into an actionable message instead of a bare socket exception.
 
+`debug doctor` now separates queue backlog from active worker state. `Queued Requests Pending` means work is waiting to start, while `Active Unity Agents Running` means Unity is still mutating state during inspection. That split makes queue pressure easier to read from benchmark artifacts and issue reports.
+
 `workflow quality-fix` is intentionally a planner first. It turns a supported expert finding into the safest next CLI action instead of silently editing the project.
 
 For the `director` lens, `workflow quality-fix --lens director --fix test-scaffold --apply` now writes a minimal EditMode smoke test plus a matching test assembly definition under `Assets/Tests/EditMode/`. It only auto-applies when `com.unity.test-framework` is already present, so it does not introduce compile errors into projects that have not installed the Unity Test Framework yet.

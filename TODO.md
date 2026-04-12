@@ -320,6 +320,7 @@ We should consider the tool layer "done enough" when all of these are true:
 ### P1
 
 - Better route-level timeouts and bridge recovery hints now report the route being recovered, the selected project/port, and the last blocking transport error. Queue-backed failures now also point at `agent queue` and `agent sessions`; deeper queue diagnostics still need expansion.
+- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning. Next queue work should focus on stalled-queue heuristics and history-aware queue trend summaries.
 - Expand issue-specific helper commands for common Unity failures.
 - Make tool errors more actionable by surfacing route, category, likely blocker, and suggested retry path.
 - Continue expanding `core/error_heuristics.py` with edge-case Unity failures as they appear in real projects.
