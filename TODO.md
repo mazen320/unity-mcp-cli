@@ -45,6 +45,7 @@ As of 2026-04-12:
 - `workflow benchmark-compare` now also emits a compact Markdown summary and can write it to `--markdown-file` for GitHub comments, PR descriptions, or release notes.
 - `workflow benchmark-compare` now includes `queueDiagnosticsDelta` and `queueTrendDelta`, so recurring queue-pressure regressions, stuck-backlog runs, and peak queue depth changes can be shown directly in GitHub-friendly evidence.
 - The Python `ChatBridge` now has a real offline assistant layer instead of the old placeholder command switch. The Unity Agent tab can inspect the project, score quality, run benchmarks, scaffold guidance/tests, create sandbox scenes, save scenes, read compilation state, and create basic primitives without requiring external API keys.
+- The safe `improve project` chat path now avoids false-positive test detection from parent temp-folder names and reports a before/after quality-score delta so the in-editor assistant shows measurable progress instead of only a final score.
 - CLI route failures now use recent backend history to explain which route failed, on which transport/port, and which retry/debug command to run next.
 - Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
 - Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.

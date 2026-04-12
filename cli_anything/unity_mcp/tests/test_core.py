@@ -12,7 +12,7 @@ from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from cli_anything.unity_mcp.core.agent_profiles import AgentProfileStore, derive_agent_profiles_path
-from cli_anything.unity_mcp.core.agent_chat import ChatBridge
+from cli_anything.unity_mcp.core.agent_chat import ChatBridge, _OfflineUnityAssistant
 from cli_anything.unity_mcp.core.developer_profiles import DeveloperProfileStore, derive_developer_profiles_path
 from cli_anything.unity_mcp.core.debug_dashboard import DashboardConfig, serve_debug_dashboard
 from cli_anything.unity_mcp.core.debug_doctor import build_debug_doctor_report
@@ -2692,6 +2692,69 @@ class CoreTests(unittest.TestCase):
             self.assertTrue((project / "Assets" / "MCP" / "Context" / "ProjectSummary.md").exists())
             history = json.loads((project / ".umcp" / "chat" / "history.json").read_text(encoding="utf-8"))
             self.assertIn("Guidance written", history[-1]["content"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_agent_chat_once_can_run_safe_project_improvement_pass(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        inbox_dir = project / ".umcp" / "chat" / "user-inbox"
+        inbox_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.test-framework": "1.6.0"}}),
+                encoding="utf-8",
+            )
+            (inbox_dir / "20260411T1000000000000-msg.json").write_text(
+                json.dumps({"id": "msg-1", "role": "user", "content": "improve project"}),
+                encoding="utf-8",
+            )
+
+            run_cli_json(
+                ["workflow", "agent-chat", "--once", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue((project / "AGENTS.md").exists())
+            self.assertTrue((project / "Assets" / "Tests" / "EditMode" / "DemoProjectSmokeTests.cs").exists())
+            history = json.loads((project / ".umcp" / "chat" / "history.json").read_text(encoding="utf-8"))
+            self.assertIn("Safe project improvement pass finished.", history[-1]["content"])
+            self.assertIn("Applied:", history[-1]["content"])
+            self.assertIn("Skipped:", history[-1]["content"])
+            self.assertIn("Sandbox scene skipped", history[-1]["content"])
+            self.assertIn("Quality score:", history[-1]["content"])
+            self.assertIn("->", history[-1]["content"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_assistant_test_detection_ignores_tmp_parent_folder_names(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+            assistant = _OfflineUnityAssistant(bridge)
+
+            self.assertFalse(assistant._project_has_tests())
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

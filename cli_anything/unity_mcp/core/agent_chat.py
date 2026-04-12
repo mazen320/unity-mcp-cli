@@ -74,6 +74,8 @@ class _OfflineUnityAssistant:
             return self._greeting_reply()
         if lowered in {"context", "project context", "project info", "what do you know about the project"}:
             return self._context_reply()
+        if any(phrase in lowered for phrase in ("improve project", "make the project better", "safe improvements", "fix what you can")):
+            return self._improve_project_reply()
         if any(phrase in lowered for phrase in ("inspect project", "audit project", "analyze project", "review project")):
             return self._project_audit_reply()
         if "quality score" in lowered or "project score" in lowered or "how healthy" in lowered:
@@ -405,6 +407,157 @@ class _OfflineUnityAssistant:
             f"EditMode test scaffold written: {result.get('writeCount', 0)} file(s).\n"
             f"Folder: {result.get('folder') or 'Assets/Tests/EditMode'}"
         )
+
+    def _project_has_guidance(self) -> bool:
+        return (self.bridge.project_path / "AGENTS.md").exists()
+
+    def _project_has_sandbox_scene(self) -> bool:
+        assets_root = self.bridge.project_path / "Assets"
+        if not assets_root.exists():
+            return False
+        for scene_path in assets_root.rglob("*.unity"):
+            lower_name = scene_path.name.lower()
+            if any(token in lower_name for token in ("sandbox", "playground", "prototype", "test")):
+                return True
+        return False
+
+    def _project_has_tests(self) -> bool:
+        assets_root = self.bridge.project_path / "Assets"
+        if not assets_root.exists():
+            return False
+        for path in assets_root.rglob("*.cs"):
+            if not path.is_file():
+                continue
+            try:
+                relative_parts = [part.lower() for part in path.relative_to(assets_root).parts]
+            except ValueError:
+                continue
+            parent_parts = relative_parts[:-1]
+            filename = relative_parts[-1] if relative_parts else path.name.lower()
+            if "test" in filename or any("test" in part for part in parent_parts):
+                return True
+        return False
+
+    def _project_has_test_framework(self) -> bool:
+        manifest_path = self.bridge.project_path / "Packages" / "manifest.json"
+        if not manifest_path.exists():
+            return False
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+        dependencies = dict(payload.get("dependencies") or {})
+        return "com.unity.test-framework" in dependencies
+
+    def _improve_project_reply(self) -> str:
+        applied: list[str] = []
+        skipped: list[str] = []
+        baseline_score: float | None = None
+        final_score: float | None = None
+        total_steps = 4 if self.embedded_options is not None else 3
+
+        if self.embedded_options is not None:
+            try:
+                self._set_status("Scoring project before safe improvements", current=0, total=total_steps)
+                baseline_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
+                baseline_raw = baseline_payload.get("overallScore")
+                baseline_score = float(baseline_raw) if baseline_raw is not None else None
+            except Exception:
+                baseline_score = None
+
+        self._set_status("Running safe project improvement pass", current=0, total=total_steps)
+
+        if self._project_has_guidance():
+            skipped.append("Guidance already exists.")
+        elif self.embedded_options is None:
+            skipped.append("Guidance skipped because embedded CLI workflows are unavailable.")
+        else:
+            payload = self._run_embedded_cli(
+                [
+                    "workflow",
+                    "quality-fix",
+                    "--lens",
+                    "director",
+                    "--fix",
+                    "guidance",
+                    "--apply",
+                    str(self.bridge.project_path),
+                ]
+            )
+            apply_result = dict(payload.get("applyResult") or {})
+            if apply_result.get("applied"):
+                applied.append("Wrote project guidance files.")
+            else:
+                skipped.append("Guidance fix was available but did not apply.")
+
+        self._set_status("Running safe project improvement pass", current=1, total=total_steps)
+        if self._project_has_sandbox_scene():
+            skipped.append("Sandbox scene already exists.")
+        else:
+            try:
+                result = dict(
+                    self.bridge.client.call_route(
+                        "scene/create-sandbox",
+                        {"saveIfDirty": True, "open": False},
+                    )
+                )
+                if result.get("error"):
+                    skipped.append(f"Sandbox scene skipped: {result.get('error')}")
+                else:
+                    applied.append(f"Created sandbox scene at {result.get('path')}.")
+            except Exception as exc:
+                skipped.append(f"Sandbox scene skipped: {exc}")
+
+        self._set_status("Running safe project improvement pass", current=2, total=total_steps)
+        if self._project_has_tests():
+            skipped.append("Tests already exist.")
+        elif not self._project_has_test_framework():
+            skipped.append("Test scaffold skipped because com.unity.test-framework is not installed.")
+        elif self.embedded_options is None:
+            skipped.append("Test scaffold skipped because embedded CLI workflows are unavailable.")
+        else:
+            payload = self._run_embedded_cli(
+                [
+                    "workflow",
+                    "quality-fix",
+                    "--lens",
+                    "director",
+                    "--fix",
+                    "test-scaffold",
+                    "--apply",
+                    str(self.bridge.project_path),
+                ]
+            )
+            apply_result = dict(payload.get("applyResult") or {})
+            if apply_result.get("applied"):
+                applied.append("Wrote EditMode smoke-test scaffold.")
+            else:
+                skipped.append("Test scaffold fix was available but did not apply.")
+
+        lines = ["Safe project improvement pass finished."]
+        if applied:
+            lines.append("")
+            lines.append("Applied:")
+            lines.extend(f"- {item}" for item in applied)
+        if skipped:
+            lines.append("")
+            lines.append("Skipped:")
+            lines.extend(f"- {item}" for item in skipped)
+        if self.embedded_options is not None:
+            try:
+                self._set_status("Scoring project after safe improvements", current=3, total=total_steps)
+                score_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
+                score_raw = score_payload.get("overallScore")
+                final_score = float(score_raw) if score_raw is not None else None
+                lines.append("")
+                if baseline_score is not None and final_score is not None:
+                    delta = final_score - baseline_score
+                    lines.append(f"Quality score: {baseline_score:.1f} -> {final_score:.1f} ({delta:+.1f}).")
+                elif final_score is not None:
+                    lines.append(f"Current quality score: {final_score:.1f}.")
+            except Exception:
+                pass
+        return "\n".join(lines)
 
     def _create_primitive_reply(self, primitive_name: str, original_text: str) -> str:
         primitive = primitive_name.capitalize()

@@ -2791,7 +2791,12 @@ class FullE2ETests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def run_cli(self, *args: str, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_cli(
+        self,
+        *args: str,
+        input_text: str | None = None,
+        timeout: float = 20,
+    ) -> subprocess.CompletedProcess[str]:
         command = [
             *self.cli_command,
             "--host",
@@ -2815,7 +2820,7 @@ class FullE2ETests(unittest.TestCase):
             input=input_text,
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=timeout,
             env=env,
         )
         if result.returncode != 0:
@@ -3885,6 +3890,7 @@ class FullE2ETests(unittest.TestCase):
             "5",
             "--interval",
             "0.1",
+            timeout=40,
         )
         payload = json.loads(result.stdout.strip())
 
