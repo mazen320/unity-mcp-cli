@@ -16,7 +16,7 @@ from ..core.expert_fixes import (
 from ..core.expert_lenses import grade_score, get_builtin_expert_lens, iter_builtin_expert_lenses
 from ..core.project_guidance import build_guidance_bundle, write_guidance_bundle
 from ..core.project_insights import build_asset_audit_report, build_project_insights
-from ..core.memory import memory_for_session
+from ..core.memory import ProjectMemory, memory_for_session
 from ._shared import (
     BackendSelectionError,
     UnityMCPClientError,
@@ -415,6 +415,213 @@ def _benchmark_severity_rank(severity: str | None) -> int:
     if normalized == "low":
         return 2
     return 3
+
+
+def _load_benchmark_report(report_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"Benchmark report not found: {report_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Benchmark report is not valid JSON: {report_path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Benchmark report must be a JSON object: {report_path}")
+    return payload
+
+
+def _normalize_benchmark_finding(finding: dict[str, Any]) -> tuple[tuple[str, str, str, str], dict[str, Any]]:
+    normalized = {
+        "lens": str(finding.get("lens") or "").strip(),
+        "severity": str(finding.get("severity") or "info").strip().lower(),
+        "title": str(finding.get("title") or "").strip(),
+        "detail": str(finding.get("detail") or "").strip(),
+    }
+    key = (
+        normalized["lens"],
+        normalized["severity"],
+        normalized["title"],
+        normalized["detail"],
+    )
+    return key, normalized
+
+
+def _normalize_benchmark_diagnostic_entry(
+    item: dict[str, Any],
+    *,
+    kind: str,
+) -> tuple[tuple[str, ...], dict[str, Any]]:
+    if kind == "compilation":
+        normalized = {
+            "code": str(item.get("code") or "").strip(),
+            "file": str(item.get("file") or "").strip(),
+            "message": str(item.get("message") or "").strip(),
+            "location": str(item.get("location") or "").strip(),
+        }
+        key = (
+            normalized["code"],
+            normalized["file"],
+            normalized["message"],
+            normalized["location"],
+        )
+        return key, normalized
+    normalized = {
+        "kind": str(item.get("kind") or "").strip(),
+        "key": str(item.get("key") or "").strip(),
+        "title": str(item.get("title") or "").strip(),
+        "detail": str(item.get("detail") or "").strip(),
+    }
+    key = (
+        normalized["kind"],
+        normalized["key"],
+        normalized["title"],
+        normalized["detail"],
+    )
+    return key, normalized
+
+
+def _compare_benchmark_reports(
+    before_report: dict[str, Any],
+    after_report: dict[str, Any],
+    *,
+    before_file: Path,
+    after_file: Path,
+) -> dict[str, Any]:
+    before_score = before_report.get("overallScore")
+    after_score = after_report.get("overallScore")
+    overall_delta = None
+    if before_score is not None and after_score is not None:
+        overall_delta = round(float(after_score) - float(before_score), 1)
+
+    before_lenses = {
+        str(item.get("name") or "").strip(): dict(item)
+        for item in (before_report.get("lensScores") or [])
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    }
+    after_lenses = {
+        str(item.get("name") or "").strip(): dict(item)
+        for item in (after_report.get("lensScores") or [])
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    }
+    lens_deltas: list[dict[str, Any]] = []
+    for name in sorted(set(before_lenses) | set(after_lenses)):
+        before_item = before_lenses.get(name, {})
+        after_item = after_lenses.get(name, {})
+        before_lens_score = before_item.get("score")
+        after_lens_score = after_item.get("score")
+        score_delta = None
+        if before_lens_score is not None and after_lens_score is not None:
+            score_delta = int(after_lens_score) - int(before_lens_score)
+        lens_deltas.append(
+            {
+                "name": name,
+                "beforeScore": before_lens_score,
+                "afterScore": after_lens_score,
+                "scoreDelta": score_delta,
+                "beforeGrade": before_item.get("grade"),
+                "afterGrade": after_item.get("grade"),
+                "beforeFindingCount": before_item.get("findingCount"),
+                "afterFindingCount": after_item.get("findingCount"),
+                "findingDelta": (
+                    int(after_item.get("findingCount") or 0)
+                    - int(before_item.get("findingCount") or 0)
+                ),
+            }
+        )
+    lens_deltas.sort(
+        key=lambda item: (
+            item.get("scoreDelta") is None,
+            -abs(int(item.get("scoreDelta") or 0)),
+            str(item.get("name") or ""),
+        )
+    )
+
+    before_findings = dict(
+        _normalize_benchmark_finding(item)
+        for item in (before_report.get("topFindings") or [])
+        if isinstance(item, dict)
+    )
+    after_findings = dict(
+        _normalize_benchmark_finding(item)
+        for item in (after_report.get("topFindings") or [])
+        if isinstance(item, dict)
+    )
+    new_findings = [after_findings[key] for key in after_findings.keys() - before_findings.keys()]
+    resolved_findings = [before_findings[key] for key in before_findings.keys() - after_findings.keys()]
+    unchanged_findings = [after_findings[key] for key in before_findings.keys() & after_findings.keys()]
+    for collection in (new_findings, resolved_findings, unchanged_findings):
+        collection.sort(
+            key=lambda item: (
+                _benchmark_severity_rank(item.get("severity")),
+                str(item.get("lens") or ""),
+                str(item.get("title") or ""),
+            )
+        )
+
+    before_diag = dict(before_report.get("diagnosticsMemory") or {})
+    after_diag = dict(after_report.get("diagnosticsMemory") or {})
+
+    before_compilation = dict(
+        _normalize_benchmark_diagnostic_entry(item, kind="compilation")
+        for item in (before_diag.get("recurringCompilationErrors") or [])
+        if isinstance(item, dict)
+    )
+    after_compilation = dict(
+        _normalize_benchmark_diagnostic_entry(item, kind="compilation")
+        for item in (after_diag.get("recurringCompilationErrors") or [])
+        if isinstance(item, dict)
+    )
+    before_operational = dict(
+        _normalize_benchmark_diagnostic_entry(item, kind="operational")
+        for item in (before_diag.get("recurringOperationalSignals") or [])
+        if isinstance(item, dict)
+    )
+    after_operational = dict(
+        _normalize_benchmark_diagnostic_entry(item, kind="operational")
+        for item in (after_diag.get("recurringOperationalSignals") or [])
+        if isinstance(item, dict)
+    )
+
+    new_compilation = [after_compilation[key] for key in after_compilation.keys() - before_compilation.keys()]
+    resolved_compilation = [before_compilation[key] for key in before_compilation.keys() - after_compilation.keys()]
+    new_operational = [after_operational[key] for key in after_operational.keys() - before_operational.keys()]
+    resolved_operational = [before_operational[key] for key in before_operational.keys() - after_operational.keys()]
+    for collection in (new_compilation, resolved_compilation):
+        collection.sort(key=lambda item: (str(item.get("code") or ""), str(item.get("file") or "")))
+    for collection in (new_operational, resolved_operational):
+        collection.sort(key=lambda item: (str(item.get("kind") or ""), str(item.get("key") or "")))
+
+    return {
+        "available": True,
+        "benchmarkVersion": str(after_report.get("benchmarkVersion") or before_report.get("benchmarkVersion") or ""),
+        "comparedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "beforeFile": str(before_file),
+        "afterFile": str(after_file),
+        "beforeLabel": before_report.get("label"),
+        "afterLabel": after_report.get("label"),
+        "beforeOverallScore": before_score,
+        "afterOverallScore": after_score,
+        "overallScoreDelta": overall_delta,
+        "beforeOverallGrade": before_report.get("overallGrade"),
+        "afterOverallGrade": after_report.get("overallGrade"),
+        "lensDeltas": lens_deltas,
+        "findingDelta": {
+            "newCount": len(new_findings),
+            "resolvedCount": len(resolved_findings),
+            "unchangedCount": len(unchanged_findings),
+        },
+        "newFindings": new_findings,
+        "resolvedFindings": resolved_findings,
+        "diagnosticsDelta": {
+            "newRecurringCompilationErrorCount": len(new_compilation),
+            "resolvedRecurringCompilationErrorCount": len(resolved_compilation),
+            "newRecurringOperationalSignalCount": len(new_operational),
+            "resolvedRecurringOperationalSignalCount": len(resolved_operational),
+            "newRecurringCompilationErrors": new_compilation,
+            "resolvedRecurringCompilationErrors": resolved_compilation,
+            "newRecurringOperationalSignals": new_operational,
+            "resolvedRecurringOperationalSignals": resolved_operational,
+        },
+    }
 
 
 def _collect_expert_audit_results(
@@ -1523,6 +1730,9 @@ def workflow_benchmark_report_command(
             ],
             key=lambda item: (item.get("score") is None, item.get("score") or 999, item.get("name") or ""),
         )[:3]
+        project_memory = ProjectMemory(resolved_project_root)
+        recurring_compilation_errors = project_memory.get_recurring_compilation_errors()
+        recurring_operational_signals = project_memory.get_recurring_operational_signals()
 
         payload: dict[str, Any] = {
             "available": True,
@@ -1547,6 +1757,12 @@ def workflow_benchmark_report_command(
             "severityBreakdown": severity_breakdown,
             "focusAreas": focus_areas[:5],
             "topFindings": flattened_findings[:5],
+            "diagnosticsMemory": {
+                "recurringCompilationErrorCount": len(recurring_compilation_errors),
+                "recurringOperationalSignalCount": len(recurring_operational_signals),
+                "recurringCompilationErrors": recurring_compilation_errors[:5],
+                "recurringOperationalSignals": recurring_operational_signals[:5],
+            },
             "results": available_results,
         }
         if report_file is not None:
@@ -1559,6 +1775,44 @@ def workflow_benchmark_report_command(
                 "project": project or {},
                 "editorState": editor_state or {},
             }
+        return payload
+
+    _run_and_emit(ctx, _callback)
+
+
+@workflow_group.command("benchmark-compare")
+@click.argument("before_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("after_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--report-file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Optional JSON file path to write the comparison report to.",
+)
+@click.pass_context
+def workflow_benchmark_compare_command(
+    ctx: click.Context,
+    before_file: Path,
+    after_file: Path,
+    report_file: Path | None,
+) -> None:
+    """Compare two saved benchmark-report JSON files without talking to Unity."""
+
+    ctx.meta["disable_auto_breadcrumbs"] = True
+
+    def _callback() -> dict[str, Any]:
+        before_report = _load_benchmark_report(before_file)
+        after_report = _load_benchmark_report(after_file)
+        payload = _compare_benchmark_reports(
+            before_report,
+            after_report,
+            before_file=before_file,
+            after_file=after_file,
+        )
+        if report_file is not None:
+            report_file.parent.mkdir(parents=True, exist_ok=True)
+            report_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            payload["reportFile"] = str(report_file)
         return payload
 
     _run_and_emit(ctx, _callback)

@@ -1208,6 +1208,66 @@ def debug_doctor_command(
         if selected_port is None:
             selected_port = int((payload.get("summary") or {}).get("port")) if (payload.get("summary") or {}).get("port") is not None else None
         mem = memory_for_session(ctx.obj.backend.session_store.load())
+
+        # Persist recurring diagnostics before building the report so the second
+        # doctor run surfaces recurring issues immediately instead of waiting
+        # until a third run.
+        tracking_payload: dict[str, Any] = {}
+        if mem is not None:
+            active_scene = str(
+                (payload.get("summary") or {}).get("activeScene")
+                or (payload.get("editorState") or {}).get("activeScene")
+                or "unknown"
+            )
+            compilation_entries = list(((payload.get("compilation") or {}).get("entries") or []))
+            tracking_payload["compilationTracking"] = mem.record_compilation_errors(
+                compilation_entries,
+                active_scene,
+            )
+
+            bridge_ports: list[int] = []
+            seen_bridge_ports: set[int] = set()
+            for entry in history_before[-max(0, recent_commands):]:
+                raw_port = entry.get("port")
+                try:
+                    normalized_port = int(raw_port)
+                except (TypeError, ValueError):
+                    continue
+                if normalized_port in seen_bridge_ports:
+                    continue
+                seen_bridge_ports.add(normalized_port)
+                bridge_ports.append(normalized_port)
+
+            queue_payload = dict(payload.get("queue") or {})
+            operational_signals: list[dict[str, Any]] = []
+            if int(queue_payload.get("totalQueued") or 0) > 0 or int(queue_payload.get("activeAgents") or 0) > 0:
+                operational_signals.append(
+                    {
+                        "kind": "queue",
+                        "key": "queue-contention",
+                        "title": "Queue contention",
+                        "detail": "Queue still had active work pending during debug doctor.",
+                        "evidence": {
+                            "totalQueued": int(queue_payload.get("totalQueued") or 0),
+                            "activeAgents": int(queue_payload.get("activeAgents") or 0),
+                        },
+                    }
+                )
+            if len(bridge_ports) > 1:
+                operational_signals.append(
+                    {
+                        "kind": "bridge",
+                        "key": "bridge-port-hop",
+                        "title": "Bridge port hop",
+                        "detail": "Recent CLI activity hopped across Unity bridge ports.",
+                        "evidence": {"ports": bridge_ports, "activePort": selected_port},
+                    }
+                )
+            tracking_payload["operationalSignalTracking"] = mem.record_operational_signals(
+                operational_signals,
+                active_scene,
+            )
+
         report = build_debug_doctor_report(
             payload,
             history_before[-max(0, recent_commands):] if recent_commands > 0 else [],
@@ -1224,6 +1284,8 @@ def debug_doctor_command(
             if auto_learned:
                 report["autoLearnedFixes"] = auto_learned
 
+        if tracking_payload:
+            report.update(tracking_payload)
         report["agent"] = {
             "agentId": ctx.obj.agent_id,
             "profile": _serialize_agent_profile(ctx.obj.agent_profile),

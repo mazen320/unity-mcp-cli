@@ -73,6 +73,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         self.animation_controllers = {}
         self.terrains = {}
         self.missing_references = []
+        self.compilation_entries = []
         self.texture_imports: dict[str, dict] = {}
         self._shadergraphs: dict = {}
         self._selection: list = []
@@ -2543,7 +2544,11 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                     clip[k] = payload[k]
             return {"success": True, "clipPath": clip_path}
         if route == "compilation/errors":
-            return {"count": 0, "isCompiling": False, "entries": []}
+            return {
+                "count": len(self.compilation_entries),
+                "isCompiling": False,
+                "entries": list(self.compilation_entries),
+            }
         if route == "agents/list":
             return {
                 "count": 2,
@@ -3676,6 +3681,30 @@ class FullE2ETests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["recentCommands"]), 1)
         self.assertTrue(any("play stop" in command for command in payload["recommendedCommands"]))
         self.assertIn("snapshot", payload)
+
+    def test_debug_doctor_persists_recurring_compilation_and_queue_signals(self) -> None:
+        self.server.compilation_entries = [
+            {
+                "message": (
+                    "Assets/Scripts/Player.cs(12,8): error CS0246: "
+                    "The type or namespace name 'Foo' could not be found"
+                )
+            }
+        ]
+        self.run_cli("--json", "scene-info")
+
+        first = self.run_cli("--json", "debug", "doctor", "--recent-commands", "8")
+        first_payload = json.loads(first.stdout.strip())
+        first_titles = [item["title"] for item in first_payload["findings"]]
+        self.assertNotIn("Recurring Compilation Errors", first_titles)
+        self.assertNotIn("Recurring Queue Contention", first_titles)
+
+        second = self.run_cli("--json", "debug", "doctor", "--recent-commands", "8")
+        second_payload = json.loads(second.stdout.strip())
+        second_titles = [item["title"] for item in second_payload["findings"]]
+        self.assertIn("Recurring Compilation Errors", second_titles)
+        self.assertIn("Recurring Queue Contention", second_titles)
+        self.assertTrue(any("agent queue" in command for command in second_payload["recommendedCommands"]))
 
     def test_debug_watch_samples_summary_over_time(self) -> None:
         result = self.run_cli(

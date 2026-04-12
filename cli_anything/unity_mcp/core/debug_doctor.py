@@ -36,6 +36,22 @@ def _finding(
     return payload
 
 
+def _distinct_history_ports(recent_history: List[dict[str, Any]] | None) -> list[int]:
+    ports: list[int] = []
+    seen: set[int] = set()
+    for entry in recent_history or []:
+        raw_port = entry.get("port")
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            continue
+        if port in seen:
+            continue
+        seen.add(port)
+        ports.append(port)
+    return ports
+
+
 def _check_structure_drift(
     findings: list[dict[str, Any]],
     structure: dict[str, Any],
@@ -305,6 +321,23 @@ def build_debug_doctor_report(
         add_command(f"cli-anything-unity-mcp --json agent queue{port_suffix}")
         add_command(f"cli-anything-unity-mcp --json agent sessions{port_suffix}")
 
+    bridge_ports = _distinct_history_ports(recent_history)
+    if len(bridge_ports) > 1:
+        findings.append(
+            _finding(
+                "warning",
+                "Bridge Port Hop Detected",
+                (
+                    "Recent CLI activity hopped across Unity bridge ports "
+                    + " -> ".join(str(port) for port in bridge_ports)
+                    + ". This usually means Unity rebound the bridge or the selected editor changed."
+                ),
+                f"cli-anything-unity-mcp --json debug bridge{port_suffix}",
+                {"ports": bridge_ports, "activePort": active_port},
+            )
+        )
+        add_command(f"cli-anything-unity-mcp --json debug bridge{port_suffix}")
+
     add_command(f"cli-anything-unity-mcp --json debug snapshot --console-count 100 --include-hierarchy{port_suffix}")
     add_command(f"cli-anything-unity-mcp --json debug capture --kind both{port_suffix}")
 
@@ -328,6 +361,82 @@ def build_debug_doctor_report(
         structure = memory.get_all_structure()
         if structure:
             _check_structure_drift(findings, structure, snapshot, port_suffix, add_command)
+
+        if int(compilation.get("count") or 0) > 0:
+            current_compilation = []
+            for entry in comp_entries:
+                if not isinstance(entry, dict):
+                    continue
+                parsed = memory._parse_compilation_issue(entry)
+                if parsed:
+                    current_compilation.append(
+                        (parsed.get("code", ""), parsed.get("file", ""), parsed.get("message", ""))
+                    )
+            recurring_compilation = [
+                issue
+                for issue in memory.get_recurring_compilation_errors(min_seen=2)
+                if (issue.get("code", ""), issue.get("file", ""), issue.get("message", "")) in current_compilation
+            ]
+            if recurring_compilation:
+                findings.append(
+                    _finding(
+                        "error",
+                        "Recurring Compilation Errors",
+                        "Compiler issues that have already appeared in this project are still recurring.",
+                        f"cli-anything-unity-mcp --json debug doctor --recent-commands 8{port_suffix}",
+                        {
+                            "issues": [
+                                {
+                                    "code": issue.get("code"),
+                                    "file": issue.get("file"),
+                                    "seenCount": issue.get("seenCount"),
+                                }
+                                for issue in recurring_compilation[:5]
+                            ]
+                        },
+                    )
+                )
+                add_command(f"cli-anything-unity-mcp --json debug doctor --recent-commands 8{port_suffix}")
+
+        recurring_signals = {
+            (str(issue.get("kind") or "").strip().lower(), str(issue.get("key") or "").strip()): issue
+            for issue in memory.get_recurring_operational_signals(min_seen=2)
+        }
+        if (
+            (int(queue.get("totalQueued") or 0) > 0 or int(queue.get("activeAgents") or 0) > 0)
+            and ("queue", "queue-contention") in recurring_signals
+        ):
+            recurring_queue = recurring_signals[("queue", "queue-contention")]
+            findings.append(
+                _finding(
+                    "warning",
+                    "Recurring Queue Contention",
+                    "Queue pressure keeps showing up in repeated doctor runs, which usually means overlapping agent work or long-running Unity-side tasks.",
+                    f"cli-anything-unity-mcp --json agent queue{port_suffix}",
+                    {
+                        "seenCount": recurring_queue.get("seenCount"),
+                        "firstSeen": recurring_queue.get("firstSeen"),
+                        "lastSeen": recurring_queue.get("lastSeen"),
+                    },
+                )
+            )
+        if len(bridge_ports) > 1 and ("bridge", "bridge-port-hop") in recurring_signals:
+            recurring_bridge = recurring_signals[("bridge", "bridge-port-hop")]
+            findings.append(
+                _finding(
+                    "warning",
+                    "Recurring Bridge Port Hops",
+                    "Recent command history keeps bouncing across Unity ports, so bridge discovery or editor selection is not staying stable.",
+                    f"cli-anything-unity-mcp --json debug bridge{port_suffix}",
+                    {
+                        "seenCount": recurring_bridge.get("seenCount"),
+                        "ports": bridge_ports,
+                        "firstSeen": recurring_bridge.get("firstSeen"),
+                        "lastSeen": recurring_bridge.get("lastSeen"),
+                    },
+                )
+            )
+            add_command(f"cli-anything-unity-mcp --json debug bridge{port_suffix}")
 
     if findings:
         severity_rank = {"info": 0, "warning": 1, "error": 2}

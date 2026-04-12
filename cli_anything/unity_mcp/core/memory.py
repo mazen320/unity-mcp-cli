@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -487,6 +488,182 @@ class ProjectMemory:
                     "lastSeen": info.get("last_seen", ""),
                 })
         results.sort(key=lambda r: r["seenCount"], reverse=True)
+        return results
+
+    @staticmethod
+    def _parse_compilation_issue(entry: Dict[str, Any]) -> Dict[str, Any] | None:
+        message = str(entry.get("message") or "").strip()
+        if not message:
+            return None
+
+        location_match = re.match(
+            r"^(?P<file>.+?)\((?P<line>\d+),(?P<column>\d+)\):\s*error\s+(?P<code>CS\d+):\s*(?P<detail>.+)$",
+            message,
+        )
+        if location_match:
+            file_path = location_match.group("file").strip()
+            code = location_match.group("code").strip()
+            detail = location_match.group("detail").strip()
+            return {
+                "key": f"{code}|{file_path}|{detail}",
+                "code": code,
+                "file": file_path,
+                "message": detail,
+                "location": f"{file_path} line {location_match.group('line')}",
+            }
+
+        code_match = re.search(r"\berror\s+(CS\d+):\s*(.+)$", message)
+        if code_match:
+            code = code_match.group(1).strip()
+            detail = code_match.group(2).strip()
+            return {
+                "key": f"{code}|{detail}",
+                "code": code,
+                "file": "",
+                "message": detail,
+                "location": "",
+            }
+        return None
+
+    def _record_pattern_tracker(
+        self,
+        tracker_name: str,
+        current_issues: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:{tracker_name}"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+
+        new_issues: List[Dict[str, Any]] = []
+        recurring_issues: List[Dict[str, Any]] = []
+        resolved_issues: List[Dict[str, Any]] = []
+
+        for issue_key, issue_info in current_issues.items():
+            prev = tracker.get(issue_key)
+            if prev:
+                seen_count = prev.get("seen_count", 1) + 1
+                first_seen = prev.get("first_seen", self._now_iso())
+                tracker[issue_key] = {
+                    **issue_info,
+                    "seen_count": seen_count,
+                    "first_seen": first_seen,
+                    "last_seen": self._now_iso(),
+                }
+                recurring_issues.append({**issue_info, "seenCount": seen_count, "firstSeen": first_seen})
+            else:
+                tracker[issue_key] = {
+                    **issue_info,
+                    "seen_count": 1,
+                    "first_seen": self._now_iso(),
+                    "last_seen": self._now_iso(),
+                }
+                new_issues.append(issue_info)
+
+        for issue_key, prev_info in list(tracker.items()):
+            if issue_key not in current_issues:
+                resolved_issues.append({
+                    **{
+                        key: value
+                        for key, value in prev_info.items()
+                        if key not in {"seen_count", "first_seen", "last_seen"}
+                    },
+                    "seenCount": prev_info.get("seen_count", 1),
+                    "firstSeen": prev_info.get("first_seen", ""),
+                    "lastSeen": prev_info.get("last_seen", ""),
+                })
+                del tracker[issue_key]
+
+        self.save(CATEGORY_PATTERN, tracker_name, {"value": tracker})
+        return {
+            "newIssues": new_issues,
+            "recurringIssues": recurring_issues,
+            "resolvedIssues": resolved_issues,
+            "totalTracked": len(tracker),
+        }
+
+    def record_compilation_errors(
+        self,
+        entries: List[Dict[str, Any]],
+        scene_name: str,
+    ) -> Dict[str, Any]:
+        current_issues: Dict[str, Dict[str, Any]] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            parsed = self._parse_compilation_issue(entry)
+            if not parsed:
+                continue
+            current_issues[parsed["key"]] = {
+                "code": parsed["code"],
+                "file": parsed["file"],
+                "message": parsed["message"],
+                "location": parsed["location"],
+                "scene": scene_name,
+            }
+        return self._record_pattern_tracker("_compilation_errors_tracker", current_issues)
+
+    def get_recurring_compilation_errors(self, min_seen: int = 2) -> List[Dict[str, Any]]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_compilation_errors_tracker"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+        results = []
+        for info in tracker.values():
+            if info.get("seen_count", 1) >= min_seen:
+                results.append({
+                    "code": info.get("code", ""),
+                    "file": info.get("file", ""),
+                    "message": info.get("message", ""),
+                    "location": info.get("location", ""),
+                    "scene": info.get("scene", ""),
+                    "seenCount": info.get("seen_count", 1),
+                    "firstSeen": info.get("first_seen", ""),
+                    "lastSeen": info.get("last_seen", ""),
+                })
+        results.sort(key=lambda item: (-int(item.get("seenCount", 0)), item.get("code", ""), item.get("file", "")))
+        return results
+
+    def record_operational_signals(
+        self,
+        signals: List[Dict[str, Any]],
+        scene_name: str,
+    ) -> Dict[str, Any]:
+        current_issues: Dict[str, Dict[str, Any]] = {}
+        for signal in signals:
+            if not isinstance(signal, dict):
+                continue
+            kind = str(signal.get("kind") or "").strip().lower()
+            key = str(signal.get("key") or "").strip()
+            if not kind or not key:
+                continue
+            current_issues[f"{kind}|{key}"] = {
+                "kind": kind,
+                "key": key,
+                "title": str(signal.get("title") or key).strip(),
+                "detail": str(signal.get("detail") or "").strip(),
+                "scene": scene_name,
+                "evidence": dict(signal.get("evidence") or {}),
+            }
+        return self._record_pattern_tracker("_operational_signals_tracker", current_issues)
+
+    def get_recurring_operational_signals(self, min_seen: int = 2) -> List[Dict[str, Any]]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_operational_signals_tracker"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+        results = []
+        for info in tracker.values():
+            if info.get("seen_count", 1) >= min_seen:
+                results.append({
+                    "kind": info.get("kind", ""),
+                    "key": info.get("key", ""),
+                    "title": info.get("title", ""),
+                    "detail": info.get("detail", ""),
+                    "scene": info.get("scene", ""),
+                    "evidence": info.get("evidence", {}),
+                    "seenCount": info.get("seen_count", 1),
+                    "firstSeen": info.get("first_seen", ""),
+                    "lastSeen": info.get("last_seen", ""),
+                })
+        results.sort(key=lambda item: (-int(item.get("seenCount", 0)), item.get("kind", ""), item.get("key", "")))
         return results
 
 

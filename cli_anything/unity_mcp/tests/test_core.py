@@ -303,6 +303,60 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_project_memory_tracks_recurring_and_resolved_compilation_errors(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            memory = ProjectMemory("C:/Projects/Demo", store_root=tmpdir, allow_fallback=False)
+            entry = {
+                "message": (
+                    "Assets/Scripts/Player.cs(12,8): error CS0246: "
+                    "The type or namespace name 'Foo' could not be found"
+                )
+            }
+
+            first = memory.record_compilation_errors([entry], "MainScene")
+            second = memory.record_compilation_errors([entry], "MainScene")
+            recurring = memory.get_recurring_compilation_errors()
+            resolved = memory.record_compilation_errors([], "MainScene")
+
+            self.assertEqual(len(first["newIssues"]), 1)
+            self.assertEqual(first["recurringIssues"], [])
+            self.assertEqual(second["recurringIssues"][0]["seenCount"], 2)
+            self.assertEqual(recurring[0]["code"], "CS0246")
+            self.assertEqual(recurring[0]["file"], "Assets/Scripts/Player.cs")
+            self.assertEqual(resolved["resolvedIssues"][0]["code"], "CS0246")
+            self.assertEqual(resolved["totalTracked"], 0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_project_memory_tracks_recurring_operational_signals(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            memory = ProjectMemory("C:/Projects/Demo", store_root=tmpdir, allow_fallback=False)
+            queue_signal = {
+                "kind": "queue",
+                "key": "queue-contention",
+                "title": "Queue contention",
+                "detail": "Queue still had active work pending.",
+            }
+
+            first = memory.record_operational_signals([queue_signal], "MainScene")
+            second = memory.record_operational_signals([queue_signal], "MainScene")
+            recurring = memory.get_recurring_operational_signals()
+            resolved = memory.record_operational_signals([], "MainScene")
+
+            self.assertEqual(len(first["newIssues"]), 1)
+            self.assertEqual(first["recurringIssues"], [])
+            self.assertEqual(second["recurringIssues"][0]["seenCount"], 2)
+            self.assertEqual(recurring[0]["kind"], "queue")
+            self.assertEqual(recurring[0]["key"], "queue-contention")
+            self.assertEqual(resolved["resolvedIssues"][0]["kind"], "queue")
+            self.assertEqual(resolved["totalTracked"], 0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_project_memory_selection_summary_is_compact_and_public(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         tmpdir.mkdir(parents=True, exist_ok=True)
@@ -1635,6 +1689,85 @@ class CoreTests(unittest.TestCase):
             "cli-anything-unity-mcp --json console --count 50 --type error --port 7892",
             report["recommendedCommands"],
         )
+
+    def test_debug_doctor_surfaces_recurring_compilation_queue_and_bridge_signals(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            memory = ProjectMemory("C:/Projects/Demo", store_root=tmpdir, allow_fallback=False)
+            compilation_entry = {
+                "message": (
+                    "Assets/Scripts/Player.cs(12,8): error CS0246: "
+                    "The type or namespace name 'Foo' could not be found"
+                )
+            }
+            memory.record_compilation_errors([compilation_entry], "MainScene")
+            memory.record_compilation_errors([compilation_entry], "MainScene")
+            memory.record_operational_signals(
+                [
+                    {
+                        "kind": "queue",
+                        "key": "queue-contention",
+                        "title": "Queue contention",
+                        "detail": "Queue still had active work pending.",
+                    },
+                    {
+                        "kind": "bridge",
+                        "key": "bridge-port-hop",
+                        "title": "Bridge port hop",
+                        "detail": "Recent CLI calls hopped between Unity ports.",
+                    },
+                ],
+                "MainScene",
+            )
+            memory.record_operational_signals(
+                [
+                    {
+                        "kind": "queue",
+                        "key": "queue-contention",
+                        "title": "Queue contention",
+                        "detail": "Queue still had active work pending.",
+                    },
+                    {
+                        "kind": "bridge",
+                        "key": "bridge-port-hop",
+                        "title": "Bridge port hop",
+                        "detail": "Recent CLI calls hopped between Unity ports.",
+                    },
+                ],
+                "MainScene",
+            )
+
+            snapshot = {
+                "summary": {"port": 7892, "consoleEntryCount": 0, "sceneDirty": False},
+                "editorState": {"isPlaying": False, "isCompiling": False},
+                "console": {"entries": []},
+                "consoleSummary": {"highestSeverity": "info"},
+                "compilation": {"count": 1, "entries": [compilation_entry]},
+                "missingReferences": {"totalFound": 0, "results": []},
+                "queue": {"totalQueued": 2, "activeAgents": 1},
+            }
+
+            report = build_debug_doctor_report(
+                snapshot,
+                [
+                    {"command": "scene/info", "port": 7891},
+                    {"command": "scene/info", "port": 7892},
+                ],
+                7892,
+                memory=memory,
+            )
+
+            titles = [finding["title"] for finding in report["findings"]]
+            self.assertIn("Recurring Compilation Errors", titles)
+            self.assertIn("Recurring Queue Contention", titles)
+            self.assertIn("Recurring Bridge Port Hops", titles)
+            self.assertIn(
+                "cli-anything-unity-mcp --json debug bridge --port 7892",
+                report["recommendedCommands"],
+            )
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_bridge_diagnostics_reports_selected_port_mismatch(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
@@ -3379,6 +3512,7 @@ class CoreTests(unittest.TestCase):
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"
         report_file = tmpdir / "benchmark.json"
+        original_memory_dir = os.environ.get("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR")
         try:
             (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
             (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
@@ -3390,6 +3524,25 @@ class CoreTests(unittest.TestCase):
                 "scene",
                 encoding="utf-8",
             )
+            memory_root = tmpdir / "memory"
+            memory = ProjectMemory(str(project), store_root=memory_root, allow_fallback=False)
+            compilation_entry = {
+                "message": (
+                    "Assets/Scripts/Player.cs(12,8): error CS0246: "
+                    "The type or namespace name 'Foo' could not be found"
+                )
+            }
+            queue_signal = {
+                "kind": "queue",
+                "key": "queue-contention",
+                "title": "Queue contention",
+                "detail": "Queue still had active work pending.",
+            }
+            memory.record_compilation_errors([compilation_entry], "MainScene")
+            memory.record_compilation_errors([compilation_entry], "MainScene")
+            memory.record_operational_signals([queue_signal], "MainScene")
+            memory.record_operational_signals([queue_signal], "MainScene")
+            os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(memory_root)
 
             payload = run_cli_json(
                 [
@@ -3412,6 +3565,109 @@ class CoreTests(unittest.TestCase):
             written = json.loads(report_file.read_text(encoding="utf-8"))
             self.assertEqual(written["overallScore"], payload["overallScore"])
             self.assertIn("systems", {item["name"] for item in payload["lensScores"]})
+            self.assertEqual(
+                payload["diagnosticsMemory"]["recurringCompilationErrorCount"],
+                1,
+            )
+            self.assertEqual(
+                payload["diagnosticsMemory"]["recurringOperationalSignalCount"],
+                1,
+            )
+            self.assertEqual(
+                written["diagnosticsMemory"]["recurringCompilationErrors"][0]["code"],
+                "CS0246",
+            )
+            self.assertEqual(
+                written["diagnosticsMemory"]["recurringOperationalSignals"][0]["key"],
+                "queue-contention",
+            )
+        finally:
+            if original_memory_dir is None:
+                os.environ.pop("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR", None)
+            else:
+                os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = original_memory_dir
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_benchmark_compare_summarizes_deltas_and_recurring_diagnostics(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        before_file = tmpdir / "before.json"
+        after_file = tmpdir / "after.json"
+        try:
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            before_payload = {
+                "available": True,
+                "benchmarkVersion": "unity-mastery-v1",
+                "label": "before",
+                "overallScore": 78.0,
+                "overallGrade": "strong",
+                "lensScores": [
+                    {"name": "director", "score": 80, "grade": "strong", "findingCount": 2},
+                    {"name": "systems", "score": 76, "grade": "strong", "findingCount": 1},
+                ],
+                "topFindings": [
+                    {"lens": "director", "severity": "medium", "title": "No tests", "detail": "Add tests."},
+                    {"lens": "systems", "severity": "low", "title": "No sandbox scene", "detail": "Create one."},
+                ],
+                "diagnosticsMemory": {
+                    "recurringCompilationErrorCount": 1,
+                    "recurringOperationalSignalCount": 1,
+                    "recurringCompilationErrors": [
+                        {"code": "CS0246", "file": "Assets/Scripts/Player.cs", "message": "Missing type"}
+                    ],
+                    "recurringOperationalSignals": [
+                        {"kind": "queue", "key": "queue-contention", "title": "Queue contention"}
+                    ],
+                },
+            }
+            after_payload = {
+                "available": True,
+                "benchmarkVersion": "unity-mastery-v1",
+                "label": "after",
+                "overallScore": 86.0,
+                "overallGrade": "strong",
+                "lensScores": [
+                    {"name": "director", "score": 92, "grade": "excellent", "findingCount": 1},
+                    {"name": "systems", "score": 80, "grade": "strong", "findingCount": 1},
+                ],
+                "topFindings": [
+                    {"lens": "systems", "severity": "low", "title": "No sandbox scene", "detail": "Create one."},
+                    {"lens": "tech-art", "severity": "medium", "title": "Importer mismatch", "detail": "Fix texture importers."},
+                ],
+                "diagnosticsMemory": {
+                    "recurringCompilationErrorCount": 0,
+                    "recurringOperationalSignalCount": 1,
+                    "recurringCompilationErrors": [],
+                    "recurringOperationalSignals": [
+                        {"kind": "bridge", "key": "bridge-port-hop", "title": "Bridge port hop"}
+                    ],
+                },
+            }
+            before_file.write_text(json.dumps(before_payload, indent=2), encoding="utf-8")
+            after_file.write_text(json.dumps(after_payload, indent=2), encoding="utf-8")
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "benchmark-compare",
+                    str(before_file),
+                    str(after_file),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertEqual(payload["overallScoreDelta"], 8.0)
+            self.assertEqual(payload["findingDelta"]["newCount"], 1)
+            self.assertEqual(payload["findingDelta"]["resolvedCount"], 1)
+            self.assertEqual(payload["diagnosticsDelta"]["newRecurringOperationalSignalCount"], 1)
+            self.assertEqual(payload["diagnosticsDelta"]["resolvedRecurringCompilationErrorCount"], 1)
+            self.assertEqual(payload["lensDeltas"][0]["name"], "director")
+            self.assertEqual(payload["lensDeltas"][0]["scoreDelta"], 12)
+            self.assertEqual(payload["newFindings"][0]["title"], "Importer mismatch")
+            self.assertEqual(payload["resolvedFindings"][0]["title"], "No tests")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
