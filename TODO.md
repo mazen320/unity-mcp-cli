@@ -43,7 +43,7 @@ As of 2026-04-12:
 - `workflow benchmark-report` now also emits `queueTrend`, a longer-horizon queue history summary with sample count, peak backlog, peak active agents, and consecutive backlog runs.
 - Added `workflow benchmark-compare` so two saved benchmark JSON snapshots can be diffed into score deltas, lens deltas, finding churn, and recurring-diagnostics churn without re-running Unity.
 - `workflow benchmark-compare` now also emits a compact Markdown summary and can write it to `--markdown-file` for GitHub comments, PR descriptions, or release notes.
-- `workflow benchmark-compare` now includes `queueDiagnosticsDelta`, so recurring queue-pressure regressions and fixes can be shown directly in GitHub-friendly evidence.
+- `workflow benchmark-compare` now includes `queueDiagnosticsDelta` and `queueTrendDelta`, so recurring queue-pressure regressions, stuck-backlog runs, and peak queue depth changes can be shown directly in GitHub-friendly evidence.
 - CLI route failures now use recent backend history to explain which route failed, on which transport/port, and which retry/debug command to run next.
 - Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
 - Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.
@@ -56,6 +56,9 @@ As of 2026-04-12:
 - Added workflow trace wording for the new expert commands so breadcrumbs stay readable in Unity and `debug trace`.
 
 ## Latest Standalone-First File IPC Pass
+
+- Docs/plan alignment pass: `PLAN.md` and `FILE_IPC.md` now explicitly describe the current File IPC agent-chat stack, including the Python `ChatBridge`, `AgentLoop`, Unity Agent tab, `.umcp/chat/user-inbox/`, `.umcp/chat/history.json`, `.umcp/agent-status.json`, and in-editor bridge startup flow.
+- This means future work should treat the base chat/file architecture as existing, and focus on smarter intent handling, better plan generation, and richer execution UX instead of rebuilding the transport/UI skeleton.
 
 - `FileIPCBridge.cs` now prefers the standalone handler first for the direct core route set instead of only using it as a weak last fallback.
 - `StandaloneRouteHandler.cs` now covers `context`, `search/scene-stats`, `search/missing-references`, `debug/breadcrumb`, `graphics/game-capture`, `graphics/scene-capture`, and `undo/redo` in the no-plugin path.
@@ -210,6 +213,7 @@ From this point forward, every batch of changes must update:
 - `AGENTS.md` — if new commands, patterns, or agent-facing rules were added
 
 ### What NOT to duplicate
+- Don't re-implement the File IPC chat skeleton as if it does not exist. `core/agent_chat.py`, `core/agent_loop.py`, and the Agent tab in `unity-scripts/Editor/CliAnythingWindow.cs` already cover the basic inbox/history/status loop.
 - Don't rebuild memory from scratch — `core/memory.py` already handles it
 - Don't add error code heuristics inline in doctor — use `core/error_heuristics.py`
 - Don't put new commands in the entrypoint — use the `commands/` modules
@@ -323,7 +327,7 @@ We should consider the tool layer "done enough" when all of these are true:
 ### P1
 
 - Better route-level timeouts and bridge recovery hints now report the route being recovered, the selected project/port, and the last blocking transport error. Queue-backed failures now also point at `agent queue` and `agent sessions`; deeper queue diagnostics still need expansion.
-- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning, returns a compact `queueDiagnostics` block, and records queue history into a `queueTrend` summary. Next queue work should focus on richer stalled-queue heuristics and benchmark comparisons that reason about queue trends, not just recurring-signal counts.
+- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning, returns a compact `queueDiagnostics` block, and records queue history into a `queueTrend` summary. Next queue work should focus on richer stalled-queue heuristics and benchmark comparisons that reason more deeply about queue trends, not just deltas.
 - Expand issue-specific helper commands for common Unity failures.
 - Make tool errors more actionable by surfacing route, category, likely blocker, and suggested retry path.
 - Continue expanding `core/error_heuristics.py` with edge-case Unity failures as they appear in real projects.

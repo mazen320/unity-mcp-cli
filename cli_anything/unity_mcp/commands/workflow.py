@@ -525,6 +525,21 @@ def _build_queue_diagnostics_summary(
     }
 
 
+def _default_queue_trend_summary() -> dict[str, Any]:
+    return {
+        "status": "no-history",
+        "sampleCount": 0,
+        "backlogSamples": 0,
+        "activeSamples": 0,
+        "peakQueued": 0,
+        "peakActiveAgents": 0,
+        "latestTotalQueued": 0,
+        "latestActiveAgents": 0,
+        "consecutiveBacklogSamples": 0,
+        "summary": "No queue history recorded yet.",
+    }
+
+
 def _compare_benchmark_reports(
     before_report: dict[str, Any],
     after_report: dict[str, Any],
@@ -687,6 +702,13 @@ def _compare_benchmark_reports(
     for collection in (new_queue_signals, resolved_queue_signals):
         collection.sort(key=lambda item: (str(item.get("kind") or ""), str(item.get("key") or "")))
 
+    before_queue_trend = dict(before_report.get("queueTrend") or {})
+    if not before_queue_trend:
+        before_queue_trend = _default_queue_trend_summary()
+    after_queue_trend = dict(after_report.get("queueTrend") or {})
+    if not after_queue_trend:
+        after_queue_trend = _default_queue_trend_summary()
+
     return {
         "available": True,
         "benchmarkVersion": str(after_report.get("benchmarkVersion") or before_report.get("benchmarkVersion") or ""),
@@ -732,6 +754,36 @@ def _compare_benchmark_reports(
             "newSignals": new_queue_signals,
             "resolvedSignals": resolved_queue_signals,
         },
+        "queueTrendDelta": {
+            "beforeStatus": before_queue_trend.get("status"),
+            "afterStatus": after_queue_trend.get("status"),
+            "sampleCountDelta": (
+                int(after_queue_trend.get("sampleCount") or 0)
+                - int(before_queue_trend.get("sampleCount") or 0)
+            ),
+            "backlogSampleDelta": (
+                int(after_queue_trend.get("backlogSamples") or 0)
+                - int(before_queue_trend.get("backlogSamples") or 0)
+            ),
+            "activeSampleDelta": (
+                int(after_queue_trend.get("activeSamples") or 0)
+                - int(before_queue_trend.get("activeSamples") or 0)
+            ),
+            "peakQueuedDelta": (
+                int(after_queue_trend.get("peakQueued") or 0)
+                - int(before_queue_trend.get("peakQueued") or 0)
+            ),
+            "peakActiveAgentsDelta": (
+                int(after_queue_trend.get("peakActiveAgents") or 0)
+                - int(before_queue_trend.get("peakActiveAgents") or 0)
+            ),
+            "consecutiveBacklogDelta": (
+                int(after_queue_trend.get("consecutiveBacklogSamples") or 0)
+                - int(before_queue_trend.get("consecutiveBacklogSamples") or 0)
+            ),
+            "beforeSummary": before_queue_trend.get("summary"),
+            "afterSummary": after_queue_trend.get("summary"),
+        },
     }
 
 
@@ -768,6 +820,7 @@ def _render_benchmark_compare_markdown(payload: dict[str, Any]) -> str:
         )
     diagnostics = dict(payload.get("diagnosticsDelta") or {})
     queue_diagnostics = dict(payload.get("queueDiagnosticsDelta") or {})
+    queue_trend = dict(payload.get("queueTrendDelta") or {})
     lines.extend(
         [
             "",
@@ -790,6 +843,32 @@ def _render_benchmark_compare_markdown(payload: dict[str, Any]) -> str:
             ),
             f"- New recurring queue signals: {int(queue_diagnostics.get('newCount') or 0)}",
             f"- Resolved recurring queue signals: {int(queue_diagnostics.get('resolvedCount') or 0)}",
+            "",
+            "### Queue trend",
+            (
+                f"- Trend status: `{queue_trend.get('beforeStatus')} -> "
+                f"{queue_trend.get('afterStatus')}`"
+            ),
+            (
+                f"- Sample count delta: "
+                f"`{_format_signed_delta(queue_trend.get('sampleCountDelta'))}`"
+            ),
+            (
+                f"- Backlog sample delta: "
+                f"`{_format_signed_delta(queue_trend.get('backlogSampleDelta'))}`"
+            ),
+            (
+                f"- Consecutive backlog delta: "
+                f"`{_format_signed_delta(queue_trend.get('consecutiveBacklogDelta'))}`"
+            ),
+            (
+                f"- Peak queued delta: "
+                f"`{_format_signed_delta(queue_trend.get('peakQueuedDelta'))}`"
+            ),
+            (
+                f"- Peak active agents delta: "
+                f"`{_format_signed_delta(queue_trend.get('peakActiveAgentsDelta'))}`"
+            ),
         ]
     )
     return "\n".join(lines)

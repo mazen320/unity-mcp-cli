@@ -3749,6 +3749,16 @@ class CoreTests(unittest.TestCase):
                     "keys": ["queue-contention"],
                     "summary": "Queue pressure has shown up repeatedly in this project.",
                 },
+                "queueTrend": {
+                    "status": "stalled-backlog-suspected",
+                    "sampleCount": 4,
+                    "backlogSamples": 4,
+                    "activeSamples": 4,
+                    "peakQueued": 3,
+                    "peakActiveAgents": 1,
+                    "consecutiveBacklogSamples": 4,
+                    "summary": "Queue backlog has stayed non-zero with the same shape across repeated samples.",
+                },
             }
             after_payload = {
                 "available": True,
@@ -3777,6 +3787,16 @@ class CoreTests(unittest.TestCase):
                     "recurringSignalCount": 0,
                     "keys": [],
                     "summary": "No recurring queue pressure detected.",
+                },
+                "queueTrend": {
+                    "status": "clear",
+                    "sampleCount": 4,
+                    "backlogSamples": 0,
+                    "activeSamples": 0,
+                    "peakQueued": 0,
+                    "peakActiveAgents": 0,
+                    "consecutiveBacklogSamples": 0,
+                    "summary": "Recent queue samples stayed clear.",
                 },
             }
             before_file.write_text(json.dumps(before_payload, indent=2), encoding="utf-8")
@@ -3807,6 +3827,10 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(payload["queueDiagnosticsDelta"]["afterStatus"], "clear")
             self.assertEqual(payload["queueDiagnosticsDelta"]["resolvedCount"], 1)
             self.assertEqual(payload["queueDiagnosticsDelta"]["recurringSignalDelta"], -1)
+            self.assertEqual(payload["queueTrendDelta"]["beforeStatus"], "stalled-backlog-suspected")
+            self.assertEqual(payload["queueTrendDelta"]["afterStatus"], "clear")
+            self.assertEqual(payload["queueTrendDelta"]["backlogSampleDelta"], -4)
+            self.assertEqual(payload["queueTrendDelta"]["consecutiveBacklogDelta"], -4)
             self.assertEqual(payload["lensDeltas"][0]["name"], "director")
             self.assertEqual(payload["lensDeltas"][0]["scoreDelta"], 12)
             self.assertEqual(payload["newFindings"][0]["title"], "Importer mismatch")
@@ -3816,6 +3840,7 @@ class CoreTests(unittest.TestCase):
             self.assertIn("- New findings: 1", payload["markdownSummary"])
             self.assertIn("- Resolved findings: 1", payload["markdownSummary"])
             self.assertIn("Queue health", payload["markdownSummary"])
+            self.assertIn("Queue trend", payload["markdownSummary"])
             self.assertIn("Recurring diagnostics", markdown_file.read_text(encoding="utf-8"))
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
