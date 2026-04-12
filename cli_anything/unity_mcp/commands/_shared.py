@@ -80,8 +80,15 @@ def _format_failed_route_hint(entry: dict[str, Any] | None) -> str | None:
     port = entry.get("port")
     tool_name = route_to_tool_name(route)
     port_flag = f" --port {port}" if isinstance(port, int) and port > 0 else ""
+    extra_commands: list[str] = []
     if transport == "file-ipc":
         retry_command = "cli-anything-unity-mcp --json debug bridge"
+    elif transport == "queue":
+        retry_command = f"cli-anything-unity-mcp --json debug doctor{port_flag}"
+        extra_commands = [
+            f"cli-anything-unity-mcp --json agent queue{port_flag}",
+            f"cli-anything-unity-mcp --json agent sessions{port_flag}",
+        ]
     else:
         retry_command = f"cli-anything-unity-mcp --json debug doctor{port_flag}"
     details = [f"route {route}"]
@@ -90,7 +97,10 @@ def _format_failed_route_hint(entry: dict[str, Any] | None) -> str | None:
     details.append(f"transport {transport}")
     if port is not None:
         details.append(f"port {port}")
-    return f"Last failing {'; '.join(details)}. Try: {retry_command}"
+    hint = f"Last failing {'; '.join(details)}. Try: {retry_command}"
+    if extra_commands:
+        hint += f". Then inspect: {'; '.join(extra_commands)}"
+    return hint
 
 
 def _format_cli_exception_message(ctx: click.Context, exc: Exception) -> str:

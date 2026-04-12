@@ -251,7 +251,7 @@ When the scene already has a live `Animator`, `workflow quality-fix --lens anima
 
 `workflow benchmark-compare` compares two saved benchmark-report JSON files and returns overall score delta, per-lens score deltas, new vs resolved findings, and recurring-diagnostics churn. It also emits a compact Markdown summary, and `--markdown-file` writes that summary directly for GitHub regressions, milestone writeups, or proving that a fix batch improved the benchmark instead of only generating a fresh snapshot.
 
-When a CLI command fails on a Unity route, the error text now reuses the latest backend history entry to show which route failed, which derived tool it maps to, which transport/port was involved, and which debug command to try next. That keeps normal CLI failures closer to `debug doctor` quality instead of dropping users into raw bridge exception text.
+When a CLI command fails on a Unity route, the error text now reuses the latest backend history entry to show which route failed, which derived tool it maps to, which transport/port was involved, and which debug command to try next. Queue-backed failures also point directly at `agent queue` and `agent sessions`, so contention or stuck worker state is one command away instead of hidden behind a generic bridge error.
 
 When recovery polling itself times out, the backend now reports the route it was trying to recover, the selected project or port it was waiting on, and the last transport error that blocked recovery. Combined with the normal failure-hint layer, that turns a dead bridge or stale port into an actionable message instead of a bare socket exception.
 

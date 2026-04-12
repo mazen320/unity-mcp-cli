@@ -91,6 +91,7 @@ If the user says something is broken, bugged, missing, invisible, not working, o
 4. If visuals matter, run `debug capture --kind both`.
 5. Only then propose or apply a fix.
 6. If a recovery poll timed out, read the full CLI error first — it should now tell you which route was being recovered, which project/port was targeted, and which last transport error blocked recovery.
+7. If the failing transport is `queue`, run `agent queue` and `agent sessions` immediately after `debug doctor` so you can rule out contention before changing code.
 
 Useful commands:
 

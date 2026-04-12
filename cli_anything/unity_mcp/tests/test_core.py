@@ -3742,6 +3742,8 @@ class CoreTests(unittest.TestCase):
         self.assertIn("queue", hint)
         self.assertIn("7890", hint)
         self.assertIn("debug doctor --port 7890", hint)
+        self.assertIn("agent queue --port 7890", hint)
+        self.assertIn("agent sessions --port 7890", hint)
 
     def test_failed_route_hint_handles_file_ipc_without_port(self) -> None:
         hint = _format_failed_route_hint(
