@@ -1,43 +1,96 @@
 # Unity MCP CLI
 
-`unity-mcp-cli` is a CLI-first Unity assistant for Unity projects, built to work with the AnkleBreaker Unity MCP plugin and the standalone File IPC bridge scripts in this repo.
+`unity-mcp-cli` is an open-source **CLI-first Unity agent layer** for real Unity projects.
 
-It talks directly to Unity through either the plugin's local HTTP bridge or the repo's file-based IPC bridge instead of relying on a full MCP tool-registration flow every turn. The result is a faster, easier-to-debug shell surface for Codex and other command-driven agents.
+The main bet of this repo is simple: if you want AI agents to be genuinely useful inside Unity, the control path needs to be **fast, debuggable, main-thread-safe, and easy to install**. That is why this project pushes a **File IPC-first** architecture for day-to-day agent work, while still supporting the AnkleBreaker plugin HTTP bridge when you need the broader advanced surface.
+
+Instead of forcing every turn through a heavy MCP registration loop, this repo gives agents a direct shell and workflow surface for Unity. The result is a tighter loop for Codex, Claude, scripts, and future in-editor agent UX.
+
+## Why This Matters
+
+Most Unity AI setups still feel brittle in practice:
+- too much transport overhead
+- weak debugging when Unity gets weird
+- too much dependence on one plugin/runtime path
+- not enough structure for planning, verification, and recovery
+
+This repo is trying to close that gap.
+
+The goal is not just “a CLI wrapper around Unity MCP.” The goal is a serious foundation for a **real Unity assistant** that can:
+- understand project context
+- inspect before acting
+- execute multi-step work safely
+- explain failures clearly
+- surface useful status inside and outside the editor
+
+## The Product Direction
+
+The long-term direction is:
+- **File IPC as the primary transport** for zero-config, fast, main-thread-safe Unity control
+- **CLI workflows as the main product surface** for agents and power users
+- **plugin HTTP compatibility** for deeper advanced coverage while standalone depth catches up
+- **agent-oriented UX** like project context injection, debug-first workflows, benchmarkable quality checks, and in-editor visibility
+
+If you want the shortest description, it is this:
+
+> An early open-source attempt at a File-IPC-first Unity agent layer, built to make AI agents actually usable for real Unity work.
 
 ## Pick A Bridge
 
-- Use [FILE_IPC.md](FILE_IPC.md) if you want the standalone core route path that does not require the AnkleBreaker Unity plugin.
+- Use [FILE_IPC.md](FILE_IPC.md) if you want the standalone-first path and the main direction of the project.
 - Use [PLUGIN_SETUP.md](PLUGIN_SETUP.md) if you want the full advanced AnkleBreaker plugin HTTP bridge path.
 
 | Bridge | Best for | Needs plugin | Needs ports |
 | --- | --- | --- | --- |
-| File IPC | fast local scene work, debugging, core agent loop | no | no |
-| Plugin HTTP | full advanced Unity route surface | yes | yes |
+| File IPC | fastest local agent loop, debugging, standalone-first workflows, zero-config setup | no | no |
+| Plugin HTTP | full advanced Unity route surface today | yes | yes |
 
-## Why This Exists
+## What This Repo Already Does
 
-- Lower overhead than exposing everything through a giant MCP surface
-- Better debugging for real Unity problems
-- A shell-friendly workflow for Codex, scripts, and CI
-- Direct access to Unity through either the standalone File IPC bridge or the upstream plugin HTTP bridge
-
-## What It Does
-
-- discovers running Unity editors
+- discovers running Unity editors or standalone File IPC projects
 - inspects project, scene, hierarchy, console, compilation, queue, and editor state
-- scans local project guidance, asset structure, and importer hints during `workflow inspect`, including `AGENTS.md`, `Assets/MCP/Context`, scenes, scripts, materials, models, texture/model `.meta` settings, animations, tests, and package manifest data
-- adds a dedicated `workflow asset-audit` command for focused asset-pipeline, importer, and recommendation reporting from either a live Unity selection or a direct project path
-- adds `workflow bootstrap-guidance` to preview or write `AGENTS.md` plus optional `Assets/MCP/Context/ProjectSummary.md` from the audit results
-- adds `workflow create-sandbox-scene` so the CLI can create a safe disposable scene for probes and agent passes instead of only recommending one
-- adds expert content-quality workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`
-- creates and edits scripts, scene objects, components, references, and prefabs
+- scans local project guidance, asset structure, packages, and importer hints during `workflow inspect`
+- creates and edits scripts, scene objects, components, references, materials, and prefabs
 - captures Game View and Scene View screenshots
 - explains likely Unity problems with `debug doctor`
 - shows recent CLI activity with `debug trace`
 - reads the real Unity `Editor.log`
-- reads optional Unity MCP project context without using the plugin's main-thread-unsafe direct context endpoint first
 - supports built-in developer profiles so the CLI itself can stay in `normal`, `builder`, `review`, or `caveman` mode across sessions
 - exposes an optional thin MCP adapter when a client still needs MCP transport
+
+## Why File IPC Is The Center Of Gravity
+
+File IPC is not just a fallback here. It is the path that best matches the end goal.
+
+Why it matters:
+- **no port setup**
+- **main-thread-safe execution in Unity**
+- **lower overhead for fast agent loops**
+- **less fragile during play mode, reloads, and editor weirdness**
+- **easier debugging because the transport is simple and inspectable**
+
+That makes it the best route for the future "ask the agent to build something in Unity and watch it happen" experience.
+
+## Architecture In One Glance
+
+```text
+Prompt -> agent -> cli-anything-unity-mcp -> File IPC or plugin HTTP -> Unity
+```
+
+Today:
+- **File IPC** is the preferred standalone path for fast core editor control and agent iteration
+- **plugin HTTP** is the compatibility path for broader advanced coverage
+
+## What Makes This Different
+
+This repo is trying to combine a few things that usually live in separate, weaker tools:
+- a shell-first Unity control surface
+- a standalone-first Unity bridge path
+- a debug-first workflow instead of a "hope the agent guessed right" workflow
+- project-aware inspections, audits, quality scoring, and fix planning
+- groundwork for a more visible in-editor agent experience
+
+That combination is the real product story.
 
 ## What This Repo Is
 
@@ -93,11 +146,33 @@ cli-anything-unity-mcp --json --developer-profile caveman workflow inspect --por
 
 ## Quick Start
 
+If you only try one path, try **File IPC first**.
+
 1. Open your Unity project.
 2. Choose the Unity-side bridge:
 
-- Full advanced surface: install the AnkleBreaker Unity plugin and wait for Unity to log a bridge port like `[AB-UMCP] Server started on port 7892`.
-- Core local surface: copy `FileIPCBridge.cs` and `StandaloneRouteHandler.cs` into `Assets/Editor/` and wait for `[FileIPC] Bridge initialized at .../.umcp`.
+- **Recommended:** copy `FileIPCBridge.cs` and `StandaloneRouteHandler.cs` into `Assets/Editor/` and wait for `[FileIPC] Bridge initialized at .../.umcp`
+- **Advanced compatibility path:** install the AnkleBreaker Unity plugin and wait for Unity to log a bridge port like `[AB-UMCP] Server started on port 7892`
+
+### File IPC quick start
+
+File IPC mode skips port discovery and talks through `.umcp` files in the Unity project:
+
+```powershell
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json instances
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json workflow inspect
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json debug doctor
+cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json debug capture --kind both
+```
+
+If you want a reusable standalone verification pass instead of typing commands one by one:
+
+```powershell
+python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame"
+python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame" --json
+```
+
+### Plugin HTTP quick start
 
 From this repo, the plugin HTTP path looks like:
 
@@ -113,22 +188,6 @@ cli-anything-unity-mcp --json workflow quality-score --port <port>
 cli-anything-unity-mcp --json workflow benchmark-report --port <port>
 cli-anything-unity-mcp --json debug doctor --port <port>
 cli-anything-unity-mcp --json debug capture --kind both --port <port>
-```
-
-File IPC mode skips port discovery and talks through `.umcp` files in the Unity project:
-
-```powershell
-cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json instances
-cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json state
-cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json scene-info
-cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json route --params '{"menuItem":"Window/CLI Anything"}' editor/execute-menu-item
-```
-
-If you want a reusable standalone verification pass instead of typing commands one by one:
-
-```powershell
-python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame"
-python .\scripts\run_file_ipc_smoke.py --file-ipc-path "C:/Projects/MyGame" --json
 ```
 
 `CliAnythingWindow.cs` is optional. Copy it into `Assets/Editor/` if you want a native Unity panel at `Window > CLI Anything`.
@@ -247,15 +306,15 @@ When the scene already has a live `Animator`, `workflow quality-fix --lens anima
 
 `workflow quality-score` scores the whole project across all built-in expert lenses and returns per-lens grades plus an overall average.
 
-`workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It also includes bounded recurring diagnostics memory for repeat compiler failures and repeat queue/bridge instability, so GitHub snapshots and local benchmark artifacts keep the long-running health signal instead of only the current pass.
+`workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It also includes bounded recurring diagnostics memory for repeat compiler failures and repeat queue/bridge instability, plus a dedicated `queueDiagnostics` block for recurring queue pressure, so GitHub snapshots and local benchmark artifacts keep the long-running health signal instead of only the current pass.
 
-`workflow benchmark-compare` compares two saved benchmark-report JSON files and returns overall score delta, per-lens score deltas, new vs resolved findings, and recurring-diagnostics churn. It also emits a compact Markdown summary, and `--markdown-file` writes that summary directly for GitHub regressions, milestone writeups, or proving that a fix batch improved the benchmark instead of only generating a fresh snapshot.
+`workflow benchmark-compare` compares two saved benchmark-report JSON files and returns overall score delta, per-lens score deltas, new vs resolved findings, recurring-diagnostics churn, and queue-health deltas. It also emits a compact Markdown summary, and `--markdown-file` writes that summary directly for GitHub regressions, milestone writeups, or proving that a fix batch improved the benchmark instead of only generating a fresh snapshot.
 
 When a CLI command fails on a Unity route, the error text now reuses the latest backend history entry to show which route failed, which derived tool it maps to, which transport/port was involved, and which debug command to try next. Queue-backed failures also point directly at `agent queue` and `agent sessions`, so contention or stuck worker state is one command away instead of hidden behind a generic bridge error.
 
 When recovery polling itself times out, the backend now reports the route it was trying to recover, the selected project or port it was waiting on, and the last transport error that blocked recovery. Combined with the normal failure-hint layer, that turns a dead bridge or stale port into an actionable message instead of a bare socket exception.
 
-`debug doctor` now separates queue backlog from active worker state. `Queued Requests Pending` means work is waiting to start, while `Active Unity Agents Running` means Unity is still mutating state during inspection. That split makes queue pressure easier to read from benchmark artifacts and issue reports.
+`debug doctor` now separates queue backlog from active worker state. `Queued Requests Pending` means work is waiting to start, while `Active Unity Agents Running` means Unity is still mutating state during inspection. It also returns a compact `queueDiagnostics` block so queue health is easier to read from benchmark artifacts, agent tooling, and issue reports.
 
 `workflow quality-fix` is intentionally a planner first. It turns a supported expert finding into the safest next CLI action instead of silently editing the project.
 
@@ -399,14 +458,16 @@ cli-anything-unity-mcp --json tool-coverage --summary --handoff-plan
 
 ## Product Direction
 
-The main goal is to make this the best Unity CLI assistant surface:
+The main goal is to make this the best open-source Unity agent surface for real project work:
 
 - stronger debugging than raw MCP transport
+- faster inner loops through File IPC
+- safer planning and verification before edits
 - better recovery around play mode and bridge rebinding
-- higher tool parity with the upstream ecosystem
+- higher standalone route depth over time
 - room for custom tools and eventually deeper backend independence
 
-Validation should happen through CLI diagnostics, tool audits, and temporary probes. The shipped product surface is the CLI layer itself.
+Validation should happen through CLI diagnostics, tool audits, captures, and temporary probes. The shipped product surface is the CLI layer plus the standalone-first bridge path.
 
 ## Repo Boundaries
 
