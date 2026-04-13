@@ -290,6 +290,37 @@ def build_quality_fix_plan(
             ],
         }
 
+    if normalized_fix == "disposable-cleanup":
+        return {
+            "mode": "workflow",
+            "title": "Clean disposable probe/demo objects",
+            "description": "Remove obvious probe, fixture, temp, debug, or standalone scene objects so audits and benchmarks are not polluted by tooling leftovers.",
+            "command": [
+                "workflow",
+                "quality-fix",
+                "--lens",
+                "systems",
+                "--fix",
+                "disposable-cleanup",
+                "--apply",
+            ],
+            "lens": normalized_lens,
+            "fix": normalized_fix,
+            "projectRoot": str(project_path),
+            "safe": True,
+            "requiresLiveUnity": True,
+            "targetPaths": [
+                str(path).strip()
+                for path in (((context.get("systems") or {}).get("disposableObjects")) or [])
+                if str(path).strip()
+            ][:8],
+            "nextSteps": [
+                "Run workflow expert-audit --lens systems to confirm the disposable-object finding.",
+                "Delete obvious probe/demo objects from the live scene only.",
+                "Re-run the systems audit after the scene is clean.",
+            ],
+        }
+
     if normalized_fix == "player-character-controller":
         player_candidates = _find_likely_player_paths(context)
         target_path = player_candidates[0] if len(player_candidates) == 1 else None

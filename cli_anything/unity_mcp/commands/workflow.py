@@ -1089,6 +1089,11 @@ def _rank_likely_player_node(node: dict[str, Any]) -> tuple[int, int, str]:
     return (priority, len(normalized), normalized)
 
 
+def _looks_disposable_scene_object(path: str) -> bool:
+    normalized = str(path or "").replace("\\", "/").lower()
+    return any(token in normalized for token in ("probe", "fixture", "temp", "debug", "standalone"))
+
+
 def _rank_scene_event_system_node(node: dict[str, Any]) -> tuple[int, int, str]:
     path = str(
         node.get("path")
@@ -1252,6 +1257,94 @@ def _apply_systems_audio_listener_fix(
         "updatedCount": len(removed),
         "keptPath": keep_path,
         "addedCount": 0,
+        "removedCount": len(removed),
+        "removedPaths": [item["path"] for item in removed],
+        "removed": removed,
+        "editorState": editor_state,
+    }
+
+
+def _apply_systems_disposable_cleanup_fix(
+    ctx: click.Context,
+    *,
+    workflow_port: int | None,
+    inspect_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if inspect_payload is None:
+        raise ValueError(
+            "Applying the disposable-cleanup fix needs live Unity scene context. Select a Unity editor first or pass --port."
+        )
+
+    enriched_inspect = _enrich_inspect_payload_for_lenses(
+        ctx,
+        workflow_port=workflow_port,
+        inspect_payload=inspect_payload,
+        lens_names=["systems"],
+    ) or {}
+    hierarchy = dict(enriched_inspect.get("hierarchy") or {})
+    nodes = _iter_hierarchy_nodes(_extract_hierarchy_nodes(hierarchy))
+
+    disposable_paths: list[str] = []
+    seen_paths: set[str] = set()
+    for node in nodes:
+        gameobject_path = str(
+            node.get("path")
+            or node.get("hierarchyPath")
+            or node.get("name")
+            or ""
+        ).strip()
+        if not gameobject_path or gameobject_path in seen_paths:
+            continue
+        if not _looks_disposable_scene_object(gameobject_path):
+            continue
+        seen_paths.add(gameobject_path)
+        disposable_paths.append(gameobject_path)
+
+    if not disposable_paths:
+        return {
+            "updatedCount": 0,
+            "removedCount": 0,
+            "removedPaths": [],
+            "reason": "No disposable probe or demo objects were found in the inspected scene.",
+        }
+
+    removed: list[dict[str, Any]] = []
+    for gameobject_path in disposable_paths:
+        _record_progress_step(
+            ctx,
+            f"Deleting disposable object {gameobject_path}",
+            phase="edit",
+            port=workflow_port,
+        )
+        remove_result = require_workflow_success(
+            ctx.obj.backend.call_route_with_recovery(
+                "gameobject/delete",
+                params={
+                    "gameObjectPath": gameobject_path,
+                    "path": gameobject_path,
+                },
+                port=workflow_port,
+                recovery_timeout=10.0,
+            ),
+            f"Delete disposable object {gameobject_path}",
+        )
+        removed.append(
+            {
+                "path": gameobject_path,
+                "result": remove_result,
+            }
+        )
+
+    editor_state = require_workflow_success(
+        ctx.obj.backend.call_route_with_recovery(
+            "editor/state",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        ),
+        "Read editor state after disposable cleanup",
+    )
+    return {
+        "updatedCount": len(removed),
         "removedCount": len(removed),
         "removedPaths": [item["path"] for item in removed],
         "removed": removed,
@@ -2733,6 +2826,12 @@ def workflow_quality_fix_command(
                 )
             elif normalized_fix == "audio-listener":
                 apply_payload = _apply_systems_audio_listener_fix(
+                    ctx,
+                    workflow_port=workflow_port,
+                    inspect_payload=inspect_payload,
+                )
+            elif normalized_fix == "disposable-cleanup":
+                apply_payload = _apply_systems_disposable_cleanup_fix(
                     ctx,
                     workflow_port=workflow_port,
                     inspect_payload=inspect_payload,

@@ -4399,6 +4399,11 @@ class CoreTests(unittest.TestCase):
             lens_name="systems",
             fix_name="audio-listener",
         )
+        systems_cleanup_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="systems",
+            fix_name="disposable-cleanup",
+        )
         ui_graphic_raycaster_plan = build_quality_fix_plan(
             context=context,
             lens_name="ui",
@@ -4439,6 +4444,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(systems_audio_plan["command"][0:2], ["workflow", "quality-fix"])
         self.assertEqual(systems_audio_plan["fix"], "audio-listener")
         self.assertTrue(systems_audio_plan["requiresLiveUnity"])
+        self.assertEqual(systems_cleanup_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertEqual(systems_cleanup_plan["fix"], "disposable-cleanup")
+        self.assertTrue(systems_cleanup_plan["requiresLiveUnity"])
         self.assertEqual(ui_graphic_raycaster_plan["command"][0:2], ["workflow", "quality-fix"])
         self.assertEqual(ui_graphic_raycaster_plan["fix"], "ui-graphic-raycaster")
         self.assertTrue(ui_graphic_raycaster_plan["requiresLiveUnity"])

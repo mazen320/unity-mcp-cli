@@ -4247,6 +4247,42 @@ class FullE2ETests(unittest.TestCase):
         self.assertIn("AudioListener", self.server.gameobjects["Main Camera"]["components"])
         self.assertNotIn("AudioListener", self.server.gameobjects["UICamera"]["components"])
 
+    def test_workflow_quality_fix_apply_cleans_disposable_probe_objects(self) -> None:
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "StandaloneProbe",
+            components=["Transform"],
+        )
+        self.server._register_gameobject(
+            "DebugFixture",
+            components=["Transform"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "disposable-cleanup",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 2)
+        self.assertEqual(payload["applyResult"]["result"]["removedCount"], 2)
+        self.assertIn("StandaloneProbe", payload["applyResult"]["result"]["removedPaths"])
+        self.assertIn("DebugFixture", payload["applyResult"]["result"]["removedPaths"])
+        self.assertNotIn("StandaloneProbe", self.server.gameobjects)
+        self.assertNotIn("DebugFixture", self.server.gameobjects)
+
     def test_workflow_quality_fix_apply_adds_character_controller_to_likely_player(self) -> None:
         self.server._register_gameobject(
             "Main Camera",

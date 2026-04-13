@@ -74,6 +74,7 @@ cli-anything-unity-mcp --json debug capture --kind both --port <port>
 - Prefer `workflow expert-audit --lens systems` when the user wants a broad Unity-developer read instead of genre-specific advice. That lens is for scene architecture, playability hooks, runtime hygiene, prefab coverage, and benchmark cleanliness.
 - Prefer `workflow expert-audit --lens physics` when the user specifically needs grounded feedback on colliders, rigidbodies, CharacterController ownership, or scene collision foundations.
 - Use `workflow quality-fix --lens physics --fix player-character-controller --apply` only when the live scene has one clear likely player object. The bounded fix will refuse to guess if multiple candidates exist.
+- Use `workflow quality-fix --lens systems --fix disposable-cleanup --apply` when a systems audit flags leftover probe/demo objects and you want the reusable CLI workflow, not just the assistant-side cleanup path.
 - Remember that `ui` and `level-art` need live scene data. If you only have a direct project path and no selected editor, expect those lenses to report missing live context instead of returning a confident scene score.
 - The `animation` lens can use live hierarchy data when it is available, so prefer running it against a selected editor when you want scene-side Animator wiring feedback and not just asset-pipeline feedback.
 - Use `workflow scene-critique` when you want the fast combined read from the scene-facing expert lenses without manually chaining them.

@@ -295,6 +295,8 @@ cli-anything-unity-mcp --json workflow quality-fix --lens animation --fix contro
 
 The new `systems` lens is intentionally Unity-wide, not genre-specific. It looks for scene architecture and runtime hygiene issues such as missing sandbox coverage, scene-only setup with no prefab coverage, duplicate `AudioListener` usage, UI canvases without an `EventSystem`, likely player objects with no movement foundation, collider gaps in scenes that already look interactive, and disposable probe/demo objects left in the scene.
 
+When a live scene still contains obvious tooling leftovers, `workflow quality-fix --lens systems --fix disposable-cleanup --apply` can now remove probe, fixture, temp, debug, or standalone objects through the same bounded workflow layer instead of leaving that cleanup only to the in-editor assistant.
+
 The new `physics` lens focuses on setup hygiene for colliders, rigidbodies, and controller ownership. It flags Rigidbody objects that have no collider on the same object, likely player objects that still have no clear movement body, and scenes that look playable but still have no collision foundation.
 
 When there is exactly one clear likely player object in the live scene, `workflow quality-fix --lens physics --fix player-character-controller --apply` can now add a bounded `CharacterController` through Unity instead of leaving that finding as a manual follow-up.
