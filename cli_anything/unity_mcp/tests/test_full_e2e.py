@@ -4125,6 +4125,73 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(payload["applyResult"]["result"]["moduleType"], "StandaloneInputModule")
         self.assertIn("StandaloneInputModule", self.server.gameobjects["EventSystem"]["components"])
 
+    def test_workflow_quality_fix_apply_dedupes_extra_event_system_components(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+        self.server._register_gameobject(
+            "EventSystem",
+            components=["Transform", "EventSystem", "StandaloneInputModule"],
+        )
+        self.server._register_gameobject(
+            "UIRoot/DuplicateEventSystem",
+            components=["Transform", "EventSystem", "StandaloneInputModule"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "event-system",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["duplicateRemovedCount"], 1)
+        self.assertNotIn("EventSystem", self.server.gameobjects["UIRoot/DuplicateEventSystem"]["components"])
+        self.assertNotIn(
+            "StandaloneInputModule",
+            self.server.gameobjects["UIRoot/DuplicateEventSystem"]["components"],
+        )
+
+    def test_workflow_quality_fix_apply_normalizes_primary_event_system_module(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+        self.server._register_gameobject(
+            "EventSystem",
+            components=["Transform", "EventSystem", "StandaloneInputModule", "InputSystemUIInputModule"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "event-system",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["moduleType"], "StandaloneInputModule")
+        self.assertIn("StandaloneInputModule", self.server.gameobjects["EventSystem"]["components"])
+        self.assertNotIn("InputSystemUIInputModule", self.server.gameobjects["EventSystem"]["components"])
+
     def test_workflow_quality_fix_apply_repairs_audio_listener_setup(self) -> None:
         self.server._register_gameobject(
             "Main Camera",

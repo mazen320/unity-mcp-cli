@@ -1072,6 +1072,20 @@ def _rank_scene_camera_node(node: dict[str, Any]) -> tuple[int, int, str]:
     return (priority, len(normalized), normalized)
 
 
+def _rank_scene_event_system_node(node: dict[str, Any]) -> tuple[int, int, str]:
+    path = str(
+        node.get("path")
+        or node.get("hierarchyPath")
+        or node.get("name")
+        or ""
+    ).strip()
+    normalized = path.lower()
+    priority = 1
+    if normalized == "eventsystem" or normalized.endswith("/eventsystem"):
+        priority = 0
+    return (priority, len(normalized), normalized)
+
+
 def _apply_systems_audio_listener_fix(
     ctx: click.Context,
     *,
@@ -1269,15 +1283,105 @@ def _apply_systems_event_system_fix(
         ),
         None,
     )
-    if existing_event_system is not None:
+    event_system_nodes = [
+        node for node in nodes if "EventSystem" in set(node.get("components") or [])
+    ]
+    if existing_event_system is not None and event_system_nodes:
+        keep_node = sorted(event_system_nodes, key=_rank_scene_event_system_node)[0]
         gameobject_path = str(
-            existing_event_system.get("path")
-            or existing_event_system.get("hierarchyPath")
-            or existing_event_system.get("name")
+            keep_node.get("path")
+            or keep_node.get("hierarchyPath")
+            or keep_node.get("name")
             or ""
         ).strip()
-        existing_components = set(existing_event_system.get("components") or [])
-        if module_type in existing_components:
+        existing_components = set(keep_node.get("components") or [])
+        component_results: list[dict[str, Any]] = []
+        removable_modules = {"StandaloneInputModule", "InputSystemUIInputModule"}
+        primary_removed_components: list[str] = []
+        for component_type in sorted((removable_modules - {module_type}) & existing_components):
+            _record_progress_step(
+                ctx,
+                f"Removing {component_type} from {gameobject_path}",
+                phase="edit",
+                port=workflow_port,
+            )
+            component_results.append(
+                require_workflow_success(
+                    ctx.obj.backend.call_route_with_recovery(
+                        "component/remove",
+                        params={
+                            "gameObjectPath": gameobject_path,
+                            "component": component_type,
+                        },
+                        port=workflow_port,
+                        recovery_timeout=10.0,
+                    ),
+                    f"Remove {component_type} from {gameobject_path}",
+                )
+            )
+            primary_removed_components.append(component_type)
+
+        if module_type not in existing_components:
+            _record_progress_step(
+                ctx,
+                f"Adding {module_type} to {gameobject_path}",
+                phase="edit",
+                port=workflow_port,
+            )
+            component_results.append(
+                require_workflow_success(
+                    ctx.obj.backend.call_route_with_recovery(
+                        "component/add",
+                        params={
+                            "gameObjectPath": gameobject_path,
+                            "componentType": module_type,
+                        },
+                        port=workflow_port,
+                        recovery_timeout=10.0,
+                    ),
+                    f"Add {module_type} to {gameobject_path}",
+                )
+            )
+
+        duplicate_paths: list[str] = []
+        for node in event_system_nodes:
+            target_path = str(
+                node.get("path")
+                or node.get("hierarchyPath")
+                or node.get("name")
+                or ""
+            ).strip()
+            if not target_path or target_path == gameobject_path:
+                continue
+            target_components = set(node.get("components") or [])
+            removed_any = False
+            for component_type in sorted({"EventSystem", *removable_modules} & target_components):
+                _record_progress_step(
+                    ctx,
+                    f"Removing {component_type} from {target_path}",
+                    phase="edit",
+                    port=workflow_port,
+                )
+                component_results.append(
+                    require_workflow_success(
+                        ctx.obj.backend.call_route_with_recovery(
+                            "component/remove",
+                            params={
+                                "gameObjectPath": target_path,
+                                "component": component_type,
+                            },
+                            port=workflow_port,
+                            recovery_timeout=10.0,
+                        ),
+                        f"Remove {component_type} from {target_path}",
+                    )
+                )
+                removed_any = True
+            if removed_any:
+                duplicate_paths.append(target_path)
+
+        updated_count = len(duplicate_paths) + (1 if (primary_removed_components or module_type not in existing_components) else 0)
+        if updated_count == 0:
             return {
                 "updatedCount": 0,
                 "createdObject": False,
@@ -1286,24 +1390,6 @@ def _apply_systems_event_system_fix(
                 "reason": "An EventSystem component already exists in the inspected scene.",
             }
 
-        _record_progress_step(
-            ctx,
-            f"Adding {module_type} to {gameobject_path}",
-            phase="edit",
-            port=workflow_port,
-        )
-        add_result = require_workflow_success(
-            ctx.obj.backend.call_route_with_recovery(
-                "component/add",
-                params={
-                    "gameObjectPath": gameobject_path,
-                    "componentType": module_type,
-                },
-                port=workflow_port,
-                recovery_timeout=10.0,
-            ),
-            f"Add {module_type} to {gameobject_path}",
-        )
         editor_state = require_workflow_success(
             ctx.obj.backend.call_route_with_recovery(
                 "editor/state",
@@ -1312,13 +1398,17 @@ def _apply_systems_event_system_fix(
             ),
             "Read editor state after systems fix",
         )
+        components_added = [module_type] if module_type not in existing_components else []
         return {
-            "updatedCount": 1,
+            "updatedCount": updated_count,
             "createdObject": False,
             "gameObjectPath": gameobject_path or None,
             "moduleType": module_type,
-            "componentsAdded": [module_type],
-            "componentResults": [add_result],
+            "componentsAdded": components_added,
+            "componentResults": component_results,
+            "duplicateRemovedCount": len(duplicate_paths),
+            "duplicatePaths": duplicate_paths,
+            "primaryRemovedComponents": primary_removed_components,
             "editorState": editor_state,
         }
 
