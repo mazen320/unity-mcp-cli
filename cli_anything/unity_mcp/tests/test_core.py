@@ -4843,6 +4843,47 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_workflow_improve_project_writes_markdown_report(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        report_path = tmpdir / "improve-project.md"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.test-framework": "1.6.0"}}),
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "improve-project",
+                    "--markdown-file",
+                    str(report_path),
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertEqual(payload["markdownFile"], str(report_path))
+            self.assertTrue(report_path.exists())
+            markdown = report_path.read_text(encoding="utf-8")
+            self.assertIn("## Improve Project", markdown)
+            self.assertIn("Quality score", markdown)
+            self.assertIn("### Applied fixes", markdown)
+            self.assertIn("### Skipped fixes", markdown)
+            self.assertIn("Wrote 2 guidance file(s).", markdown)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_build_quality_fix_plan_reads_test_framework_from_manifest_when_audit_packages_are_truncated(self) -> None:
         from cli_anything.unity_mcp.core.expert_fixes import build_quality_fix_plan
 

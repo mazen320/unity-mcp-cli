@@ -1025,6 +1025,45 @@ def _render_benchmark_compare_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _render_improve_project_markdown(payload: dict[str, Any]) -> str:
+    lines = [
+        "## Improve Project",
+        "",
+        f"- Project root: `{payload.get('projectRoot')}`",
+        f"- Live Unity available: `{bool(payload.get('liveUnityAvailable'))}`",
+        (
+            f"- Quality score: `{payload.get('baselineScore')} -> {payload.get('finalScore')}` "
+            f"(`{_format_signed_delta(payload.get('scoreDelta'))}`)"
+        ),
+        f"- Applied fixes: {int(payload.get('appliedCount') or 0)}",
+        f"- Skipped fixes: {int(payload.get('skippedCount') or 0)}",
+    ]
+
+    applied_items = list(payload.get("applied") or [])
+    if applied_items:
+        lines.extend(["", "### Applied fixes"])
+        for item in applied_items:
+            entry = dict(item) if isinstance(item, dict) else {"summary": str(item)}
+            lens = str(entry.get("lens") or "").strip()
+            fix = str(entry.get("fix") or "").strip()
+            summary = str(entry.get("summary") or fix or "Applied").strip()
+            prefix = f"`{lens}` / `{fix}`" if lens and fix else (f"`{fix}`" if fix else None)
+            lines.append(f"- {prefix}: {summary}" if prefix else f"- {summary}")
+
+    skipped_items = list(payload.get("skipped") or [])
+    if skipped_items:
+        lines.extend(["", "### Skipped fixes"])
+        for item in skipped_items:
+            entry = dict(item) if isinstance(item, dict) else {"reason": str(item)}
+            lens = str(entry.get("lens") or "").strip()
+            fix = str(entry.get("fix") or "").strip()
+            reason = str(entry.get("reason") or fix or "Skipped").strip()
+            prefix = f"`{lens}` / `{fix}`" if lens and fix else (f"`{fix}`" if fix else None)
+            lines.append(f"- {prefix}: {reason}" if prefix else f"- {reason}")
+
+    return "\n".join(lines) + "\n"
+
+
 def _collect_expert_audit_results(
     ctx: click.Context,
     *,
@@ -3068,6 +3107,12 @@ def workflow_quality_fix_command(
 )
 @click.option("--discard-unsaved", is_flag=True, help="Discard unsaved scene changes before creating the sandbox scene.")
 @click.option("--port", type=int, default=None, help="Temporarily target a specific Unity port for live scene repairs.")
+@click.option(
+    "--markdown-file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Optional file path for a GitHub-friendly markdown summary of the improvement run.",
+)
 @click.pass_context
 def workflow_improve_project_command(
     ctx: click.Context,
@@ -3078,6 +3123,7 @@ def workflow_improve_project_command(
     save_if_dirty: bool,
     discard_unsaved: bool,
     port: int | None,
+    markdown_file: Path | None,
 ) -> None:
     """Run the bounded safe-improvement pass for a Unity project and report the score delta."""
 
@@ -3492,6 +3538,11 @@ def workflow_improve_project_command(
             "applied": applied,
             "skipped": skipped,
         }
+        if markdown_file is not None:
+            markdown_path = Path(markdown_file)
+            markdown_path.parent.mkdir(parents=True, exist_ok=True)
+            markdown_path.write_text(_render_improve_project_markdown(payload), encoding="utf-8")
+            payload["markdownFile"] = str(markdown_path)
         if final_payload is not None:
             payload["finalLensScores"] = list(final_payload.get("lensScores") or [])
         return _attach_unity_context(
