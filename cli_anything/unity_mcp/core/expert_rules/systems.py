@@ -28,6 +28,26 @@ def _severity_penalty(severity: str) -> int:
     return 0
 
 
+def _node_components(node: dict) -> set[str]:
+    return set(node.get("components") or [])
+
+
+def _node_label(node: dict) -> str:
+    return str(node.get("path") or node.get("hierarchyPath") or node.get("name") or "Unnamed")
+
+
+def _camera_rank(node: dict) -> tuple[int, int, int, str]:
+    label = _node_label(node).lower()
+    components = _node_components(node)
+    name = str(node.get("name") or "")
+    return (
+        0 if "main camera" in label else 1,
+        0 if "camera" in components else 1,
+        len(name or label),
+        label,
+    )
+
+
 def audit_systems_lens(context: dict) -> dict:
     findings: list[dict] = []
     project = dict(context.get("project") or {})
@@ -70,8 +90,14 @@ def audit_systems_lens(context: dict) -> dict:
         hierarchy = (((context.get("raw") or {}).get("inspect") or {}).get("hierarchy") or {})
         raw_nodes = hierarchy.get("nodes") or hierarchy.get("hierarchy") or []
         nodes = _flatten_nodes(list(raw_nodes))
+        listener_nodes = [
+            node for node in nodes if "AudioListener" in _node_components(node)
+        ]
+        camera_nodes = [node for node in nodes if "Camera" in _node_components(node)]
+        primary_camera = min(camera_nodes, key=_camera_rank) if camera_nodes else None
+        primary_listener = min(listener_nodes, key=_camera_rank) if listener_nodes else None
         event_system_nodes = [
-            node for node in nodes if "EventSystem" in set(node.get("components") or [])
+            node for node in nodes if "EventSystem" in _node_components(node)
         ]
         input_module_types = {"StandaloneInputModule", "InputSystemUIInputModule"}
 
@@ -85,19 +111,22 @@ def audit_systems_lens(context: dict) -> dict:
             )
 
         if audio_listener_count > 1:
+            duplicate_names = ", ".join(_node_label(node) for node in listener_nodes[:3])
+            keep_target = _node_label(primary_listener) if primary_listener else "the primary scene camera"
             findings.append(
                 {
                     "severity": "high",
                     "title": "Multiple AudioListeners in scene",
-                    "detail": f"The live hierarchy currently has {audio_listener_count} AudioListener components. Unity expects one active listener.",
+                    "detail": f"The live hierarchy currently has {audio_listener_count} AudioListener components. Unity expects one active listener. Found: {duplicate_names}. Likely keep target: {keep_target}.",
                 }
             )
         elif active_camera_count > 0 and audio_listener_count == 0:
+            camera_target = _node_label(primary_camera) if primary_camera else "the primary scene camera"
             findings.append(
                 {
                     "severity": "high",
                     "title": "No AudioListener in scene",
-                    "detail": "The inspected scene has at least one Camera component, but no AudioListener was found. Audio playback and listener-relative effects will not behave correctly.",
+                    "detail": f"The inspected scene has at least one Camera component, but no AudioListener was found. Audio playback and listener-relative effects will not behave correctly. Likely listener target: {camera_target}.",
                 }
             )
 

@@ -3918,6 +3918,16 @@ class CoreTests(unittest.TestCase):
                     "likelyPlayerCount": 0,
                     "disposableObjectCount": 0,
                 },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {"name": "Main Camera", "components": ["Transform", "Camera"]},
+                                {"name": "HUDRoot", "components": ["Transform"]},
+                            ]
+                        }
+                    }
+                },
             }
         )
 
@@ -3925,6 +3935,50 @@ class CoreTests(unittest.TestCase):
             "No AudioListener in scene",
             {item["title"] for item in result["findings"]},
         )
+        finding = next(item for item in result["findings"] if item["title"] == "No AudioListener in scene")
+        self.assertIn("Main Camera", finding["detail"])
+
+    def test_systems_lens_flags_duplicate_audio_listeners_with_names(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.systems import audit_systems_lens
+
+        result = audit_systems_lens(
+            {
+                "assets": {"sceneCount": 1, "scriptCount": 0, "prefabCount": 0},
+                "systems": {
+                    "contextAvailable": True,
+                    "hierarchyNodeCount": 3,
+                    "activeCameraCount": 2,
+                    "audioListenerCount": 2,
+                    "canvasCount": 0,
+                    "eventSystemCount": 0,
+                    "characterControllerCount": 0,
+                    "rigidbodyCount": 0,
+                    "colliderCount": 0,
+                    "likelyPlayerCount": 0,
+                    "disposableObjectCount": 0,
+                },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {"name": "Main Camera", "components": ["Transform", "Camera", "AudioListener"]},
+                                {"name": "UICamera", "components": ["Transform", "Camera", "AudioListener"]},
+                                {"name": "HUDRoot", "components": ["Transform"]},
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertIn(
+            "Multiple AudioListeners in scene",
+            {item["title"] for item in result["findings"]},
+        )
+        finding = next(item for item in result["findings"] if item["title"] == "Multiple AudioListeners in scene")
+        self.assertIn("Main Camera", finding["detail"])
+        self.assertIn("UICamera", finding["detail"])
+        self.assertIn("Likely keep target: Main Camera", finding["detail"])
 
     def test_systems_lens_flags_duplicate_event_systems(self) -> None:
         from cli_anything.unity_mcp.core.expert_rules.systems import audit_systems_lens
