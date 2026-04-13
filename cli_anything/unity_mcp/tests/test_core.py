@@ -3061,6 +3061,69 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_assistant_improve_project_adds_missing_graphic_raycaster(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes" / "DemoProject_Sandbox.unity").write_text("", encoding="utf-8")
+
+            class LiveClientStub:
+                def __init__(self) -> None:
+                    self.gameobjects = {
+                        "Main Camera": {
+                            "path": "Main Camera",
+                            "components": ["Transform", "Camera", "AudioListener"],
+                        },
+                        "HUDCanvas": {
+                            "path": "HUDCanvas",
+                            "components": ["Transform", "RectTransform", "Canvas", "CanvasScaler"],
+                        },
+                    }
+
+                def is_alive(self, timeout: float = 0.2) -> bool:
+                    return True
+
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    if route == "scene/hierarchy":
+                        return {
+                            "hierarchy": [
+                                {
+                                    "name": name,
+                                    "path": payload["path"],
+                                    "hierarchyPath": payload["path"],
+                                    "components": list(payload["components"]),
+                                }
+                                for name, payload in self.gameobjects.items()
+                            ]
+                        }
+                    if route == "component/add":
+                        path = str(params.get("gameObjectPath") or params.get("path") or "")
+                        component_type = str(params.get("componentType") or params.get("type") or "")
+                        self.gameobjects.setdefault(path, {"path": path, "components": ["Transform"]})
+                        if component_type not in self.gameobjects[path]["components"]:
+                            self.gameobjects[path]["components"].append(component_type)
+                        return {"success": True, "gameObjectPath": path, "component": component_type}
+                    if route == "gameobject/create":
+                        name = str(params.get("name") or "EventSystem")
+                        self.gameobjects[name] = {
+                            "path": name,
+                            "components": ["Transform"],
+                        }
+                        return {"success": True, "name": name, "path": name}
+                    raise AssertionError(f"Unexpected route: {route}")
+
+            bridge = ChatBridge(project, LiveClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
+
+            reply = bridge._history[-1]["content"]
+            self.assertIn("Added GraphicRaycaster to 1 Canvas object", reply)
+            self.assertIn("HUDCanvas", reply)
+            self.assertIn("GraphicRaycaster", bridge.client.gameobjects["HUDCanvas"]["components"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_assistant_improve_project_repairs_existing_event_system_module(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"

@@ -748,6 +748,45 @@ class _OfflineUnityAssistant:
             "updatedPaths": updated_paths,
         }
 
+    def _repair_graphic_raycasters(self) -> dict[str, Any] | None:
+        nodes = self._hierarchy_nodes()
+        canvas_nodes = [
+            node for node in nodes if "Canvas" in {str(component) for component in (node.get("components") or [])}
+        ]
+        if not canvas_nodes:
+            return None
+
+        target_paths: list[str] = []
+        for node in canvas_nodes:
+            components = {str(component) for component in (node.get("components") or [])}
+            if "GraphicRaycaster" in components:
+                continue
+            target_path = self._event_system_target_path(node)
+            if target_path:
+                target_paths.append(target_path)
+
+        if not target_paths:
+            return {
+                "applied": False,
+                "reason": "All Canvas objects already have GraphicRaycaster.",
+                "updatedCount": 0,
+                "updatedPaths": [],
+            }
+
+        updated_paths: list[str] = []
+        for target_path in target_paths:
+            self.bridge.client.call_route(
+                "component/add",
+                {"gameObjectPath": target_path, "componentType": "GraphicRaycaster"},
+            )
+            updated_paths.append(target_path)
+
+        return {
+            "applied": bool(updated_paths),
+            "updatedCount": len(updated_paths),
+            "updatedPaths": updated_paths,
+        }
+
     def _has_live_unity(self) -> bool:
         is_alive = getattr(self.bridge.client, "is_alive", None)
         if callable(is_alive):
@@ -780,7 +819,7 @@ class _OfflineUnityAssistant:
         skipped: list[str] = []
         baseline_score: float | None = None
         final_score: float | None = None
-        total_steps = 8 if self.embedded_options is not None else 7
+        total_steps = 9 if self.embedded_options is not None else 8
 
         if self.embedded_options is not None:
             try:
@@ -922,6 +961,27 @@ class _OfflineUnityAssistant:
                 skipped.append(f"CanvasScaler fix skipped: {exc}")
 
         self._set_status("Running safe project improvement pass", current=6, total=total_steps)
+        if not self._has_live_unity():
+            skipped.append("GraphicRaycaster fix skipped because no live Unity session is available.")
+        else:
+            try:
+                graphic_raycaster_result = self._repair_graphic_raycasters()
+                if graphic_raycaster_result is None:
+                    skipped.append("GraphicRaycaster fix not needed because no Canvas UI was found.")
+                elif graphic_raycaster_result.get("applied"):
+                    updated_paths = list(graphic_raycaster_result.get("updatedPaths") or [])
+                    preview = ", ".join(updated_paths[:3])
+                    applied.append(
+                        f"Added GraphicRaycaster to {graphic_raycaster_result.get('updatedCount')} Canvas object(s): {preview}."
+                    )
+                else:
+                    skipped.append(
+                        str(graphic_raycaster_result.get("reason") or "GraphicRaycaster fix not needed.")
+                    )
+            except Exception as exc:
+                skipped.append(f"GraphicRaycaster fix skipped: {exc}")
+
+        self._set_status("Running safe project improvement pass", current=7, total=total_steps)
         if self._project_has_tests():
             skipped.append("Tests already exist.")
         elif not self._project_has_test_framework():
@@ -958,7 +1018,7 @@ class _OfflineUnityAssistant:
             lines.extend(f"- {item}" for item in skipped)
         if self.embedded_options is not None:
             try:
-                self._set_status("Scoring project after safe improvements", current=7, total=total_steps)
+                self._set_status("Scoring project after safe improvements", current=8, total=total_steps)
                 score_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
                 score_raw = score_payload.get("overallScore")
                 final_score = float(score_raw) if score_raw is not None else None
