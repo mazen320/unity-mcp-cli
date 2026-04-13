@@ -3926,6 +3926,84 @@ class CoreTests(unittest.TestCase):
             {item["title"] for item in result["findings"]},
         )
 
+    def test_systems_lens_flags_duplicate_event_systems(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.systems import audit_systems_lens
+
+        result = audit_systems_lens(
+            {
+                "assets": {"sceneCount": 1, "scriptCount": 0, "prefabCount": 0},
+                "systems": {
+                    "contextAvailable": True,
+                    "hierarchyNodeCount": 3,
+                    "activeCameraCount": 1,
+                    "audioListenerCount": 1,
+                    "canvasCount": 1,
+                    "eventSystemCount": 2,
+                    "characterControllerCount": 0,
+                    "rigidbodyCount": 0,
+                    "colliderCount": 0,
+                    "likelyPlayerCount": 0,
+                    "disposableObjectCount": 0,
+                },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {"name": "HUDCanvas", "components": ["Canvas", "CanvasScaler", "GraphicRaycaster"]},
+                                {"name": "EventSystem", "components": ["EventSystem", "StandaloneInputModule"]},
+                                {
+                                    "name": "DuplicateEventSystem",
+                                    "components": ["EventSystem", "StandaloneInputModule"],
+                                },
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertIn(
+            "Multiple EventSystems in scene",
+            {item["title"] for item in result["findings"]},
+        )
+
+    def test_systems_lens_flags_event_system_without_input_module(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.systems import audit_systems_lens
+
+        result = audit_systems_lens(
+            {
+                "assets": {"sceneCount": 1, "scriptCount": 0, "prefabCount": 0},
+                "systems": {
+                    "contextAvailable": True,
+                    "hierarchyNodeCount": 2,
+                    "activeCameraCount": 1,
+                    "audioListenerCount": 1,
+                    "canvasCount": 1,
+                    "eventSystemCount": 1,
+                    "characterControllerCount": 0,
+                    "rigidbodyCount": 0,
+                    "colliderCount": 0,
+                    "likelyPlayerCount": 0,
+                    "disposableObjectCount": 0,
+                },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {"name": "HUDCanvas", "components": ["Canvas", "CanvasScaler", "GraphicRaycaster"]},
+                                {"name": "EventSystem", "components": ["EventSystem"]},
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertIn(
+            "EventSystem missing UI input module",
+            {item["title"] for item in result["findings"]},
+        )
+
     def test_tech_art_lens_flags_importer_mismatches(self) -> None:
         from cli_anything.unity_mcp.core.expert_rules.tech_art import (
             audit_tech_art_lens,

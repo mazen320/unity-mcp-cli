@@ -3,6 +3,20 @@ from __future__ import annotations
 from ..expert_lenses import grade_score
 
 
+def _flatten_nodes(nodes: list[dict]) -> list[dict]:
+    flattened: list[dict] = []
+    stack = list(reversed(nodes))
+    while stack:
+        node = stack.pop()
+        flattened.append(node)
+        children = node.get("children") or []
+        if isinstance(children, list):
+            for child in reversed(children):
+                if isinstance(child, dict):
+                    stack.append(child)
+    return flattened
+
+
 def _severity_penalty(severity: str) -> int:
     normalized = str(severity or "").strip().lower()
     if normalized == "high":
@@ -53,6 +67,13 @@ def audit_systems_lens(context: dict) -> dict:
         collider_count = int(systems.get("colliderCount") or 0)
         likely_player_count = int(systems.get("likelyPlayerCount") or 0)
         disposable_object_count = int(systems.get("disposableObjectCount") or 0)
+        hierarchy = (((context.get("raw") or {}).get("inspect") or {}).get("hierarchy") or {})
+        raw_nodes = hierarchy.get("nodes") or hierarchy.get("hierarchy") or []
+        nodes = _flatten_nodes(list(raw_nodes))
+        event_system_nodes = [
+            node for node in nodes if "EventSystem" in set(node.get("components") or [])
+        ]
+        input_module_types = {"StandaloneInputModule", "InputSystemUIInputModule"}
 
         if hierarchy_node_count > 0 and active_camera_count == 0:
             findings.append(
@@ -88,6 +109,28 @@ def audit_systems_lens(context: dict) -> dict:
                     "detail": "UI canvases exist in the inspected scene, but no EventSystem component was found. Interactive UI will not receive input reliably.",
                 }
             )
+        elif event_system_count > 1:
+            findings.append(
+                {
+                    "severity": "high",
+                    "title": "Multiple EventSystems in scene",
+                    "detail": f"The inspected hierarchy currently has {event_system_count} EventSystem components. Unity UI should be driven by one primary EventSystem.",
+                }
+            )
+
+        if event_system_nodes:
+            for node in event_system_nodes:
+                modules = input_module_types & set(node.get("components") or [])
+                if not modules:
+                    findings.append(
+                        {
+                            "severity": "medium",
+                            "title": "EventSystem missing UI input module",
+                            "detail": f"EventSystem `{node.get('name')}` has no UI input module component.",
+                            "path": node.get("path") or node.get("hierarchyPath"),
+                        }
+                    )
+                    break
 
         if likely_player_count > 0 and character_controller_count == 0 and rigidbody_count == 0:
             findings.append(
