@@ -509,7 +509,30 @@ class _OfflineUnityAssistant:
             for node in nodes
             if "AudioListener" in {str(component) for component in (node.get("components") or [])}
         ]
-        if len(listener_nodes) <= 1:
+        if not listener_nodes:
+            camera_nodes = [
+                node
+                for node in nodes
+                if "Camera" in {str(component) for component in (node.get("components") or [])}
+            ]
+            if not camera_nodes:
+                return None
+
+            keep_node = self._choose_primary_audio_listener(camera_nodes)
+            keep_path = self._event_system_target_path(keep_node)
+            self.bridge.client.call_route(
+                "component/add",
+                {"gameObjectPath": keep_path, "componentType": "AudioListener"},
+            )
+            return {
+                "applied": True,
+                "keptPath": keep_path,
+                "removedPaths": [],
+                "removedCount": 0,
+                "added": True,
+            }
+
+        if len(listener_nodes) == 1:
             return None
 
         keep_node = self._choose_primary_audio_listener(listener_nodes)
@@ -774,6 +797,8 @@ class _OfflineUnityAssistant:
                 audio_result = self._repair_audio_listener_setup()
                 if audio_result is None:
                     skipped.append("AudioListener fix not needed because the scene already has one listener.")
+                elif audio_result.get("added"):
+                    applied.append(f"Added AudioListener to {audio_result.get('keptPath')}.")
                 else:
                     applied.append(
                         f"Removed {audio_result.get('removedCount')} extra AudioListener(s) and kept {audio_result.get('keptPath')}."

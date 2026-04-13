@@ -48,6 +48,7 @@ As of 2026-04-12:
 - The safe `improve project` chat path now avoids false-positive test detection from parent temp-folder names, skips sandbox creation immediately when no live Unity session is attached, and reports a before/after quality-score delta so the in-editor assistant shows measurable progress instead of only a final score.
 - The offline assistant can now repair a missing live-scene `EventSystem` directly during `improve project`, using the active File IPC client and the project’s installed input package to choose the right UI input module.
 - The same live `improve project` path can now clean up duplicate `AudioListener` components directly in-scene, keeping the best camera candidate instead of only reporting the problem.
+- The same live `improve project` path can now also add a missing `AudioListener` to the best live camera candidate when a scene has cameras but no listener at all, so the assistant repairs both missing and duplicate listener states.
 - The same live `improve project` path can now also delete obvious disposable probe/demo objects directly in-scene, so benchmark and demo leftovers are treated as a bounded cleanup step instead of only a systems finding.
 - The same live `improve project` path can now also add a missing `CanvasScaler` to live Canvas objects directly in-scene, so basic UI scaling hygiene is repaired alongside the existing EventSystem and AudioListener cleanup.
 - CLI route failures now use recent backend history to explain which route failed, on which transport/port, and which retry/debug command to run next.
