@@ -4096,6 +4096,64 @@ class FullE2ETests(unittest.TestCase):
         self.assertIn("EventSystem", self.server.gameobjects["EventSystem"]["components"])
         self.assertIn("StandaloneInputModule", self.server.gameobjects["EventSystem"]["components"])
 
+    def test_workflow_quality_fix_apply_repairs_existing_event_system_module(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+        self.server._register_gameobject(
+            "EventSystem",
+            components=["Transform", "EventSystem"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "event-system",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["moduleType"], "StandaloneInputModule")
+        self.assertIn("StandaloneInputModule", self.server.gameobjects["EventSystem"]["components"])
+
+    def test_workflow_quality_fix_apply_repairs_audio_listener_setup(self) -> None:
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "UICamera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "audio-listener",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertIn("AudioListener", self.server.gameobjects["Main Camera"]["components"])
+        self.assertNotIn("AudioListener", self.server.gameobjects["UICamera"]["components"])
+
     def test_workflow_quality_fix_apply_repairs_texture_importers(self) -> None:
         project = self.tmpdir / "DemoProject"
         textures = project / "Assets" / "Textures"

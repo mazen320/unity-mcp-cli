@@ -236,6 +236,32 @@ def build_quality_fix_plan(
             ],
         }
 
+    if normalized_fix == "audio-listener":
+        return {
+            "mode": "workflow",
+            "title": "Repair AudioListener setup",
+            "description": "Normalize the scene to one AudioListener by adding it to the best camera candidate when missing or removing duplicates from extra cameras.",
+            "command": [
+                "workflow",
+                "quality-fix",
+                "--lens",
+                "systems",
+                "--fix",
+                "audio-listener",
+                "--apply",
+            ],
+            "lens": normalized_lens,
+            "fix": normalized_fix,
+            "projectRoot": str(project_path),
+            "safe": True,
+            "requiresLiveUnity": True,
+            "nextSteps": [
+                "Run workflow expert-audit --lens systems to confirm the AudioListener finding.",
+                "Keep one AudioListener on the primary camera candidate and remove or add listeners as needed.",
+                "Re-run the systems audit after the audio path is normalized.",
+            ],
+        }
+
     if normalized_fix == "ui-canvas-scaler":
         return {
             "mode": "workflow",

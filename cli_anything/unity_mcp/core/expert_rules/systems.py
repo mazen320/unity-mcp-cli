@@ -71,6 +71,14 @@ def audit_systems_lens(context: dict) -> dict:
                     "detail": f"The live hierarchy currently has {audio_listener_count} AudioListener components. Unity expects one active listener.",
                 }
             )
+        elif active_camera_count > 0 and audio_listener_count == 0:
+            findings.append(
+                {
+                    "severity": "high",
+                    "title": "No AudioListener in scene",
+                    "detail": "The inspected scene has at least one Camera component, but no AudioListener was found. Audio playback and listener-relative effects will not behave correctly.",
+                }
+            )
 
         if canvas_count > 0 and event_system_count == 0:
             findings.append(

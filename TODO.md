@@ -59,6 +59,8 @@ As of 2026-04-12:
 - Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
 - Added safe next-step planning and bounded apply support for `ui-graphic-raycaster`, so the reusable workflow layer can normalize Canvas interaction setup the same way the in-editor assistant now does.
 - The UI expert lens now also flags `Canvas without GraphicRaycaster`, so the new bounded workflow and assistant repair path is discoverable from audits instead of only by knowing the fix name.
+- The systems expert lens now also flags `No AudioListener in scene`, and the reusable workflow layer now has a bounded `audio-listener` fix so systems audits can directly drive the same audio hygiene repair path the assistant already uses.
+- The reusable `workflow quality-fix --lens systems --fix event-system --apply` path now also repairs incomplete existing `EventSystem` objects by adding the expected UI input module instead of only creating brand-new EventSystem objects.
 - Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.
 - Added a `systems` developer profile so the CLI can bias toward runtime hygiene, scene architecture, and testability instead of genre-specific advice.
 - `workflow quality-fix` can now apply the bounded `guidance`, `test-scaffold`, `sandbox-scene`, `event-system`, `ui-canvas-scaler`, `texture-imports`, `controller-scaffold`, and `controller-wireup` fixes directly with `--apply`, while keeping the riskier/manual fixes planner-only.

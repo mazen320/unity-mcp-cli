@@ -49,7 +49,7 @@ def iter_builtin_expert_lenses() -> list[ExpertLens]:
             description="Unity systems audit for scene architecture, playability hooks, and runtime hygiene.",
             focus="unity systems",
             audit=audit_systems_lens,
-            supported_fix_types=("guidance", "sandbox-scene", "event-system"),
+            supported_fix_types=("guidance", "sandbox-scene", "event-system", "audio-listener"),
         ),
         ExpertLens(
             name="animation",

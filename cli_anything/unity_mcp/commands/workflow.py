@@ -1056,6 +1056,178 @@ def _apply_ui_graphic_raycaster_fix(
     }
 
 
+def _rank_scene_camera_node(node: dict[str, Any]) -> tuple[int, int, str]:
+    path = str(
+        node.get("path")
+        or node.get("hierarchyPath")
+        or node.get("name")
+        or ""
+    ).strip()
+    normalized = path.lower()
+    priority = 2
+    if "main camera" in normalized:
+        priority = 0
+    elif "camera" in normalized:
+        priority = 1
+    return (priority, len(normalized), normalized)
+
+
+def _apply_systems_audio_listener_fix(
+    ctx: click.Context,
+    *,
+    workflow_port: int | None,
+    inspect_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if inspect_payload is None:
+        raise ValueError(
+            "Applying the audio-listener fix needs live Unity scene context. Select a Unity editor first or pass --port."
+        )
+
+    enriched_inspect = _enrich_inspect_payload_for_lenses(
+        ctx,
+        workflow_port=workflow_port,
+        inspect_payload=inspect_payload,
+        lens_names=["systems"],
+    ) or {}
+    hierarchy = dict(enriched_inspect.get("hierarchy") or {})
+    nodes = _iter_hierarchy_nodes(_extract_hierarchy_nodes(hierarchy))
+
+    camera_nodes = [node for node in nodes if "Camera" in set(node.get("components") or [])]
+    listener_nodes = [node for node in nodes if "AudioListener" in set(node.get("components") or [])]
+
+    if not camera_nodes and not listener_nodes:
+        return {
+            "updatedCount": 0,
+            "keptPath": None,
+            "addedCount": 0,
+            "removedCount": 0,
+            "removedPaths": [],
+            "reason": "No Camera or AudioListener components were found in the inspected scene.",
+        }
+
+    if not listener_nodes:
+        keep_node = sorted(camera_nodes, key=_rank_scene_camera_node)[0]
+        keep_path = str(
+            keep_node.get("path")
+            or keep_node.get("hierarchyPath")
+            or keep_node.get("name")
+            or ""
+        ).strip()
+        _record_progress_step(
+            ctx,
+            f"Adding AudioListener to {keep_node.get('name') or keep_path}",
+            phase="edit",
+            port=workflow_port,
+        )
+        add_result = require_workflow_success(
+            ctx.obj.backend.call_route_with_recovery(
+                "component/add",
+                params={
+                    "gameObjectPath": keep_path,
+                    "componentType": "AudioListener",
+                },
+                port=workflow_port,
+                recovery_timeout=10.0,
+            ),
+            f"Add AudioListener to {keep_path}",
+        )
+        editor_state = require_workflow_success(
+            ctx.obj.backend.call_route_with_recovery(
+                "editor/state",
+                port=workflow_port,
+                recovery_timeout=10.0,
+            ),
+            "Read editor state after audio fix",
+        )
+        return {
+            "updatedCount": 1,
+            "keptPath": keep_path,
+            "addedCount": 1,
+            "removedCount": 0,
+            "removedPaths": [],
+            "result": add_result,
+            "editorState": editor_state,
+        }
+
+    if len(listener_nodes) == 1:
+        keep_node = listener_nodes[0]
+        keep_path = str(
+            keep_node.get("path")
+            or keep_node.get("hierarchyPath")
+            or keep_node.get("name")
+            or ""
+        ).strip()
+        return {
+            "updatedCount": 0,
+            "keptPath": keep_path or None,
+            "addedCount": 0,
+            "removedCount": 0,
+            "removedPaths": [],
+            "reason": "Exactly one AudioListener is already present in the inspected scene.",
+        }
+
+    keep_node = sorted(listener_nodes, key=_rank_scene_camera_node)[0]
+    keep_path = str(
+        keep_node.get("path")
+        or keep_node.get("hierarchyPath")
+        or keep_node.get("name")
+        or ""
+    ).strip()
+    removed: list[dict[str, Any]] = []
+    for node in listener_nodes:
+        gameobject_path = str(
+            node.get("path")
+            or node.get("hierarchyPath")
+            or node.get("name")
+            or ""
+        ).strip()
+        if not gameobject_path or gameobject_path == keep_path:
+            continue
+        _record_progress_step(
+            ctx,
+            f"Removing extra AudioListener from {node.get('name') or gameobject_path}",
+            phase="edit",
+            port=workflow_port,
+        )
+        remove_result = require_workflow_success(
+            ctx.obj.backend.call_route_with_recovery(
+                "component/remove",
+                params={
+                    "gameObjectPath": gameobject_path,
+                    "component": "AudioListener",
+                },
+                port=workflow_port,
+                recovery_timeout=10.0,
+            ),
+            f"Remove AudioListener from {gameobject_path}",
+        )
+        removed.append(
+            {
+                "name": node.get("name"),
+                "path": gameobject_path,
+                "result": remove_result,
+            }
+        )
+
+    editor_state = require_workflow_success(
+        ctx.obj.backend.call_route_with_recovery(
+            "editor/state",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        ),
+        "Read editor state after audio fix",
+    )
+    return {
+        "updatedCount": len(removed),
+        "keptPath": keep_path,
+        "addedCount": 0,
+        "removedCount": len(removed),
+        "removedPaths": [item["path"] for item in removed],
+        "removed": removed,
+        "editorState": editor_state,
+    }
+
+
 def _apply_systems_event_system_fix(
     ctx: click.Context,
     *,
@@ -1089,6 +1261,7 @@ def _apply_systems_event_system_fix(
             "reason": "No Canvas components were found in the inspected scene.",
         }
 
+    module_type = choose_event_system_module(audit_report=audit_report)
     existing_event_system = next(
         (
             node for node in nodes
@@ -1103,12 +1276,50 @@ def _apply_systems_event_system_fix(
             or existing_event_system.get("name")
             or ""
         ).strip()
+        existing_components = set(existing_event_system.get("components") or [])
+        if module_type in existing_components:
+            return {
+                "updatedCount": 0,
+                "createdObject": False,
+                "gameObjectPath": gameobject_path or None,
+                "moduleType": module_type,
+                "reason": "An EventSystem component already exists in the inspected scene.",
+            }
+
+        _record_progress_step(
+            ctx,
+            f"Adding {module_type} to {gameobject_path}",
+            phase="edit",
+            port=workflow_port,
+        )
+        add_result = require_workflow_success(
+            ctx.obj.backend.call_route_with_recovery(
+                "component/add",
+                params={
+                    "gameObjectPath": gameobject_path,
+                    "componentType": module_type,
+                },
+                port=workflow_port,
+                recovery_timeout=10.0,
+            ),
+            f"Add {module_type} to {gameobject_path}",
+        )
+        editor_state = require_workflow_success(
+            ctx.obj.backend.call_route_with_recovery(
+                "editor/state",
+                port=workflow_port,
+                recovery_timeout=10.0,
+            ),
+            "Read editor state after systems fix",
+        )
         return {
-            "updatedCount": 0,
+            "updatedCount": 1,
             "createdObject": False,
             "gameObjectPath": gameobject_path or None,
-            "moduleType": None,
-            "reason": "An EventSystem component already exists in the inspected scene.",
+            "moduleType": module_type,
+            "componentsAdded": [module_type],
+            "componentResults": [add_result],
+            "editorState": editor_state,
         }
 
     target_node = next(
@@ -1147,7 +1358,6 @@ def _apply_systems_event_system_fix(
         if not gameobject_path:
             raise ValueError("Unable to resolve the existing EventSystem GameObject path.")
 
-    module_type = choose_event_system_module(audit_report=audit_report)
     component_results: list[dict[str, Any]] = []
     for component_type in ("EventSystem", module_type):
         _record_progress_step(
@@ -2312,6 +2522,12 @@ def workflow_quality_fix_command(
                     workflow_port=workflow_port,
                     inspect_payload=inspect_payload,
                     audit_report=(payload.get("raw") or {}).get("auditReport"),
+                )
+            elif normalized_fix == "audio-listener":
+                apply_payload = _apply_systems_audio_listener_fix(
+                    ctx,
+                    workflow_port=workflow_port,
+                    inspect_payload=inspect_payload,
                 )
             elif normalized_fix == "texture-imports":
                 apply_payload = _apply_texture_import_fix(

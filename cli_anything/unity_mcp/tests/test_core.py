@@ -3899,6 +3899,33 @@ class CoreTests(unittest.TestCase):
             {item["title"] for item in result["findings"]},
         )
 
+    def test_systems_lens_flags_scene_without_audio_listener(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.systems import audit_systems_lens
+
+        result = audit_systems_lens(
+            {
+                "assets": {"sceneCount": 1, "scriptCount": 0, "prefabCount": 0},
+                "systems": {
+                    "contextAvailable": True,
+                    "hierarchyNodeCount": 2,
+                    "activeCameraCount": 1,
+                    "audioListenerCount": 0,
+                    "canvasCount": 0,
+                    "eventSystemCount": 0,
+                    "characterControllerCount": 0,
+                    "rigidbodyCount": 0,
+                    "colliderCount": 0,
+                    "likelyPlayerCount": 0,
+                    "disposableObjectCount": 0,
+                },
+            }
+        )
+
+        self.assertIn(
+            "No AudioListener in scene",
+            {item["title"] for item in result["findings"]},
+        )
+
     def test_tech_art_lens_flags_importer_mismatches(self) -> None:
         from cli_anything.unity_mcp.core.expert_rules.tech_art import (
             audit_tech_art_lens,
@@ -4019,6 +4046,11 @@ class CoreTests(unittest.TestCase):
             lens_name="systems",
             fix_name="event-system",
         )
+        systems_audio_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="systems",
+            fix_name="audio-listener",
+        )
         ui_graphic_raycaster_plan = build_quality_fix_plan(
             context=context,
             lens_name="ui",
@@ -4051,6 +4083,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(systems_plan["moduleType"], "InputSystemUIInputModule")
         self.assertEqual(systems_plan["gameObjectName"], "EventSystem")
         self.assertTrue(systems_plan["requiresLiveUnity"])
+        self.assertEqual(systems_audio_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertEqual(systems_audio_plan["fix"], "audio-listener")
+        self.assertTrue(systems_audio_plan["requiresLiveUnity"])
         self.assertEqual(ui_graphic_raycaster_plan["command"][0:2], ["workflow", "quality-fix"])
         self.assertEqual(ui_graphic_raycaster_plan["fix"], "ui-graphic-raycaster")
         self.assertTrue(ui_graphic_raycaster_plan["requiresLiveUnity"])
