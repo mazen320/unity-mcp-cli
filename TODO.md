@@ -57,6 +57,8 @@ As of 2026-04-12:
 - The same live `improve project` path can now also add a missing `GraphicRaycaster` to live Canvas objects directly in-scene, so UI canvases are normalized for interaction along with the existing EventSystem and CanvasScaler repair.
 - CLI route failures now use recent backend history to explain which route failed, on which transport/port, and which retry/debug command to run next.
 - Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
+- Added safe next-step planning and bounded apply support for `ui-graphic-raycaster`, so the reusable workflow layer can normalize Canvas interaction setup the same way the in-editor assistant now does.
+- The UI expert lens now also flags `Canvas without GraphicRaycaster`, so the new bounded workflow and assistant repair path is discoverable from audits instead of only by knowing the fix name.
 - Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.
 - Added a `systems` developer profile so the CLI can bias toward runtime hygiene, scene architecture, and testability instead of genre-specific advice.
 - `workflow quality-fix` can now apply the bounded `guidance`, `test-scaffold`, `sandbox-scene`, `event-system`, `ui-canvas-scaler`, `texture-imports`, `controller-scaffold`, and `controller-wireup` fixes directly with `--apply`, while keeping the riskier/manual fixes planner-only.

@@ -3949,6 +3949,31 @@ class CoreTests(unittest.TestCase):
             {item["title"] for item in result["findings"]},
         )
 
+    def test_ui_lens_flags_canvas_without_graphic_raycaster(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.ui import audit_ui_lens
+
+        context = {
+            "raw": {
+                "inspect": {
+                    "hierarchy": {
+                        "nodes": [
+                            {
+                                "name": "HUD",
+                                "components": ["Canvas", "CanvasScaler"],
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+        result = audit_ui_lens(context)
+
+        self.assertIn(
+            "Canvas without GraphicRaycaster",
+            {item["title"] for item in result["findings"]},
+        )
+
     def test_build_quality_fix_plan_supports_guidance_and_sandbox(self) -> None:
         from cli_anything.unity_mcp.core.expert_fixes import build_quality_fix_plan
 
@@ -3994,6 +4019,11 @@ class CoreTests(unittest.TestCase):
             lens_name="systems",
             fix_name="event-system",
         )
+        ui_graphic_raycaster_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="ui",
+            fix_name="ui-graphic-raycaster",
+        )
         tech_art_plan = build_quality_fix_plan(
             context=context,
             lens_name="tech-art",
@@ -4021,6 +4051,9 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(systems_plan["moduleType"], "InputSystemUIInputModule")
         self.assertEqual(systems_plan["gameObjectName"], "EventSystem")
         self.assertTrue(systems_plan["requiresLiveUnity"])
+        self.assertEqual(ui_graphic_raycaster_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertEqual(ui_graphic_raycaster_plan["fix"], "ui-graphic-raycaster")
+        self.assertTrue(ui_graphic_raycaster_plan["requiresLiveUnity"])
         self.assertEqual(tech_art_plan["command"][0:2], ["workflow", "quality-fix"])
         self.assertEqual(animation_plan["command"][0:2], ["workflow", "quality-fix"])
         self.assertTrue(animation_plan["requiresLiveUnity"])

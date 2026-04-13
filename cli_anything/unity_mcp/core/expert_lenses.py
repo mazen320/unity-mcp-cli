@@ -70,7 +70,7 @@ def iter_builtin_expert_lenses() -> list[ExpertLens]:
             description="Canvas, anchors, scaler, and HUD audit.",
             focus="ui readability",
             audit=audit_ui_lens,
-            supported_fix_types=("ui-canvas-scaler",),
+            supported_fix_types=("ui-canvas-scaler", "ui-graphic-raycaster"),
             requires_live_scene=True,
         ),
         ExpertLens(

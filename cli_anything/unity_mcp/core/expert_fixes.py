@@ -261,6 +261,32 @@ def build_quality_fix_plan(
             ],
         }
 
+    if normalized_fix == "ui-graphic-raycaster":
+        return {
+            "mode": "workflow",
+            "title": "Add GraphicRaycaster components",
+            "description": "Inspect each Canvas that is missing a GraphicRaycaster and add one through the bounded workflow fix path.",
+            "command": [
+                "workflow",
+                "quality-fix",
+                "--lens",
+                "ui",
+                "--fix",
+                "ui-graphic-raycaster",
+                "--apply",
+            ],
+            "lens": normalized_lens,
+            "fix": normalized_fix,
+            "projectRoot": str(project_path),
+            "safe": True,
+            "requiresLiveUnity": True,
+            "nextSteps": [
+                "Run workflow expert-audit --lens ui to confirm which canvases need attention.",
+                "Add GraphicRaycaster to the canvases that are missing one.",
+                "Re-check the scene after changes.",
+            ],
+        }
+
     if normalized_fix == "texture-imports":
         return {
             "mode": "workflow",

@@ -979,6 +979,83 @@ def _apply_ui_canvas_scaler_fix(
     }
 
 
+def _apply_ui_graphic_raycaster_fix(
+    ctx: click.Context,
+    *,
+    workflow_port: int | None,
+    inspect_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if inspect_payload is None:
+        raise ValueError(
+            "Applying the ui-graphic-raycaster fix needs live Unity scene context. Select a Unity editor first or pass --port."
+        )
+
+    enriched_inspect = _enrich_inspect_payload_for_lenses(
+        ctx,
+        workflow_port=workflow_port,
+        inspect_payload=inspect_payload,
+        lens_names=["ui"],
+    ) or {}
+    hierarchy = dict(enriched_inspect.get("hierarchy") or {})
+    nodes = _iter_hierarchy_nodes(_extract_hierarchy_nodes(hierarchy))
+    targets = [
+        node
+        for node in nodes
+        if "Canvas" in set(node.get("components") or [])
+        and "GraphicRaycaster" not in set(node.get("components") or [])
+    ]
+
+    updates: list[dict[str, Any]] = []
+    for target in targets:
+        gameobject_path = str(
+            target.get("path")
+            or target.get("hierarchyPath")
+            or target.get("name")
+            or ""
+        ).strip()
+        if not gameobject_path:
+            continue
+        _record_progress_step(
+            ctx,
+            f"Adding GraphicRaycaster to {target.get('name') or gameobject_path}",
+            phase="edit",
+            port=workflow_port,
+        )
+        add_result = require_workflow_success(
+            ctx.obj.backend.call_route_with_recovery(
+                "component/add",
+                params={
+                    "gameObjectPath": gameobject_path,
+                    "componentType": "GraphicRaycaster",
+                },
+                port=workflow_port,
+                recovery_timeout=10.0,
+            ),
+            f"Add GraphicRaycaster to {gameobject_path}",
+        )
+        updates.append(
+            {
+                "name": target.get("name"),
+                "path": gameobject_path,
+                "result": add_result,
+            }
+        )
+
+    editor_state = require_workflow_success(
+        ctx.obj.backend.call_route_with_recovery(
+            "editor/state",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        ),
+        "Read editor state after UI fix",
+    )
+    return {
+        "updatedCount": len(updates),
+        "targets": updates,
+        "editorState": editor_state,
+    }
+
+
 def _apply_systems_event_system_fix(
     ctx: click.Context,
     *,
@@ -2219,6 +2296,12 @@ def workflow_quality_fix_command(
                 )
             elif normalized_fix == "ui-canvas-scaler":
                 apply_payload = _apply_ui_canvas_scaler_fix(
+                    ctx,
+                    workflow_port=workflow_port,
+                    inspect_payload=inspect_payload,
+                )
+            elif normalized_fix == "ui-graphic-raycaster":
+                apply_payload = _apply_ui_graphic_raycaster_fix(
                     ctx,
                     workflow_port=workflow_port,
                     inspect_payload=inspect_payload,

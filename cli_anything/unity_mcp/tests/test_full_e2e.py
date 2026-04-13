@@ -4045,6 +4045,30 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
         self.assertIn("CanvasScaler", self.server.gameobjects["HUDCanvas"]["components"])
 
+    def test_workflow_quality_fix_apply_adds_graphic_raycaster(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "ui",
+            "--fix",
+            "ui-graphic-raycaster",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertIn("GraphicRaycaster", self.server.gameobjects["HUDCanvas"]["components"])
+
     def test_workflow_quality_fix_apply_adds_event_system(self) -> None:
         self.server._register_gameobject(
             "HUDCanvas",

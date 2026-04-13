@@ -34,6 +34,15 @@ def audit_ui_lens(context: dict) -> dict:
                     "path": node.get("path") or node.get("hierarchyPath"),
                 }
             )
+        if "Canvas" in components and "GraphicRaycaster" not in components:
+            findings.append(
+                {
+                    "severity": "medium",
+                    "title": "Canvas without GraphicRaycaster",
+                    "detail": f"Canvas `{node.get('name')}` has no GraphicRaycaster.",
+                    "path": node.get("path") or node.get("hierarchyPath"),
+                }
+            )
 
     score = max(40, 90 - (len(findings) * 20))
     return {
