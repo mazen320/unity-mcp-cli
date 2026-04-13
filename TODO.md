@@ -49,6 +49,7 @@ As of 2026-04-12:
 - The offline assistant can now repair a missing live-scene `EventSystem` directly during `improve project`, using the active File IPC client and the project’s installed input package to choose the right UI input module.
 - The same live `improve project` path can now clean up duplicate `AudioListener` components directly in-scene, keeping the best camera candidate instead of only reporting the problem.
 - The same live `improve project` path can now also delete obvious disposable probe/demo objects directly in-scene, so benchmark and demo leftovers are treated as a bounded cleanup step instead of only a systems finding.
+- The same live `improve project` path can now also add a missing `CanvasScaler` to live Canvas objects directly in-scene, so basic UI scaling hygiene is repaired alongside the existing EventSystem and AudioListener cleanup.
 - CLI route failures now use recent backend history to explain which route failed, on which transport/port, and which retry/debug command to run next.
 - Added safe next-step planning in `core/expert_fixes.py` for `guidance`, `sandbox-scene`, `ui-canvas-scaler`, `controller-scaffold`, and `controller-wireup`.
 - Added new workflows: `workflow expert-audit`, `workflow scene-critique`, `workflow quality-score`, `workflow benchmark-report`, and `workflow quality-fix`.
