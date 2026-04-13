@@ -293,6 +293,55 @@ def _resolve_improve_project_context(
             "editorState": editor_state,
             "scene": {"activeScene": editor_state.get("activeScene")},
         }
+    elif project_root:
+        selected_instance = getattr(ctx.obj.backend.session_store.load(), "selected_instance", None) or {}
+        selected_project_root = (
+            selected_instance.get("projectPath")
+            or selected_instance.get("project_path")
+            or ""
+        )
+        requested_root = _normalize_project_path_for_compare(project_root)
+        active_root = _normalize_project_path_for_compare(selected_project_root)
+        if requested_root and active_root and requested_root == active_root:
+            try:
+                _record_progress_step(ctx, progress_label, phase="check", port=workflow_port)
+                ping = ctx.obj.backend.ping(port=workflow_port)
+                project = ctx.obj.backend.call_route_with_recovery(
+                    "project/info",
+                    port=workflow_port,
+                    recovery_timeout=10.0,
+                )
+                editor_state = ctx.obj.backend.call_route_with_recovery(
+                    "editor/state",
+                    port=workflow_port,
+                    recovery_timeout=10.0,
+                )
+                live_project_root = (
+                    ping.get("projectPath")
+                    or editor_state.get("projectPath")
+                    or project.get("projectPath")
+                )
+                inspect_payload = {
+                    "summary": {
+                        "projectName": ping.get("projectName") or project.get("projectName"),
+                        "projectPath": live_project_root,
+                        "activeScene": editor_state.get("activeScene"),
+                        "sceneDirty": bool(editor_state.get("sceneDirty")),
+                        "isPlaying": bool(editor_state.get("isPlaying")),
+                        "isCompiling": bool(project.get("isCompiling") or editor_state.get("isCompiling")),
+                    },
+                    "project": project,
+                    "ping": ping,
+                    "state": editor_state,
+                    "editorState": editor_state,
+                    "scene": {"activeScene": editor_state.get("activeScene")},
+                }
+            except Exception:
+                ping = {}
+                project = {}
+                editor_state = {}
+                inspect_payload = None
+                live_project_root = None
 
     resolved_project_root = str(project_root or live_project_root or "").strip()
     if not resolved_project_root:

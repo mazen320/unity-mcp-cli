@@ -2738,6 +2738,163 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_assistant_improve_project_uses_embedded_workflow_when_available(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            bridge = ChatBridge(project, ClientStub(), embedded_options=object())  # type: ignore[arg-type]
+            captured_argv: list[list[str]] = []
+
+            def fake_run_embedded_cli(argv: list[str]) -> dict[str, Any]:
+                captured_argv.append(list(argv))
+                return {
+                    "available": True,
+                    "baselineScore": 70.0,
+                    "finalScore": 89.0,
+                    "scoreDelta": 19.0,
+                    "applied": [
+                        {"fix": "guidance", "summary": "Wrote 2 guidance file(s)."},
+                        {"fix": "event-system", "summary": "Repaired EventSystem with InputSystemUIInputModule."},
+                    ],
+                    "skipped": [
+                        {"fix": "sandbox-scene", "reason": "Sandbox scene already exists."},
+                    ],
+            }
+
+            bridge._assistant._run_embedded_cli = fake_run_embedded_cli  # type: ignore[method-assign]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
+
+            reply = bridge._history[-1]["content"]
+            self.assertEqual(
+                captured_argv,
+                [["workflow", "improve-project", str(project)]],
+            )
+            self.assertIn("Safe project improvement pass finished.", reply)
+            self.assertIn("Applied:", reply)
+            self.assertIn("Wrote 2 guidance file(s).", reply)
+            self.assertIn("Repaired EventSystem with InputSystemUIInputModule.", reply)
+            self.assertIn("Skipped:", reply)
+            self.assertIn("Sandbox scene already exists.", reply)
+            self.assertIn("Quality score: 70.0 -> 89.0 (+19.0).", reply)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_agent_chat_explicit_project_updates_selected_file_ipc_session(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            run_cli_json(
+                ["workflow", "agent-chat", "--iterations", "0", str(project)],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            state = SessionStore(tmpdir / "session.json").load()
+            self.assertEqual((state.selected_instance or {}).get("projectPath"), str(project))
+            self.assertEqual((state.selected_instance or {}).get("projectName"), "DemoProject")
+            self.assertEqual((state.selected_instance or {}).get("transport"), "file-ipc")
+            self.assertIsNone((state.selected_instance or {}).get("port"))
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_resolve_improve_project_context_uses_matching_selected_live_session(self) -> None:
+        import click
+
+        from cli_anything.unity_mcp.commands.workflow import _resolve_improve_project_context
+
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            session_store = SessionStore(tmpdir / "session.json")
+            session_store.save(
+                SessionState(
+                    selected_port=None,
+                    selected_instance={
+                        "projectName": "DemoProject",
+                        "projectPath": str(project),
+                        "port": None,
+                        "transport": "file-ipc",
+                    },
+                )
+            )
+
+            class BackendStub:
+                def __init__(self) -> None:
+                    self.session_store = session_store
+                    self.calls: list[tuple[str, Any]] = []
+
+                def record_progress(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+                    return {"success": True}
+
+                def ping(self, port: int | None = None) -> dict[str, Any]:
+                    self.calls.append(("ping", port))
+                    return {"projectName": "DemoProject", "projectPath": str(project)}
+
+                def call_route_with_recovery(
+                    self,
+                    route: str,
+                    *,
+                    port: int | None = None,
+                    recovery_timeout: float = 10.0,
+                ) -> dict[str, Any]:
+                    self.calls.append((route, port))
+                    if route == "project/info":
+                        return {"projectName": "DemoProject", "projectPath": str(project)}
+                    if route == "editor/state":
+                        return {"projectPath": str(project), "activeScene": "Main", "sceneDirty": False}
+                    raise AssertionError(f"Unexpected route: {route}")
+
+            ctx = click.Context(click.Command("workflow"))
+            ctx.obj = SimpleNamespace(
+                backend=BackendStub(),
+                agent_profile=None,
+                developer_profile=None,
+                developer_source="default",
+                agent_id="cli-anything-unity-mcp",
+            )
+
+            (
+                resolved_project_root,
+                workflow_port,
+                inspect_payload,
+                ping,
+                project_info,
+                editor_state,
+                live_unity_available,
+            ) = _resolve_improve_project_context(
+                ctx,
+                project_root=str(project),
+                port=None,
+                progress_label="Checking project context for improve-project",
+            )
+
+            self.assertEqual(resolved_project_root, str(project))
+            self.assertIsNone(workflow_port)
+            self.assertTrue(live_unity_available)
+            self.assertEqual((inspect_payload or {}).get("summary", {}).get("projectPath"), str(project))
+            self.assertEqual(ping.get("projectPath"), str(project))
+            self.assertEqual(project_info.get("projectPath"), str(project))
+            self.assertEqual(editor_state.get("projectPath"), str(project))
+            self.assertEqual(
+                ctx.obj.backend.calls,
+                [
+                    ("ping", None),
+                    ("project/info", None),
+                    ("editor/state", None),
+                ],
+            )
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_workflow_agent_chat_once_skips_sandbox_creation_without_live_unity(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"

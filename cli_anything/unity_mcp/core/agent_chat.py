@@ -866,7 +866,70 @@ class _OfflineUnityAssistant:
                 return False
         return False
 
+    def _format_improve_project_payload(self, payload: dict[str, Any]) -> str:
+        applied_items = list(payload.get("applied") or [])
+        skipped_items = list(payload.get("skipped") or [])
+
+        lines = ["Safe project improvement pass finished."]
+
+        if applied_items:
+            lines.append("")
+            lines.append("Applied:")
+            for item in applied_items:
+                if isinstance(item, dict):
+                    summary = str(item.get("summary") or item.get("message") or item.get("fix") or "").strip()
+                else:
+                    summary = str(item).strip()
+                if summary:
+                    lines.append(f"- {summary}")
+
+        if skipped_items:
+            lines.append("")
+            lines.append("Skipped:")
+            for item in skipped_items:
+                if isinstance(item, dict):
+                    reason = str(item.get("reason") or item.get("message") or item.get("fix") or "").strip()
+                else:
+                    reason = str(item).strip()
+                if reason:
+                    lines.append(f"- {reason}")
+
+        baseline_raw = payload.get("baselineScore")
+        final_raw = payload.get("finalScore")
+        delta_raw = payload.get("scoreDelta")
+        try:
+            baseline_score = float(baseline_raw) if baseline_raw is not None else None
+        except (TypeError, ValueError):
+            baseline_score = None
+        try:
+            final_score = float(final_raw) if final_raw is not None else None
+        except (TypeError, ValueError):
+            final_score = None
+        try:
+            score_delta = float(delta_raw) if delta_raw is not None else None
+        except (TypeError, ValueError):
+            score_delta = None
+
+        if baseline_score is not None and final_score is not None:
+            if score_delta is None:
+                score_delta = final_score - baseline_score
+            lines.append("")
+            lines.append(f"Quality score: {baseline_score:.1f} -> {final_score:.1f} ({score_delta:+.1f}).")
+        elif final_score is not None:
+            lines.append("")
+            lines.append(f"Current quality score: {final_score:.1f}.")
+
+        return "\n".join(lines)
+
     def _improve_project_reply(self) -> str:
+        if self.embedded_options is not None:
+            try:
+                self._set_status("Running safe project improvement pass", current=0, total=1)
+                payload = self._run_embedded_cli(["workflow", "improve-project", str(self.bridge.project_path)])
+                return self._format_improve_project_payload(payload)
+            except Exception:
+                pass
+
         applied: list[str] = []
         skipped: list[str] = []
         baseline_score: float | None = None

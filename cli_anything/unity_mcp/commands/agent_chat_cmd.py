@@ -36,6 +36,14 @@ def agent_chat_command(
 
     if project_root is not None:
         file_client = FileIPCClient(project_root)
+        ctx.obj.backend.session_store.update_selection(
+            {
+                "projectName": project_root.name,
+                "projectPath": str(project_root),
+                "port": None,
+                "transport": "file-ipc",
+            }
+        )
     else:
         file_client = _resolve_file_ipc_client(ctx.obj.backend)
         project_root = Path(file_client.project_path)
