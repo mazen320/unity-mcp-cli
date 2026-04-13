@@ -46,6 +46,7 @@ class _OfflineUnityAssistant:
         re.IGNORECASE,
     )
     _DISPOSABLE_OBJECT_TOKENS: tuple[str, ...] = ("probe", "fixture", "temp", "debug", "standalone")
+    _PLAYER_TOKENS: tuple[str, ...] = ("player", "hero", "avatar", "character", "pawn")
 
     def __init__(
         self,
@@ -498,6 +499,18 @@ class _OfflineUnityAssistant:
 
         return sorted(nodes, key=_rank)[0]
 
+    def _rank_likely_player(self, node: dict[str, Any]) -> tuple[int, int, str]:
+        path = self._event_system_target_path(node).lower()
+        priority = 2
+        if path == "player" or path.endswith("/player"):
+            priority = 0
+        elif "player" in path:
+            priority = 1
+        return (priority, len(path), path)
+
+    def _choose_likely_player(self, nodes: list[dict[str, Any]]) -> dict[str, Any]:
+        return sorted(nodes, key=self._rank_likely_player)[0]
+
     def _looks_disposable_object(self, path: str) -> bool:
         normalized = str(path or "").replace("\\", "/").lower()
         return any(token in normalized for token in self._DISPOSABLE_OBJECT_TOKENS)
@@ -591,6 +604,45 @@ class _OfflineUnityAssistant:
             "applied": bool(removed_paths),
             "removedPaths": removed_paths,
             "removedCount": len(removed_paths),
+        }
+
+    def _repair_player_character_controller(self) -> dict[str, Any] | None:
+        nodes = self._hierarchy_nodes()
+        candidate_nodes: list[dict[str, Any]] = []
+        for node in nodes:
+            path = self._event_system_target_path(node)
+            normalized = path.lower()
+            if not any(token in normalized for token in self._PLAYER_TOKENS):
+                continue
+            components = {str(component) for component in (node.get("components") or [])}
+            if "CharacterController" in components or "Rigidbody" in components or "Rigidbody2D" in components:
+                continue
+            candidate_nodes.append(node)
+
+        if not candidate_nodes:
+            return None
+
+        if len(candidate_nodes) > 1:
+            candidate_paths = [
+                self._event_system_target_path(node)
+                for node in sorted(candidate_nodes, key=self._rank_likely_player)
+            ]
+            return {
+                "applied": False,
+                "candidateCount": len(candidate_paths),
+                "candidatePaths": candidate_paths[:6],
+                "reason": "Multiple likely player objects were found, so the bounded CharacterController fix refused to guess.",
+            }
+
+        target_node = self._choose_likely_player(candidate_nodes)
+        target_path = self._event_system_target_path(target_node)
+        self.bridge.client.call_route(
+            "component/add",
+            {"gameObjectPath": target_path, "componentType": "CharacterController"},
+        )
+        return {
+            "applied": True,
+            "targetPath": target_path,
         }
 
     def _repair_event_system_setup(self) -> dict[str, Any] | None:
@@ -819,7 +871,7 @@ class _OfflineUnityAssistant:
         skipped: list[str] = []
         baseline_score: float | None = None
         final_score: float | None = None
-        total_steps = 9 if self.embedded_options is not None else 8
+        total_steps = 10 if self.embedded_options is not None else 9
 
         if self.embedded_options is not None:
             try:
@@ -982,6 +1034,28 @@ class _OfflineUnityAssistant:
                 skipped.append(f"GraphicRaycaster fix skipped: {exc}")
 
         self._set_status("Running safe project improvement pass", current=7, total=total_steps)
+        if not self._has_live_unity():
+            skipped.append("CharacterController fix skipped because no live Unity session is available.")
+        else:
+            try:
+                controller_result = self._repair_player_character_controller()
+                if controller_result is None:
+                    skipped.append(
+                        "CharacterController fix not needed because no clear likely player object without a movement body was found."
+                    )
+                elif controller_result.get("applied"):
+                    applied.append(f"Added CharacterController to {controller_result.get('targetPath')}.")
+                else:
+                    skipped.append(
+                        str(
+                            controller_result.get("reason")
+                            or "CharacterController fix skipped because the scene was ambiguous."
+                        )
+                    )
+            except Exception as exc:
+                skipped.append(f"CharacterController fix skipped: {exc}")
+
+        self._set_status("Running safe project improvement pass", current=8, total=total_steps)
         if self._project_has_tests():
             skipped.append("Tests already exist.")
         elif not self._project_has_test_framework():
@@ -1018,7 +1092,7 @@ class _OfflineUnityAssistant:
             lines.extend(f"- {item}" for item in skipped)
         if self.embedded_options is not None:
             try:
-                self._set_status("Scoring project after safe improvements", current=8, total=total_steps)
+                self._set_status("Scoring project after safe improvements", current=9, total=total_steps)
                 score_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
                 score_raw = score_payload.get("overallScore")
                 final_score = float(score_raw) if score_raw is not None else None

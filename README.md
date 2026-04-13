@@ -297,6 +297,8 @@ The new `systems` lens is intentionally Unity-wide, not genre-specific. It looks
 
 The new `physics` lens focuses on setup hygiene for colliders, rigidbodies, and controller ownership. It flags Rigidbody objects that have no collider on the same object, likely player objects that still have no clear movement body, and scenes that look playable but still have no collision foundation.
 
+When there is exactly one clear likely player object in the live scene, `workflow quality-fix --lens physics --fix player-character-controller --apply` can now add a bounded `CharacterController` through Unity instead of leaving that finding as a manual follow-up.
+
 `ui` and `level-art` are scene-dependent lenses. If you run them against a bare project path without a live selected Unity editor, they now report that the live scene context is unavailable instead of pretending the scene is healthy.
 
 The `animation` lens now checks both the asset pipeline and the inspected scene. It can flag models with no animation evidence, clips without Animator Controller coverage, and scenes that still have no `Animator` components even though animation assets exist.

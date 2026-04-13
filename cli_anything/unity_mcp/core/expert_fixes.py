@@ -72,6 +72,34 @@ def _flatten_scene_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return flattened
 
 
+def _find_likely_player_paths(context: dict[str, Any]) -> list[str]:
+    player_candidates = [
+        str(path).strip()
+        for path in (((context.get("systems") or {}).get("playerCandidates")) or [])
+        if str(path).strip()
+    ]
+    if player_candidates:
+        return player_candidates
+
+    inspect_payload = dict(((context.get("raw") or {}).get("inspect")) or {})
+    hierarchy = dict(inspect_payload.get("hierarchy") or {})
+    raw_nodes = hierarchy.get("nodes") or hierarchy.get("hierarchy") or []
+    nodes = _flatten_scene_nodes([node for node in raw_nodes if isinstance(node, dict)])
+    discovered: list[str] = []
+    for node in nodes:
+        path = str(
+            node.get("path")
+            or node.get("hierarchyPath")
+            or node.get("name")
+            or ""
+        ).strip()
+        if not path:
+            continue
+        if any(token in path.lower() for token in ("player", "hero", "avatar", "character", "pawn")):
+            discovered.append(path)
+    return discovered
+
+
 def _find_first_animator_path(context: dict[str, Any]) -> str:
     inspect_payload = dict(((context.get("raw") or {}).get("inspect")) or {})
     hierarchy = dict(inspect_payload.get("hierarchy") or {})
@@ -259,6 +287,36 @@ def build_quality_fix_plan(
                 "Run workflow expert-audit --lens systems to confirm the AudioListener finding.",
                 "Keep one AudioListener on the primary camera candidate and remove or add listeners as needed.",
                 "Re-run the systems audit after the audio path is normalized.",
+            ],
+        }
+
+    if normalized_fix == "player-character-controller":
+        player_candidates = _find_likely_player_paths(context)
+        target_path = player_candidates[0] if len(player_candidates) == 1 else None
+        return {
+            "mode": "workflow" if target_path else "manual",
+            "title": "Add CharacterController to likely player",
+            "description": "Add a bounded CharacterController to the single likely player object when the physics audit shows no clear movement body.",
+            "command": [
+                "workflow",
+                "quality-fix",
+                "--lens",
+                "physics",
+                "--fix",
+                "player-character-controller",
+                "--apply",
+            ],
+            "lens": normalized_lens,
+            "fix": normalized_fix,
+            "projectRoot": str(project_path),
+            "safe": True,
+            "requiresLiveUnity": True,
+            "targetGameObjectPath": target_path,
+            "playerCandidateCount": len(player_candidates),
+            "nextSteps": [
+                "Run workflow expert-audit --lens physics to confirm the movement-body finding.",
+                "Add CharacterController only when there is one clear likely player object.",
+                "Re-run the physics audit after the movement body is in place.",
             ],
         }
 

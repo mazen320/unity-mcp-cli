@@ -4247,6 +4247,35 @@ class FullE2ETests(unittest.TestCase):
         self.assertIn("AudioListener", self.server.gameobjects["Main Camera"]["components"])
         self.assertNotIn("AudioListener", self.server.gameobjects["UICamera"]["components"])
 
+    def test_workflow_quality_fix_apply_adds_character_controller_to_likely_player(self) -> None:
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "PlayerAvatar",
+            components=["Transform", "CapsuleCollider"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "physics",
+            "--fix",
+            "player-character-controller",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["targetPath"], "PlayerAvatar")
+        self.assertIn("CharacterController", self.server.gameobjects["PlayerAvatar"]["components"])
+
     def test_workflow_quality_fix_apply_repairs_texture_importers(self) -> None:
         project = self.tmpdir / "DemoProject"
         textures = project / "Assets" / "Textures"

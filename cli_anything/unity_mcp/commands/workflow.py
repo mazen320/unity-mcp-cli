@@ -252,7 +252,7 @@ def _build_expert_audit_payload(
     lens = get_builtin_expert_lens(lens_name)
     context_available = True
     if lens.requires_live_scene:
-        if lens.name == "ui":
+        if lens.name in {"ui", "physics"}:
             hierarchy = dict((inspect_payload or {}).get("hierarchy") or {})
             context_available = bool(_extract_hierarchy_nodes(hierarchy))
         elif lens.name == "level-art":
@@ -346,6 +346,7 @@ def _enrich_inspect_payload_for_lenses(
         "ui" in normalized_lenses
         or "animation" in normalized_lenses
         or "systems" in normalized_lenses
+        or "physics" in normalized_lenses
     ) and "hierarchy" not in enriched:
         _record_progress_step(
             ctx,
@@ -1072,6 +1073,22 @@ def _rank_scene_camera_node(node: dict[str, Any]) -> tuple[int, int, str]:
     return (priority, len(normalized), normalized)
 
 
+def _rank_likely_player_node(node: dict[str, Any]) -> tuple[int, int, str]:
+    path = str(
+        node.get("path")
+        or node.get("hierarchyPath")
+        or node.get("name")
+        or ""
+    ).strip()
+    normalized = path.lower()
+    priority = 2
+    if normalized == "player" or normalized.endswith("/player"):
+        priority = 0
+    elif "player" in normalized:
+        priority = 1
+    return (priority, len(normalized), normalized)
+
+
 def _rank_scene_event_system_node(node: dict[str, Any]) -> tuple[int, int, str]:
     path = str(
         node.get("path")
@@ -1238,6 +1255,107 @@ def _apply_systems_audio_listener_fix(
         "removedCount": len(removed),
         "removedPaths": [item["path"] for item in removed],
         "removed": removed,
+        "editorState": editor_state,
+    }
+
+
+def _apply_physics_player_character_controller_fix(
+    ctx: click.Context,
+    *,
+    workflow_port: int | None,
+    inspect_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if inspect_payload is None:
+        raise ValueError(
+            "Applying the player-character-controller fix needs live Unity scene context. Select a Unity editor first or pass --port."
+        )
+
+    enriched_inspect = _enrich_inspect_payload_for_lenses(
+        ctx,
+        workflow_port=workflow_port,
+        inspect_payload=inspect_payload,
+        lens_names=["physics"],
+    ) or {}
+    hierarchy = dict(enriched_inspect.get("hierarchy") or {})
+    nodes = _iter_hierarchy_nodes(_extract_hierarchy_nodes(hierarchy))
+
+    candidate_nodes = []
+    for node in nodes:
+        path = str(
+            node.get("path")
+            or node.get("hierarchyPath")
+            or node.get("name")
+            or ""
+        ).strip()
+        if not path:
+            continue
+        normalized = path.lower()
+        components = set(node.get("components") or [])
+        looks_like_player = any(token in normalized for token in ("player", "hero", "avatar", "character", "pawn"))
+        if not looks_like_player:
+            continue
+        if "CharacterController" in components or "Rigidbody" in components or "Rigidbody2D" in components:
+            continue
+        candidate_nodes.append(node)
+
+    if not candidate_nodes:
+        return {
+            "updatedCount": 0,
+            "targetPath": None,
+            "reason": "No likely player object without an existing Rigidbody or CharacterController was found.",
+        }
+
+    if len(candidate_nodes) > 1:
+        candidate_paths = [
+            str(node.get("path") or node.get("hierarchyPath") or node.get("name") or "").strip()
+            for node in sorted(candidate_nodes, key=_rank_likely_player_node)
+            if str(node.get("path") or node.get("hierarchyPath") or node.get("name") or "").strip()
+        ]
+        return {
+            "updatedCount": 0,
+            "targetPath": None,
+            "candidateCount": len(candidate_paths),
+            "candidatePaths": candidate_paths[:6],
+            "reason": "Multiple likely player objects were found, so the bounded CharacterController fix refused to guess.",
+        }
+
+    target = candidate_nodes[0]
+    target_path = str(
+        target.get("path")
+        or target.get("hierarchyPath")
+        or target.get("name")
+        or ""
+    ).strip()
+    _record_progress_step(
+        ctx,
+        f"Adding CharacterController to {target.get('name') or target_path}",
+        phase="edit",
+        port=workflow_port,
+    )
+    add_result = require_workflow_success(
+        ctx.obj.backend.call_route_with_recovery(
+            "component/add",
+            params={
+                "gameObjectPath": target_path,
+                "componentType": "CharacterController",
+            },
+            port=workflow_port,
+            recovery_timeout=10.0,
+        ),
+        f"Add CharacterController to {target_path}",
+    )
+    editor_state = require_workflow_success(
+        ctx.obj.backend.call_route_with_recovery(
+            "editor/state",
+            port=workflow_port,
+            recovery_timeout=10.0,
+        ),
+        "Read editor state after physics fix",
+    )
+    return {
+        "updatedCount": 1,
+        "targetPath": target_path,
+        "result": add_result,
         "editorState": editor_state,
     }
 
@@ -2615,6 +2733,12 @@ def workflow_quality_fix_command(
                 )
             elif normalized_fix == "audio-listener":
                 apply_payload = _apply_systems_audio_listener_fix(
+                    ctx,
+                    workflow_port=workflow_port,
+                    inspect_payload=inspect_payload,
+                )
+            elif normalized_fix == "player-character-controller":
+                apply_payload = _apply_physics_player_character_controller_fix(
                     ctx,
                     workflow_port=workflow_port,
                     inspect_payload=inspect_payload,

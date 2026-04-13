@@ -57,6 +57,7 @@ def iter_builtin_expert_lenses() -> list[ExpertLens]:
             description="Collider, rigidbody, and movement-body audit.",
             focus="physics foundations",
             audit=audit_physics_lens,
+            supported_fix_types=("player-character-controller",),
             requires_live_scene=True,
         ),
         ExpertLens(

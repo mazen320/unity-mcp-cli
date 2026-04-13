@@ -3125,6 +3125,116 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_assistant_improve_project_adds_character_controller_to_likely_player(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes" / "DemoProject_Sandbox.unity").write_text("", encoding="utf-8")
+
+            class LiveClientStub:
+                def __init__(self) -> None:
+                    self.gameobjects = {
+                        "Main Camera": {
+                            "path": "Main Camera",
+                            "components": ["Transform", "Camera", "AudioListener"],
+                        },
+                        "PlayerAvatar": {
+                            "path": "PlayerAvatar",
+                            "components": ["Transform", "CapsuleCollider"],
+                        },
+                    }
+
+                def is_alive(self, timeout: float = 0.2) -> bool:
+                    return True
+
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    if route == "scene/hierarchy":
+                        return {
+                            "hierarchy": [
+                                {
+                                    "name": name,
+                                    "path": payload["path"],
+                                    "hierarchyPath": payload["path"],
+                                    "components": list(payload["components"]),
+                                }
+                                for name, payload in self.gameobjects.items()
+                            ]
+                        }
+                    if route == "component/add":
+                        path = str(params.get("gameObjectPath") or params.get("path") or "")
+                        component_type = str(params.get("componentType") or params.get("type") or "")
+                        self.gameobjects.setdefault(path, {"path": path, "components": ["Transform"]})
+                        if component_type not in self.gameobjects[path]["components"]:
+                            self.gameobjects[path]["components"].append(component_type)
+                        return {"success": True, "gameObjectPath": path, "component": component_type}
+                    raise AssertionError(f"Unexpected route: {route}")
+
+            bridge = ChatBridge(project, LiveClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
+
+            reply = bridge._history[-1]["content"]
+            self.assertIn("Added CharacterController to PlayerAvatar.", reply)
+            self.assertIn("CharacterController", bridge.client.gameobjects["PlayerAvatar"]["components"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_assistant_improve_project_refuses_ambiguous_character_controller_fix(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes" / "DemoProject_Sandbox.unity").write_text("", encoding="utf-8")
+
+            class LiveClientStub:
+                def __init__(self) -> None:
+                    self.gameobjects = {
+                        "Main Camera": {
+                            "path": "Main Camera",
+                            "components": ["Transform", "Camera", "AudioListener"],
+                        },
+                        "PlayerAvatar": {
+                            "path": "PlayerAvatar",
+                            "components": ["Transform", "CapsuleCollider"],
+                        },
+                        "HeroPawn": {
+                            "path": "HeroPawn",
+                            "components": ["Transform", "CapsuleCollider"],
+                        },
+                    }
+
+                def is_alive(self, timeout: float = 0.2) -> bool:
+                    return True
+
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    if route == "scene/hierarchy":
+                        return {
+                            "hierarchy": [
+                                {
+                                    "name": name,
+                                    "path": payload["path"],
+                                    "hierarchyPath": payload["path"],
+                                    "components": list(payload["components"]),
+                                }
+                                for name, payload in self.gameobjects.items()
+                            ]
+                        }
+                    if route == "component/add":
+                        raise AssertionError("CharacterController fix should not guess across multiple likely players.")
+                    raise AssertionError(f"Unexpected route: {route}")
+
+            bridge = ChatBridge(project, LiveClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
+
+            reply = bridge._history[-1]["content"]
+            self.assertIn("Multiple likely player objects were found", reply)
+            self.assertNotIn("CharacterController", bridge.client.gameobjects["PlayerAvatar"]["components"])
+            self.assertNotIn("CharacterController", bridge.client.gameobjects["HeroPawn"]["components"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_assistant_improve_project_repairs_existing_event_system_module(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"
@@ -4309,6 +4419,11 @@ class CoreTests(unittest.TestCase):
             lens_name="animation",
             fix_name="controller-wireup",
         )
+        physics_plan = build_quality_fix_plan(
+            context=context,
+            lens_name="physics",
+            fix_name="player-character-controller",
+        )
 
         self.assertEqual(guidance_plan["command"][0:2], ["workflow", "bootstrap-guidance"])
         self.assertEqual(test_scaffold_plan["command"][0:2], ["workflow", "quality-fix"])
@@ -4333,6 +4448,10 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(animation_wireup_plan["command"][0:2], ["workflow", "quality-fix"])
         self.assertEqual(animation_wireup_plan["targetGameObjectPath"], "/Hero")
         self.assertTrue(animation_wireup_plan["requiresLiveUnity"])
+        self.assertEqual(physics_plan["command"][0:2], ["workflow", "quality-fix"])
+        self.assertEqual(physics_plan["fix"], "player-character-controller")
+        self.assertTrue(physics_plan["requiresLiveUnity"])
+        self.assertEqual(physics_plan["targetGameObjectPath"], "/Hero")
 
     def test_workflow_expert_audit_returns_lens_result(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
