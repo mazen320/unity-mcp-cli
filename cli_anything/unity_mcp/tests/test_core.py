@@ -2889,6 +2889,59 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_assistant_improve_project_cleans_disposable_probe_objects(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes" / "DemoProject_Sandbox.unity").write_text("", encoding="utf-8")
+
+            class LiveClientStub:
+                def __init__(self) -> None:
+                    self.gameobjects = {
+                        "Main Camera": {
+                            "path": "Main Camera",
+                            "components": ["Transform", "Camera", "AudioListener"],
+                        },
+                        "StandaloneProbe": {
+                            "path": "StandaloneProbe",
+                            "components": ["Transform"],
+                        },
+                    }
+
+                def is_alive(self, timeout: float = 0.2) -> bool:
+                    return True
+
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    if route == "scene/hierarchy":
+                        return {
+                            "hierarchy": [
+                                {
+                                    "name": name,
+                                    "path": payload["path"],
+                                    "hierarchyPath": payload["path"],
+                                    "components": list(payload["components"]),
+                                }
+                                for name, payload in self.gameobjects.items()
+                            ]
+                        }
+                    if route == "gameobject/delete":
+                        path = str(params.get("gameObjectPath") or params.get("path") or "")
+                        removed = self.gameobjects.pop(path, None) is not None
+                        return {"success": removed, "deleted": path}
+                    raise AssertionError(f"Unexpected route: {route}")
+
+            bridge = ChatBridge(project, LiveClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
+
+            reply = bridge._history[-1]["content"]
+            self.assertIn("Removed 1 disposable probe/demo object", reply)
+            self.assertIn("StandaloneProbe", reply)
+            self.assertNotIn("StandaloneProbe", bridge.client.gameobjects)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_assistant_test_detection_ignores_tmp_parent_folder_names(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"

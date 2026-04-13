@@ -45,6 +45,7 @@ class _OfflineUnityAssistant:
         r"\bat\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\b",
         re.IGNORECASE,
     )
+    _DISPOSABLE_OBJECT_TOKENS: tuple[str, ...] = ("probe", "fixture", "temp", "debug", "standalone")
 
     def __init__(
         self,
@@ -497,6 +498,10 @@ class _OfflineUnityAssistant:
 
         return sorted(nodes, key=_rank)[0]
 
+    def _looks_disposable_object(self, path: str) -> bool:
+        normalized = str(path or "").replace("\\", "/").lower()
+        return any(token in normalized for token in self._DISPOSABLE_OBJECT_TOKENS)
+
     def _repair_audio_listener_setup(self) -> dict[str, Any] | None:
         nodes = self._hierarchy_nodes()
         listener_nodes = [
@@ -528,6 +533,39 @@ class _OfflineUnityAssistant:
         return {
             "applied": True,
             "keptPath": keep_path,
+            "removedPaths": removed_paths,
+            "removedCount": len(removed_paths),
+        }
+
+    def _cleanup_disposable_objects(self) -> dict[str, Any] | None:
+        nodes = self._hierarchy_nodes()
+        disposable_paths = [
+            self._event_system_target_path(node)
+            for node in nodes
+            if self._looks_disposable_object(self._event_system_target_path(node))
+        ]
+        unique_paths: list[str] = []
+        seen: set[str] = set()
+        for path in disposable_paths:
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            unique_paths.append(path)
+        if not unique_paths:
+            return None
+
+        removed_paths: list[str] = []
+        for path in unique_paths:
+            result = dict(
+                self.bridge.client.call_route(
+                    "gameobject/delete",
+                    {"gameObjectPath": path, "path": path},
+                )
+            )
+            if result.get("success") or result.get("deleted"):
+                removed_paths.append(path)
+        return {
+            "applied": bool(removed_paths),
             "removedPaths": removed_paths,
             "removedCount": len(removed_paths),
         }
@@ -614,7 +652,7 @@ class _OfflineUnityAssistant:
         skipped: list[str] = []
         baseline_score: float | None = None
         final_score: float | None = None
-        total_steps = 6 if self.embedded_options is not None else 5
+        total_steps = 7 if self.embedded_options is not None else 6
 
         if self.embedded_options is not None:
             try:
@@ -672,6 +710,25 @@ class _OfflineUnityAssistant:
 
         self._set_status("Running safe project improvement pass", current=2, total=total_steps)
         if not self._has_live_unity():
+            skipped.append("Disposable object cleanup skipped because no live Unity session is available.")
+        else:
+            try:
+                disposable_result = self._cleanup_disposable_objects()
+                if disposable_result is None:
+                    skipped.append("Disposable object cleanup not needed because no probe/demo objects were found.")
+                elif disposable_result.get("applied"):
+                    removed_paths = list(disposable_result.get("removedPaths") or [])
+                    preview = ", ".join(removed_paths[:3])
+                    applied.append(
+                        f"Removed {disposable_result.get('removedCount')} disposable probe/demo object(s): {preview}."
+                    )
+                else:
+                    skipped.append("Disposable object cleanup did not remove any objects.")
+            except Exception as exc:
+                skipped.append(f"Disposable object cleanup skipped: {exc}")
+
+        self._set_status("Running safe project improvement pass", current=3, total=total_steps)
+        if not self._has_live_unity():
             skipped.append("AudioListener fix skipped because no live Unity session is available.")
         else:
             try:
@@ -685,7 +742,7 @@ class _OfflineUnityAssistant:
             except Exception as exc:
                 skipped.append(f"AudioListener fix skipped: {exc}")
 
-        self._set_status("Running safe project improvement pass", current=3, total=total_steps)
+        self._set_status("Running safe project improvement pass", current=4, total=total_steps)
         if not self._has_live_unity():
             skipped.append("EventSystem fix skipped because no live Unity session is available.")
         else:
@@ -707,7 +764,7 @@ class _OfflineUnityAssistant:
             except Exception as exc:
                 skipped.append(f"EventSystem fix skipped: {exc}")
 
-        self._set_status("Running safe project improvement pass", current=4, total=total_steps)
+        self._set_status("Running safe project improvement pass", current=5, total=total_steps)
         if self._project_has_tests():
             skipped.append("Tests already exist.")
         elif not self._project_has_test_framework():
@@ -744,7 +801,7 @@ class _OfflineUnityAssistant:
             lines.extend(f"- {item}" for item in skipped)
         if self.embedded_options is not None:
             try:
-                self._set_status("Scoring project after safe improvements", current=5, total=total_steps)
+                self._set_status("Scoring project after safe improvements", current=6, total=total_steps)
                 score_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
                 score_raw = score_payload.get("overallScore")
                 final_score = float(score_raw) if score_raw is not None else None
