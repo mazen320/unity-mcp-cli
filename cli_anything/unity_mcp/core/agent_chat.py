@@ -613,17 +613,45 @@ class _OfflineUnityAssistant:
             )
             keep_path = self._event_system_target_path(keep_node)
             keep_components = {str(component) for component in (keep_node.get("components") or [])}
+            duplicate_paths: list[str] = []
+            removable_components = {"EventSystem", "StandaloneInputModule", "InputSystemUIInputModule"}
+            for node in event_nodes:
+                target_path = self._event_system_target_path(node)
+                if target_path == keep_path:
+                    continue
+                duplicate_components = {str(component) for component in (node.get("components") or [])}
+                removed_any = False
+                for component_type in sorted(removable_components & duplicate_components):
+                    self.bridge.client.call_route(
+                        "component/remove",
+                        {
+                            "gameObject": target_path,
+                            "gameObjectPath": target_path,
+                            "component": component_type,
+                        },
+                    )
+                    removed_any = True
+                if removed_any:
+                    duplicate_paths.append(target_path)
+
+            applied = False
             if module_type not in keep_components:
                 self.bridge.client.call_route(
                     "component/add",
                     {"gameObjectPath": keep_path, "componentType": module_type},
                 )
+                applied = True
+
+            if applied or duplicate_paths:
                 return {
                     "applied": True,
                     "gameObjectPath": keep_path,
                     "moduleType": module_type,
                     "created": False,
                     "canvasCount": len(canvas_nodes),
+                    "duplicateRemovedCount": len(duplicate_paths),
+                    "duplicatePaths": duplicate_paths,
+                    "moduleAdded": module_type not in keep_components,
                 }
             return {
                 "applied": False,
@@ -660,6 +688,9 @@ class _OfflineUnityAssistant:
             "moduleType": module_type,
             "created": created,
             "canvasCount": len(canvas_nodes),
+            "duplicateRemovedCount": 0,
+            "duplicatePaths": [],
+            "moduleAdded": True,
         }
 
     def _repair_canvas_scalers(self) -> dict[str, Any] | None:
@@ -834,7 +865,7 @@ class _OfflineUnityAssistant:
                 if event_result is None:
                     skipped.append("EventSystem fix not needed because no Canvas UI was found.")
                 elif event_result.get("applied"):
-                    applied.append(
+                    message = (
                         "Repaired scene EventSystem setup"
                         + (
                             f" with {event_result.get('moduleType')}."
@@ -842,6 +873,14 @@ class _OfflineUnityAssistant:
                             else "."
                         )
                     )
+                    duplicate_removed_count = int(event_result.get("duplicateRemovedCount") or 0)
+                    if duplicate_removed_count > 0:
+                        duplicate_paths = list(event_result.get("duplicatePaths") or [])
+                        preview = ", ".join(duplicate_paths[:3])
+                        message += (
+                            f" Removed {duplicate_removed_count} duplicate EventSystem object(s): {preview}."
+                        )
+                    applied.append(message)
                 else:
                     skipped.append(str(event_result.get("reason") or "Scene EventSystem already exists."))
             except Exception as exc:

@@ -3125,6 +3125,88 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_assistant_improve_project_removes_duplicate_event_system_components(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes" / "DemoProject_Sandbox.unity").write_text("", encoding="utf-8")
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.inputsystem": "1.8.0"}}),
+                encoding="utf-8",
+            )
+
+            class LiveClientStub:
+                def __init__(self) -> None:
+                    self.gameobjects = {
+                        "Main Camera": {
+                            "path": "Main Camera",
+                            "components": ["Transform", "Camera", "AudioListener"],
+                        },
+                        "HUDCanvas": {
+                            "path": "HUDCanvas",
+                            "components": ["Transform", "RectTransform", "Canvas", "GraphicRaycaster", "CanvasScaler"],
+                        },
+                        "EventSystem": {
+                            "path": "EventSystem",
+                            "components": ["Transform", "EventSystem", "InputSystemUIInputModule"],
+                        },
+                        "UIRoot/DuplicateEventSystem": {
+                            "path": "UIRoot/DuplicateEventSystem",
+                            "components": ["Transform", "EventSystem", "StandaloneInputModule"],
+                        },
+                    }
+
+                def is_alive(self, timeout: float = 0.2) -> bool:
+                    return True
+
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    if route == "scene/hierarchy":
+                        return {
+                            "hierarchy": [
+                                {
+                                    "name": name,
+                                    "path": payload["path"],
+                                    "hierarchyPath": payload["path"],
+                                    "components": list(payload["components"]),
+                                }
+                                for name, payload in self.gameobjects.items()
+                            ]
+                        }
+                    if route == "component/add":
+                        path = str(params.get("gameObjectPath") or params.get("path") or "")
+                        component_type = str(params.get("componentType") or params.get("type") or "")
+                        self.gameobjects.setdefault(path, {"path": path, "components": ["Transform"]})
+                        if component_type not in self.gameobjects[path]["components"]:
+                            self.gameobjects[path]["components"].append(component_type)
+                        return {"success": True, "gameObjectPath": path, "component": component_type}
+                    if route == "component/remove":
+                        path = str(params.get("gameObjectPath") or params.get("gameObject") or "")
+                        component = str(params.get("component") or "")
+                        comps = self.gameobjects.get(path, {}).get("components", [])
+                        if component in comps:
+                            comps.remove(component)
+                        return {"success": True, "gameObjectPath": path, "component": component, "removed": True}
+                    raise AssertionError(f"Unexpected route: {route}")
+
+            bridge = ChatBridge(project, LiveClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
+
+            reply = bridge._history[-1]["content"]
+            self.assertIn("Removed 1 duplicate EventSystem object", reply)
+            self.assertIn("UIRoot/DuplicateEventSystem", reply)
+            self.assertIn("EventSystem", bridge.client.gameobjects["EventSystem"]["components"])
+            self.assertIn("InputSystemUIInputModule", bridge.client.gameobjects["EventSystem"]["components"])
+            self.assertNotIn("EventSystem", bridge.client.gameobjects["UIRoot/DuplicateEventSystem"]["components"])
+            self.assertNotIn(
+                "StandaloneInputModule",
+                bridge.client.gameobjects["UIRoot/DuplicateEventSystem"]["components"],
+            )
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_assistant_test_detection_ignores_tmp_parent_folder_names(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"
