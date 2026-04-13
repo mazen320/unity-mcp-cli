@@ -14,6 +14,8 @@ from socketserver import ThreadingMixIn, TCPServer
 from urllib.parse import parse_qs, urlparse
 import uuid
 
+from click.testing import CliRunner
+
 PNG_1X1_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2p7QAAAABJRU5ErkJggg=="
 
 
@@ -3882,17 +3884,40 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(payload["editorState"]["sceneDirty"])
 
     def test_workflow_audit_advanced_reports_probe_results_and_cleans_up(self) -> None:
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "audit-advanced",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
-            timeout=40,
+        from cli_anything.unity_mcp.unity_mcp_cli import cli as unity_cli
+
+        runner = CliRunner()
+        env = os.environ.copy()
+        env["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(self.tmpdir / "memory")
+        result = runner.invoke(
+            unity_cli,
+            [
+                "--host",
+                "127.0.0.1",
+                "--default-port",
+                str(self.port),
+                "--port-range-start",
+                str(self.port),
+                "--port-range-end",
+                str(self.port),
+                "--registry-path",
+                str(self.registry_path),
+                "--session-path",
+                str(self.session_path),
+                "--json",
+                "workflow",
+                "audit-advanced",
+                "--timeout",
+                "5",
+                "--interval",
+                "0.1",
+            ],
+            env=env,
+            catch_exceptions=False,
         )
-        payload = json.loads(result.stdout.strip())
+        if result.exit_code != 0:
+            self.fail(f"CLI failed.\nOUTPUT:\n{result.output}")
+        payload = json.loads(result.output.strip())
 
         self.assertGreaterEqual(payload["summary"]["totalProbes"], 18)
         self.assertEqual(payload["summary"]["failed"], 0)
@@ -4792,6 +4817,31 @@ class FullE2ETests(unittest.TestCase):
         self.assertIn("Self-transition", transition["error"])
         remove_layer = call_tool("unity_animation_remove_layer", {"controllerPath": controller_path, "layerIndex": 0})
         self.assertFalse(remove_layer["layerRemoved"])  # no layers added yet, so nothing to remove
+
+    def test_mock_bridge_extended_mock_coverage(self) -> None:
+        catalog_path = Path(__file__).resolve().parents[1] / "data" / "upstream_tool_catalog.json"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        tool_routes = {
+            str(item.get("name") or ""): str(item.get("route") or "")
+            for item in catalog.get("tools", [])
+            if item.get("route")
+        }
+        tool_routes.update(
+            {
+                "unity_mppm_info": "scenario/info",
+                "unity_mppm_list_scenarios": "scenario/list",
+                "unity_mppm_status": "scenario/status",
+                "unity_mppm_activate_scenario": "scenario/activate",
+                "unity_mppm_start": "scenario/start",
+                "unity_mppm_stop": "scenario/stop",
+            }
+        )
+
+        def call_tool(tool_name: str, params: dict | None = None) -> dict:
+            route = tool_routes.get(tool_name)
+            if not route:
+                self.fail(f"Tool route not found for `{tool_name}`.")
+            return self.server.route_result(route, params or {})
 
         # ── Prefab mock coverage ─────────────────────────────────────────
         prefab_path = "Assets/MockOnly/MockPrefab.prefab"
