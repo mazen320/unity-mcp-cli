@@ -59,6 +59,9 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         return self.ticket_counter
 
     def reset_state(self) -> None:
+        self.project_name = "Demo"
+        self.project_path = "C:/Projects/Demo"
+        self.unity_version = "6000.0.0f1"
         self.active_scene_name = "MainScene"
         self.active_scene_path = "Assets/Scenes/MainScene.unity"
         self.scene_assets = {self.active_scene_path}
@@ -4465,6 +4468,91 @@ class FullE2ETests(unittest.TestCase):
 
         self.assertNotIn("No test coverage detected", titles)
         self.assertIn("Missing project guidance", titles)
+
+    def test_workflow_improve_project_applies_safe_project_and_scene_repairs(self) -> None:
+        project = self.tmpdir / "DemoProject"
+        (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+        (project / "Packages").mkdir(parents=True, exist_ok=True)
+        (project / "Assets" / "Scripts" / "Player.cs").write_text(
+            "public class Player {}",
+            encoding="utf-8",
+        )
+        (project / "Packages" / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "dependencies": {
+                        "com.unity.inputsystem": "1.6.0",
+                        "com.unity.test-framework": "1.6.0",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.server.project_name = "DemoProject"
+        self.server.project_path = str(project).replace("\\", "/")
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera"],
+        )
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas"],
+        )
+        self.server._register_gameobject(
+            "PlayerAvatar",
+            components=["Transform", "CapsuleCollider"],
+        )
+        self.server._register_gameobject(
+            "StandaloneProbe",
+            components=["Transform"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "improve-project",
+            "--port",
+            str(self.port),
+            str(project),
+            timeout=40,
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["liveUnityAvailable"])
+        self.assertGreater(payload["appliedCount"], 0)
+        self.assertEqual(payload["skippedCount"], 0)
+        self.assertIsNotNone(payload["baselineScore"])
+        self.assertIsNotNone(payload["finalScore"])
+        self.assertGreater(payload["finalScore"], payload["baselineScore"])
+        self.assertTrue(payload["projectChanged"])
+        self.assertTrue(payload["sceneChanged"])
+
+        applied_fixes = {item["fix"] for item in payload["applied"]}
+        self.assertTrue(
+            {
+                "guidance",
+                "sandbox-scene",
+                "disposable-cleanup",
+                "audio-listener",
+                "event-system",
+                "ui-canvas-scaler",
+                "ui-graphic-raycaster",
+                "player-character-controller",
+                "test-scaffold",
+            }.issubset(applied_fixes)
+        )
+        self.assertTrue((project / "AGENTS.md").exists())
+        self.assertTrue((project / "Assets" / "MCP" / "Context" / "ProjectSummary.md").exists())
+        self.assertTrue((project / "Assets" / "Tests" / "EditMode" / "DemoProjectSmokeTests.cs").exists())
+        self.assertIn("Assets/Scenes/DemoProject_Sandbox.unity", self.server.scene_assets)
+        self.assertIn("AudioListener", self.server.gameobjects["Main Camera"]["components"])
+        self.assertIn("CanvasScaler", self.server.gameobjects["HUDCanvas"]["components"])
+        self.assertIn("GraphicRaycaster", self.server.gameobjects["HUDCanvas"]["components"])
+        self.assertIn("CharacterController", self.server.gameobjects["PlayerAvatar"]["components"])
+        self.assertNotIn("StandaloneProbe", self.server.gameobjects)
+        self.assertIn("EventSystem", self.server.gameobjects)
+        self.assertIn("InputSystemUIInputModule", self.server.gameobjects["EventSystem"]["components"])
 
     def test_workflow_expert_audit_systems_reports_live_scene_hygiene_findings(self) -> None:
         self.server._register_gameobject(

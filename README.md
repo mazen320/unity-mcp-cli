@@ -276,6 +276,8 @@ cli-anything-unity-mcp --json workflow benchmark-report C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow benchmark-report --report-file .cli-anything-unity-mcp/benchmarks/my-project.json --port <port>
 cli-anything-unity-mcp --json workflow benchmark-compare .cli-anything-unity-mcp/benchmarks/before.json .cli-anything-unity-mcp/benchmarks/after.json
 cli-anything-unity-mcp --json workflow benchmark-compare --markdown-file .cli-anything-unity-mcp/benchmarks/compare.md .cli-anything-unity-mcp/benchmarks/before.json .cli-anything-unity-mcp/benchmarks/after.json
+cli-anything-unity-mcp --json workflow improve-project C:/Projects/MyUnityGame
+cli-anything-unity-mcp --json workflow improve-project --port <port> C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance --apply C:/Projects/MyUnityGame
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix test-scaffold --apply C:/Projects/MyUnityGame
@@ -312,6 +314,10 @@ When the scene already has a live `Animator`, `workflow quality-fix --lens anima
 `workflow scene-critique` bundles the high-signal scene-facing lenses together so you can get a fast content-direction review without manually calling each one.
 
 `workflow quality-score` scores the whole project across all built-in expert lenses and returns per-lens grades plus an overall average.
+
+`workflow improve-project` is the new top-level safe improvement pass. Offline, it writes missing project guidance and EditMode smoke-test scaffolding when the Unity Test Framework is already installed. When you also pass `--port <port>`, it adds the bounded live-scene repair bundle on top: sandbox-scene creation, disposable probe cleanup, `AudioListener` repair, `EventSystem` repair/normalization, missing `CanvasScaler` and `GraphicRaycaster` components, and the bounded likely-player `CharacterController` fix.
+
+That gives the CLI a single demoable “make this Unity project healthier” entrypoint instead of forcing users to remember nine separate `quality-fix` commands. It also makes before/after evidence cleaner: the command returns `baselineScore`, `finalScore`, `scoreDelta`, plus explicit `applied` and `skipped` fix lists, so GitHub writeups can show exactly what changed and what it unlocked.
 
 `workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It also includes bounded recurring diagnostics memory for repeat compiler failures and repeat queue/bridge instability, a dedicated `queueDiagnostics` block for recurring queue pressure, and a `queueTrend` block for longer-horizon queue history, so GitHub snapshots and local benchmark artifacts keep the long-running health signal instead of only the current pass.
 

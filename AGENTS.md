@@ -41,6 +41,8 @@ cli-anything-unity-mcp --json workflow expert-audit --lens systems --port <port>
 cli-anything-unity-mcp --json workflow scene-critique --port <port>
 cli-anything-unity-mcp --json workflow quality-score --port <port>
 cli-anything-unity-mcp --json workflow benchmark-report --port <port>
+cli-anything-unity-mcp --json workflow improve-project C:/Projects/MyUnityProject
+cli-anything-unity-mcp --json workflow improve-project --port <port> C:/Projects/MyUnityProject
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance --port <port>
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix guidance --apply C:/Projects/MyUnityProject
 cli-anything-unity-mcp --json workflow quality-fix --lens director --fix test-scaffold --apply C:/Projects/MyUnityProject
@@ -79,6 +81,7 @@ cli-anything-unity-mcp --json debug capture --kind both --port <port>
 - The `animation` lens can use live hierarchy data when it is available, so prefer running it against a selected editor when you want scene-side Animator wiring feedback and not just asset-pipeline feedback.
 - Use `workflow scene-critique` when you want the fast combined read from the scene-facing expert lenses without manually chaining them.
 - Use `workflow quality-score` when the user wants a broad “how healthy is this project?” checkpoint across all expert lenses.
+- Use `workflow improve-project` when the user wants the safest one-command cleanup/improvement pass. Offline it handles guidance plus test scaffolding; with `--port` it also runs the bounded live-scene hygiene bundle and returns a before/after score delta with applied/skipped fix lists.
 - Use `workflow benchmark-report` when the user wants a stable scorecard or evidence artifact for GitHub, release notes, or regression tracking. Prefer writing the report to a file instead of copy-pasting huge CLI output blobs. The saved JSON now also carries `queueDiagnostics` for recurring queue pressure and `queueTrend` for longer-horizon queue history.
 - The Unity Agent tab now has a real offline assistant layer. For quick in-editor support, it can already handle project inspection, quality scoring, benchmarks, guidance scaffolding, test scaffolding, sandbox scenes, compilation checks, basic primitive creation, and a small set of bounded live-scene hygiene fixes without external API keys.
 - The bounded live-scene cleanup set currently includes: repairing, completing, or normalizing `EventSystem` setup, adding missing `CanvasScaler` and `GraphicRaycaster` components, adding or deduplicating `AudioListener` components, adding a `CharacterController` to one clear likely player object, and deleting obvious disposable probe/demo objects during `improve project`. Keep new assistant-side scene edits in that same low-risk category.

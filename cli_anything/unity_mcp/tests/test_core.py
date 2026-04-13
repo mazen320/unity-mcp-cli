@@ -4641,6 +4641,51 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_workflow_improve_project_runs_offline_safe_pass(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        try:
+            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+            (project / "Packages").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scripts" / "Player.cs").write_text(
+                "public class Player {}",
+                encoding="utf-8",
+            )
+            (project / "Packages" / "manifest.json").write_text(
+                json.dumps({"dependencies": {"com.unity.test-framework": "1.6.0"}}),
+                encoding="utf-8",
+            )
+
+            payload = run_cli_json(
+                [
+                    "workflow",
+                    "improve-project",
+                    str(project),
+                ],
+                EmbeddedCLIOptions(
+                    session_path=tmpdir / "session.json",
+                    registry_path=tmpdir / "instances.json",
+                ),
+            )
+
+            self.assertTrue(payload["available"])
+            self.assertFalse(payload["liveUnityAvailable"])
+            self.assertGreaterEqual(payload["appliedCount"], 2)
+            self.assertGreaterEqual(payload["skippedCount"], 1)
+            self.assertIsNotNone(payload["baselineScore"])
+            self.assertIsNotNone(payload["finalScore"])
+            self.assertGreater(payload["finalScore"], payload["baselineScore"])
+            applied_fixes = {item["fix"] for item in payload["applied"]}
+            skipped_fixes = {item["fix"] for item in payload["skipped"]}
+            self.assertIn("guidance", applied_fixes)
+            self.assertIn("test-scaffold", applied_fixes)
+            self.assertIn("sandbox-scene", skipped_fixes)
+            self.assertIn("event-system", skipped_fixes)
+            self.assertTrue((project / "AGENTS.md").exists())
+            self.assertTrue((project / "Assets" / "Tests" / "EditMode" / "DemoProjectSmokeTests.cs").exists())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_build_quality_fix_plan_reads_test_framework_from_manifest_when_audit_packages_are_truncated(self) -> None:
         from cli_anything.unity_mcp.core.expert_fixes import build_quality_fix_plan
 
