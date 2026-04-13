@@ -2831,6 +2831,64 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_assistant_improve_project_repairs_duplicate_audio_listeners(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
+            (project / "Assets" / "Scenes" / "DemoProject_Sandbox.unity").write_text("", encoding="utf-8")
+
+            class LiveClientStub:
+                def __init__(self) -> None:
+                    self.gameobjects = {
+                        "Main Camera": {
+                            "path": "Main Camera",
+                            "components": ["Transform", "Camera", "AudioListener"],
+                        },
+                        "UICamera": {
+                            "path": "UICamera",
+                            "components": ["Transform", "Camera", "AudioListener"],
+                        },
+                    }
+
+                def is_alive(self, timeout: float = 0.2) -> bool:
+                    return True
+
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    if route == "scene/hierarchy":
+                        return {
+                            "hierarchy": [
+                                {
+                                    "name": name,
+                                    "path": payload["path"],
+                                    "hierarchyPath": payload["path"],
+                                    "components": list(payload["components"]),
+                                }
+                                for name, payload in self.gameobjects.items()
+                            ]
+                        }
+                    if route == "component/remove":
+                        path = str(params.get("gameObjectPath") or params.get("gameObject") or "")
+                        component = str(params.get("component") or "")
+                        comps = self.gameobjects.get(path, {}).get("components", [])
+                        if component in comps:
+                            comps.remove(component)
+                        return {"success": True, "gameObjectPath": path, "component": component, "removed": True}
+                    raise AssertionError(f"Unexpected route: {route}")
+
+            bridge = ChatBridge(project, LiveClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
+
+            reply = bridge._history[-1]["content"]
+            self.assertIn("Removed 1 extra AudioListener", reply)
+            self.assertIn("Main Camera", reply)
+            self.assertIn("EventSystem fix not needed because no Canvas UI was found.", reply)
+            self.assertIn("AudioListener", bridge.client.gameobjects["Main Camera"]["components"])
+            self.assertNotIn("AudioListener", bridge.client.gameobjects["UICamera"]["components"])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_assistant_test_detection_ignores_tmp_parent_folder_names(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"

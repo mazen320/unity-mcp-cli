@@ -485,6 +485,53 @@ class _OfflineUnityAssistant:
             or "EventSystem"
         ).strip()
 
+    def _choose_primary_audio_listener(self, nodes: list[dict[str, Any]]) -> dict[str, Any]:
+        def _rank(node: dict[str, Any]) -> tuple[int, int, str]:
+            path = self._event_system_target_path(node).lower()
+            priority = 2
+            if "main camera" in path:
+                priority = 0
+            elif "camera" in path:
+                priority = 1
+            return (priority, len(path), path)
+
+        return sorted(nodes, key=_rank)[0]
+
+    def _repair_audio_listener_setup(self) -> dict[str, Any] | None:
+        nodes = self._hierarchy_nodes()
+        listener_nodes = [
+            node
+            for node in nodes
+            if "AudioListener" in {str(component) for component in (node.get("components") or [])}
+        ]
+        if len(listener_nodes) <= 1:
+            return None
+
+        keep_node = self._choose_primary_audio_listener(listener_nodes)
+        keep_path = self._event_system_target_path(keep_node)
+        removed_paths: list[str] = []
+
+        for node in listener_nodes:
+            path = self._event_system_target_path(node)
+            if path == keep_path:
+                continue
+            self.bridge.client.call_route(
+                "component/remove",
+                {
+                    "gameObject": path,
+                    "gameObjectPath": path,
+                    "component": "AudioListener",
+                },
+            )
+            removed_paths.append(path)
+
+        return {
+            "applied": True,
+            "keptPath": keep_path,
+            "removedPaths": removed_paths,
+            "removedCount": len(removed_paths),
+        }
+
     def _repair_event_system_setup(self) -> dict[str, Any] | None:
         nodes = self._hierarchy_nodes()
         canvas_nodes = [
@@ -567,7 +614,7 @@ class _OfflineUnityAssistant:
         skipped: list[str] = []
         baseline_score: float | None = None
         final_score: float | None = None
-        total_steps = 5 if self.embedded_options is not None else 4
+        total_steps = 6 if self.embedded_options is not None else 5
 
         if self.embedded_options is not None:
             try:
@@ -625,6 +672,21 @@ class _OfflineUnityAssistant:
 
         self._set_status("Running safe project improvement pass", current=2, total=total_steps)
         if not self._has_live_unity():
+            skipped.append("AudioListener fix skipped because no live Unity session is available.")
+        else:
+            try:
+                audio_result = self._repair_audio_listener_setup()
+                if audio_result is None:
+                    skipped.append("AudioListener fix not needed because the scene already has one listener.")
+                else:
+                    applied.append(
+                        f"Removed {audio_result.get('removedCount')} extra AudioListener(s) and kept {audio_result.get('keptPath')}."
+                    )
+            except Exception as exc:
+                skipped.append(f"AudioListener fix skipped: {exc}")
+
+        self._set_status("Running safe project improvement pass", current=3, total=total_steps)
+        if not self._has_live_unity():
             skipped.append("EventSystem fix skipped because no live Unity session is available.")
         else:
             try:
@@ -645,7 +707,7 @@ class _OfflineUnityAssistant:
             except Exception as exc:
                 skipped.append(f"EventSystem fix skipped: {exc}")
 
-        self._set_status("Running safe project improvement pass", current=3, total=total_steps)
+        self._set_status("Running safe project improvement pass", current=4, total=total_steps)
         if self._project_has_tests():
             skipped.append("Tests already exist.")
         elif not self._project_has_test_framework():
@@ -682,7 +744,7 @@ class _OfflineUnityAssistant:
             lines.extend(f"- {item}" for item in skipped)
         if self.embedded_options is not None:
             try:
-                self._set_status("Scoring project after safe improvements", current=4, total=total_steps)
+                self._set_status("Scoring project after safe improvements", current=5, total=total_steps)
                 score_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
                 score_raw = score_payload.get("overallScore")
                 final_score = float(score_raw) if score_raw is not None else None
