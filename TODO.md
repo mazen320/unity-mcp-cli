@@ -49,6 +49,7 @@ As of 2026-04-12:
 - The offline assistant can now repair a missing live-scene `EventSystem` directly during `improve project`, using the active File IPC client and the project’s installed input package to choose the right UI input module.
 - The same live `improve project` path now also repairs incomplete `EventSystem` objects that already exist but are missing the expected UI input module, instead of incorrectly treating them as already healthy.
 - The same live `improve project` path now also strips duplicate `EventSystem` and UI input-module components from extra scene objects, keeping one primary `EventSystem` instead of only repairing missing pieces.
+- The same live `improve project` path now also normalizes the primary `EventSystem` object itself by removing the wrong extra UI input module when both legacy and Input System modules are present together.
 - The same live `improve project` path can now clean up duplicate `AudioListener` components directly in-scene, keeping the best camera candidate instead of only reporting the problem.
 - The same live `improve project` path can now also add a missing `AudioListener` to the best live camera candidate when a scene has cameras but no listener at all, so the assistant repairs both missing and duplicate listener states.
 - The same live `improve project` path can now also delete obvious disposable probe/demo objects directly in-scene, so benchmark and demo leftovers are treated as a bounded cleanup step instead of only a systems finding.

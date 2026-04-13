@@ -613,8 +613,21 @@ class _OfflineUnityAssistant:
             )
             keep_path = self._event_system_target_path(keep_node)
             keep_components = {str(component) for component in (keep_node.get("components") or [])}
-            duplicate_paths: list[str] = []
             removable_components = {"EventSystem", "StandaloneInputModule", "InputSystemUIInputModule"}
+            extra_keep_modules = [
+                component_type
+                for component_type in sorted((removable_components - {"EventSystem", module_type}) & keep_components)
+            ]
+            for component_type in extra_keep_modules:
+                self.bridge.client.call_route(
+                    "component/remove",
+                    {
+                        "gameObject": keep_path,
+                        "gameObjectPath": keep_path,
+                        "component": component_type,
+                    },
+                )
+            duplicate_paths: list[str] = []
             for node in event_nodes:
                 target_path = self._event_system_target_path(node)
                 if target_path == keep_path:
@@ -641,6 +654,8 @@ class _OfflineUnityAssistant:
                     {"gameObjectPath": keep_path, "componentType": module_type},
                 )
                 applied = True
+            if extra_keep_modules:
+                applied = True
 
             if applied or duplicate_paths:
                 return {
@@ -652,6 +667,7 @@ class _OfflineUnityAssistant:
                     "duplicateRemovedCount": len(duplicate_paths),
                     "duplicatePaths": duplicate_paths,
                     "moduleAdded": module_type not in keep_components,
+                    "primaryRemovedComponents": extra_keep_modules,
                 }
             return {
                 "applied": False,
