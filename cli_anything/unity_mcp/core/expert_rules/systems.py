@@ -110,11 +110,20 @@ def audit_systems_lens(context: dict) -> dict:
                 }
             )
         elif event_system_count > 1:
+            duplicate_names = ", ".join(
+                str(
+                    node.get("path")
+                    or node.get("hierarchyPath")
+                    or node.get("name")
+                    or "EventSystem"
+                )
+                for node in event_system_nodes[:3]
+            )
             findings.append(
                 {
                     "severity": "high",
                     "title": "Multiple EventSystems in scene",
-                    "detail": f"The inspected hierarchy currently has {event_system_count} EventSystem components. Unity UI should be driven by one primary EventSystem.",
+                    "detail": f"The inspected hierarchy currently has {event_system_count} EventSystem components. Unity UI should be driven by one primary EventSystem. Found: {duplicate_names}.",
                 }
             )
 
@@ -127,6 +136,16 @@ def audit_systems_lens(context: dict) -> dict:
                             "severity": "medium",
                             "title": "EventSystem missing UI input module",
                             "detail": f"EventSystem `{node.get('name')}` has no UI input module component.",
+                            "path": node.get("path") or node.get("hierarchyPath"),
+                        }
+                    )
+                    break
+                if len(modules) > 1:
+                    findings.append(
+                        {
+                            "severity": "medium",
+                            "title": "EventSystem has conflicting UI input modules",
+                            "detail": f"EventSystem `{node.get('name')}` has multiple UI input modules active: {', '.join(sorted(modules))}.",
                             "path": node.get("path") or node.get("hierarchyPath"),
                         }
                     )

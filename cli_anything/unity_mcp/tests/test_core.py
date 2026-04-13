@@ -3966,6 +3966,8 @@ class CoreTests(unittest.TestCase):
             "Multiple EventSystems in scene",
             {item["title"] for item in result["findings"]},
         )
+        duplicate_finding = next(item for item in result["findings"] if item["title"] == "Multiple EventSystems in scene")
+        self.assertIn("DuplicateEventSystem", duplicate_finding["detail"])
 
     def test_systems_lens_flags_event_system_without_input_module(self) -> None:
         from cli_anything.unity_mcp.core.expert_rules.systems import audit_systems_lens
@@ -4001,6 +4003,46 @@ class CoreTests(unittest.TestCase):
 
         self.assertIn(
             "EventSystem missing UI input module",
+            {item["title"] for item in result["findings"]},
+        )
+
+    def test_systems_lens_flags_conflicting_event_system_modules(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.systems import audit_systems_lens
+
+        result = audit_systems_lens(
+            {
+                "assets": {"sceneCount": 1, "scriptCount": 0, "prefabCount": 0},
+                "systems": {
+                    "contextAvailable": True,
+                    "hierarchyNodeCount": 2,
+                    "activeCameraCount": 1,
+                    "audioListenerCount": 1,
+                    "canvasCount": 1,
+                    "eventSystemCount": 1,
+                    "characterControllerCount": 0,
+                    "rigidbodyCount": 0,
+                    "colliderCount": 0,
+                    "likelyPlayerCount": 0,
+                    "disposableObjectCount": 0,
+                },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {"name": "HUDCanvas", "components": ["Canvas", "CanvasScaler", "GraphicRaycaster"]},
+                                {
+                                    "name": "EventSystem",
+                                    "components": ["EventSystem", "StandaloneInputModule", "InputSystemUIInputModule"],
+                                },
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertIn(
+            "EventSystem has conflicting UI input modules",
             {item["title"] for item in result["findings"]},
         )
 
