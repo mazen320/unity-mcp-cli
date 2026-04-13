@@ -70,8 +70,9 @@ cli-anything-unity-mcp --json debug capture --kind both --port <port>
 - Use `workflow asset-audit` when the user is asking about asset quality, importer setup, materials, textures, animation-readiness, or likely project clean-up work. It can audit by selected Unity editor or a direct project path.
 - Use `workflow bootstrap-guidance` when the project needs a starter `AGENTS.md` or `Assets/MCP/Context/ProjectSummary.md` generated from the current audit findings. It previews by default and can write the files with `--write`.
 - Use `workflow create-sandbox-scene` when the audit flags a missing sandbox scene or when you want a safe disposable scene before doing bigger gameplay or tooling passes. By default it restores the original scene after creation; pass `--open` if you want to land in the sandbox immediately.
-- Use `workflow expert-audit --lens <director|systems|animation|tech-art|ui|level-art>` when the user wants content-direction review, Unity systems/runtime hygiene feedback, animation/rig hints, tech-art checks, HUD critique, or level readability feedback from a single specialist lens.
+- Use `workflow expert-audit --lens <director|systems|physics|animation|tech-art|ui|level-art>` when the user wants content-direction review, Unity systems/runtime hygiene feedback, collider/rigidbody setup feedback, animation/rig hints, tech-art checks, HUD critique, or level readability feedback from a single specialist lens.
 - Prefer `workflow expert-audit --lens systems` when the user wants a broad Unity-developer read instead of genre-specific advice. That lens is for scene architecture, playability hooks, runtime hygiene, prefab coverage, and benchmark cleanliness.
+- Prefer `workflow expert-audit --lens physics` when the user specifically needs grounded feedback on colliders, rigidbodies, CharacterController ownership, or scene collision foundations.
 - Remember that `ui` and `level-art` need live scene data. If you only have a direct project path and no selected editor, expect those lenses to report missing live context instead of returning a confident scene score.
 - The `animation` lens can use live hierarchy data when it is available, so prefer running it against a selected editor when you want scene-side Animator wiring feedback and not just asset-pipeline feedback.
 - Use `workflow scene-critique` when you want the fast combined read from the scene-facing expert lenses without manually chaining them.
@@ -146,6 +147,7 @@ Built-in developer profiles:
 - `caveman` — terse low-token mode
 - `director` — content-direction and project-readability bias
 - `systems` — Unity systems, runtime hygiene, and testability bias
+- `physics` — collider, rigidbody, and movement-body setup bias
 - `animator` — rig, clip, and controller bias
 - `tech-artist` — material, shader, texture, and render-pipeline bias
 - `ui-designer` — canvas, HUD, scaling, and clarity bias

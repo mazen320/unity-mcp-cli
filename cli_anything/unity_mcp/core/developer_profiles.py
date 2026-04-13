@@ -154,6 +154,20 @@ _BUILTIN_PROFILE_TEMPLATES: tuple[DeveloperProfile, ...] = (
         recommended_skills=["cli-anything"],
     ),
     DeveloperProfile(
+        name="physics",
+        description="Physics mode for collider coverage, rigidbody hygiene, and movement-body setup.",
+        planning_mode="systems-first",
+        verbosity="concise",
+        token_strategy="balanced",
+        focus="colliders, rigidbodies, controllers, and gameplay-contact setup",
+        instructions=[
+            "Look for missing collider coverage, bad rigidbody ownership, and movement-body gaps first.",
+            "Prefer concrete object-level setup findings over vague feel or tuning advice.",
+            "Call out likely player objects that lack a clear controller or rigidbody foundation.",
+        ],
+        recommended_skills=["cli-anything"],
+    ),
+    DeveloperProfile(
         name="review",
         description="Risk-first reviewer mode for bugs, regressions, testing gaps, and production safety.",
         planning_mode="risk-first",

@@ -494,6 +494,7 @@ class CoreTests(unittest.TestCase):
                     "director",
                     "level-designer",
                     "normal",
+                    "physics",
                     "review",
                     "systems",
                     "tech-artist",
@@ -3750,7 +3751,7 @@ class CoreTests(unittest.TestCase):
         names = {profile.name for profile in store.list_profiles().profiles}
 
         self.assertTrue(
-            {"director", "animator", "systems", "tech-artist", "ui-designer", "level-designer"} <= names
+            {"director", "animator", "physics", "systems", "tech-artist", "ui-designer", "level-designer"} <= names
         )
 
     def test_expert_lens_registry_returns_expected_lenses(self) -> None:
@@ -3763,13 +3764,76 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(
             names,
-            {"director", "systems", "animation", "tech-art", "ui", "level-art"},
+            {"director", "systems", "physics", "animation", "tech-art", "ui", "level-art"},
         )
         self.assertEqual(grade_score(22), "poor")
         self.assertEqual(grade_score(55), "weak")
         self.assertEqual(grade_score(68), "workable")
         self.assertEqual(grade_score(80), "strong")
         self.assertEqual(grade_score(94), "excellent")
+
+    def test_physics_lens_flags_rigidbody_without_collider(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.physics import audit_physics_lens
+
+        result = audit_physics_lens(
+            {
+                "systems": {
+                    "contextAvailable": True,
+                    "hierarchyNodeCount": 3,
+                    "activeCameraCount": 1,
+                    "colliderCount": 0,
+                    "characterControllerCount": 0,
+                },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {"name": "Main Camera", "components": ["Transform", "Camera"]},
+                                {"name": "PlayerRoot", "components": ["Transform", "Rigidbody"]},
+                                {"name": "Environment", "components": ["Transform"]},
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        titles = {item["title"] for item in result["findings"]}
+        self.assertIn("Rigidbody objects without collider coverage", titles)
+        finding = next(item for item in result["findings"] if item["title"] == "Rigidbody objects without collider coverage")
+        self.assertIn("PlayerRoot", finding["detail"])
+
+    def test_physics_lens_flags_likely_player_without_body(self) -> None:
+        from cli_anything.unity_mcp.core.expert_rules.physics import audit_physics_lens
+
+        result = audit_physics_lens(
+            {
+                "systems": {
+                    "contextAvailable": True,
+                    "hierarchyNodeCount": 4,
+                    "activeCameraCount": 1,
+                    "colliderCount": 2,
+                    "characterControllerCount": 0,
+                },
+                "raw": {
+                    "inspect": {
+                        "hierarchy": {
+                            "nodes": [
+                                {"name": "Main Camera", "components": ["Transform", "Camera"]},
+                                {"name": "PlayerAvatar", "components": ["Transform", "CapsuleCollider"]},
+                                {"name": "Ground", "components": ["Transform", "BoxCollider"]},
+                                {"name": "Light", "components": ["Transform", "Light"]},
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        titles = {item["title"] for item in result["findings"]}
+        self.assertIn("Likely player objects lack a movement body", titles)
+        finding = next(item for item in result["findings"] if item["title"] == "Likely player objects lack a movement body")
+        self.assertIn("PlayerAvatar", finding["detail"])
 
     def test_build_expert_context_merges_audit_and_inspect(self) -> None:
         from cli_anything.unity_mcp.core.expert_context import build_expert_context

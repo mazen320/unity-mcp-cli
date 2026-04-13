@@ -3003,7 +3003,7 @@ class FullE2ETests(unittest.TestCase):
 
         list_result = self.run_cli("--json", "developer", "list")
         list_payload = json.loads(list_result.stdout.strip())
-        self.assertEqual(list_payload["count"], 10)
+        self.assertEqual(list_payload["count"], 11)
         self.assertEqual(
             [profile["name"] for profile in list_payload["profiles"]],
             [
@@ -3013,6 +3013,7 @@ class FullE2ETests(unittest.TestCase):
                 "director",
                 "level-designer",
                 "normal",
+                "physics",
                 "review",
                 "systems",
                 "tech-artist",

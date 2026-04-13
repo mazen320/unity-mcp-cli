@@ -31,6 +31,7 @@ def iter_builtin_expert_lenses() -> list[ExpertLens]:
         audit_animation_lens,
         audit_director_lens,
         audit_level_art_lens,
+        audit_physics_lens,
         audit_systems_lens,
         audit_tech_art_lens,
         audit_ui_lens,
@@ -50,6 +51,13 @@ def iter_builtin_expert_lenses() -> list[ExpertLens]:
             focus="unity systems",
             audit=audit_systems_lens,
             supported_fix_types=("guidance", "sandbox-scene", "event-system", "audio-listener"),
+        ),
+        ExpertLens(
+            name="physics",
+            description="Collider, rigidbody, and movement-body audit.",
+            focus="physics foundations",
+            audit=audit_physics_lens,
+            requires_live_scene=True,
         ),
         ExpertLens(
             name="animation",

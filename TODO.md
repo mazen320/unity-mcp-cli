@@ -36,6 +36,7 @@ As of 2026-04-12:
 - Added expert lens foundations in `core/expert_lenses.py` and `core/expert_context.py`.
 - Added built-in expert lenses: `director`, `animation`, `tech-art`, `ui`, `level-art`.
 - Added a broader `systems` expert lens for Unity-wide scene architecture, runtime hygiene, and playability-hook audits.
+- Added a dedicated `physics` expert lens for collider coverage, rigidbody hygiene, and movement-body setup checks, plus a matching `physics` developer profile.
 - Added specialist rule modules in `core/expert_rules/` for direction, animation-readiness, tech-art importer hints, UI canvas scaling, and level-art density/readability.
 - Added benchmark output via `workflow benchmark-report` so expert scoring can be saved as a stable JSON snapshot for GitHub or regression tracking.
 - `workflow benchmark-report` now also carries bounded recurring diagnostics memory so saved benchmark JSON can show recurring compiler failures and recurring queue/bridge instability, not just current lens scores.

@@ -216,7 +216,7 @@ The CLI now has a first-class developer-profile layer for shaping how the assist
 - `builder` is action-first for implementation and fast shipping.
 - `review` is risk-first for bugs, regressions, and test gaps.
 - `caveman` is the terse low-token mode.
-- `director`, `systems`, `animator`, `tech-artist`, `ui-designer`, and `level-designer` are specialist Unity content modes that pair well with the expert audit workflows.
+- `director`, `systems`, `physics`, `animator`, `tech-artist`, `ui-designer`, and `level-designer` are specialist Unity content modes that pair well with the expert audit workflows.
 
 Use them either persistently:
 
@@ -291,9 +291,11 @@ cli-anything-unity-mcp --json workflow quality-fix --lens animation --fix contro
 
 `workflow create-sandbox-scene` creates or reopens a saved sandbox scene under `Assets/Scenes` by default. It restores the original scene after creation unless you pass `--open`, which makes it safer to scaffold test space without throwing away your current working context.
 
-`workflow expert-audit` runs one specialist lens at a time, such as `director`, `systems`, `animation`, `tech-art`, `ui`, or `level-art`, and returns a lens-specific score, findings, supported follow-up fixes, and the relevant project summary context.
+`workflow expert-audit` runs one specialist lens at a time, such as `director`, `systems`, `physics`, `animation`, `tech-art`, `ui`, or `level-art`, and returns a lens-specific score, findings, supported follow-up fixes, and the relevant project summary context.
 
 The new `systems` lens is intentionally Unity-wide, not genre-specific. It looks for scene architecture and runtime hygiene issues such as missing sandbox coverage, scene-only setup with no prefab coverage, duplicate `AudioListener` usage, UI canvases without an `EventSystem`, likely player objects with no movement foundation, collider gaps in scenes that already look interactive, and disposable probe/demo objects left in the scene.
+
+The new `physics` lens focuses on setup hygiene for colliders, rigidbodies, and controller ownership. It flags Rigidbody objects that have no collider on the same object, likely player objects that still have no clear movement body, and scenes that look playable but still have no collision foundation.
 
 `ui` and `level-art` are scene-dependent lenses. If you run them against a bare project path without a live selected Unity editor, they now report that the live scene context is unavailable instead of pretending the scene is healthy.
 
