@@ -601,10 +601,30 @@ class _OfflineUnityAssistant:
         if not canvas_nodes:
             return None
 
+        module_type = "InputSystemUIInputModule" if self._uses_input_system() else "StandaloneInputModule"
+
         event_nodes = [
             node for node in nodes if "EventSystem" in {str(component) for component in (node.get("components") or [])}
         ]
         if event_nodes:
+            keep_node = next(
+                (node for node in event_nodes if str(node.get("name") or "").strip() == "EventSystem"),
+                event_nodes[0],
+            )
+            keep_path = self._event_system_target_path(keep_node)
+            keep_components = {str(component) for component in (keep_node.get("components") or [])}
+            if module_type not in keep_components:
+                self.bridge.client.call_route(
+                    "component/add",
+                    {"gameObjectPath": keep_path, "componentType": module_type},
+                )
+                return {
+                    "applied": True,
+                    "gameObjectPath": keep_path,
+                    "moduleType": module_type,
+                    "created": False,
+                    "canvasCount": len(canvas_nodes),
+                }
             return {
                 "applied": False,
                 "reason": "Scene EventSystem already exists.",
@@ -628,7 +648,6 @@ class _OfflineUnityAssistant:
             target_path = str(create_result.get("path") or create_result.get("name") or "EventSystem").strip()
             created = True
 
-        module_type = "InputSystemUIInputModule" if self._uses_input_system() else "StandaloneInputModule"
         for component_type in ("EventSystem", module_type):
             self.bridge.client.call_route(
                 "component/add",
