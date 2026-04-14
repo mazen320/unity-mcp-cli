@@ -1,14 +1,26 @@
 {
   "summary": {
     "catalogVersion": "unknown",
-    "generatedAt": "2026-04-10T08:44:31.005887+00:00",
-    "totalTools": 328,
+    "generatedAt": "2026-04-14T04:10:54.550567+00:00",
+    "totalTools": 329,
     "countsByStatus": {
-      "live-tested": 32,
-      "covered": 37,
-      "mock-only": 215,
+      "live-tested": 46,
+      "covered": 35,
+      "mock-only": 204,
       "unsupported": 6,
       "deferred": 38
+    },
+    "evidenceSummary": {
+      "liveVerifiedCount": 46,
+      "automatedCoveredCount": 35,
+      "mockOnlyCount": 204,
+      "remainingCount": 44,
+      "remainingByStatus": {
+        "deferred": 38,
+        "unsupported": 6
+      },
+      "headline": "46 live-verified, 35 automated-covered, 204 mock-only, 44 remaining",
+      "note": "Do not blend live-tested, covered, and mock-only into one confidence percentage. Report them separately."
     },
     "countsByCategory": {
       "meta": {
@@ -44,10 +56,10 @@
         "deferred": 23
       },
       "animation": {
-        "total": 24,
-        "live-tested": 6,
+        "total": 25,
+        "live-tested": 11,
         "covered": 0,
-        "mock-only": 18,
+        "mock-only": 14,
         "unsupported": 0,
         "deferred": 0
       },
@@ -61,8 +73,8 @@
       },
       "asset": {
         "total": 5,
-        "live-tested": 0,
-        "covered": 4,
+        "live-tested": 2,
+        "covered": 2,
         "mock-only": 1,
         "unsupported": 0,
         "deferred": 0
@@ -213,9 +225,9 @@
       },
       "material": {
         "total": 1,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 0,
-        "mock-only": 1,
+        "mock-only": 0,
         "unsupported": 0,
         "deferred": 0
       },
@@ -285,9 +297,9 @@
       },
       "prefab": {
         "total": 18,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 0,
-        "mock-only": 18,
+        "mock-only": 17,
         "unsupported": 0,
         "deferred": 0
       },
@@ -325,9 +337,9 @@
       },
       "renderer": {
         "total": 1,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 0,
-        "mock-only": 1,
+        "mock-only": 0,
         "unsupported": 0,
         "deferred": 0
       },
@@ -373,9 +385,9 @@
       },
       "search": {
         "total": 7,
-        "live-tested": 0,
+        "live-tested": 1,
         "covered": 1,
-        "mock-only": 6,
+        "mock-only": 5,
         "unsupported": 0,
         "deferred": 0
       },
@@ -389,9 +401,9 @@
       },
       "selection": {
         "total": 4,
-        "live-tested": 0,
+        "live-tested": 3,
         "covered": 0,
-        "mock-only": 4,
+        "mock-only": 1,
         "unsupported": 0,
         "deferred": 0
       },
@@ -1381,9 +1393,9 @@
           "parameterType"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_add_state",
@@ -1428,7 +1440,7 @@
         ]
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -1518,9 +1530,9 @@
           "destinationState"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_assign_controller",
@@ -1551,9 +1563,9 @@
           "controllerPath"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation wireup workflow.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_clip_info",
@@ -1576,9 +1588,9 @@
           "path"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation inspection routes.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_animation_controller_info",
@@ -1602,7 +1614,7 @@
         ]
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation inspection and authoring routes.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -2212,6 +2224,40 @@
       "coverageBlocker": "verified-mock"
     },
     {
+      "name": "unity_animation_set_default_state",
+      "description": "Set the default state for an Animator Controller layer without creating a transition.",
+      "category": "animation",
+      "tier": "advanced",
+      "route": "animation/set-default-state",
+      "execution": "route",
+      "unsupported": false,
+      "bridgeFunction": "setAnimationDefaultState",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "controllerPath": {
+            "type": "string",
+            "description": "Asset path of the Animator Controller"
+          },
+          "stateName": {
+            "type": "string",
+            "description": "Name of the state to make default"
+          },
+          "layerIndex": {
+            "type": "number",
+            "description": "Layer index (default: 0)"
+          }
+        },
+        "required": [
+          "controllerPath",
+          "stateName"
+        ]
+      },
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC animation authoring routes, flipping the Animator layer default state without adding fake entry transitions.",
+      "coverageBlocker": "verified-live"
+    },
+    {
       "name": "unity_asmdef_add_references",
       "description": "Add assembly references to an existing .asmdef file. Supports assembly names (e.g. 'Unity.TextMeshPro') which are auto-resolved to GUID format, or direct GUID refs.",
       "category": "asmdef",
@@ -2270,7 +2316,7 @@
           },
           "references": {
             "type": "array",
-            "description": "Assembly references \u00e2\u20ac\u201d names (e.g. 'Unity.TextMeshPro') or GUID refs (e.g. 'GUID:xxx')",
+            "description": "Assembly references â€” names (e.g. 'Unity.TextMeshPro') or GUID refs (e.g. 'GUID:xxx')",
             "items": {
               "type": "string"
             }
@@ -2314,7 +2360,7 @@
           },
           "defineConstraints": {
             "type": "array",
-            "description": "Define constraints \u00e2\u20ac\u201d assembly only compiles when ALL symbols are defined (e.g. 'UNITY_EDITOR', 'ENABLE_INPUT_SYSTEM')",
+            "description": "Define constraints â€” assembly only compiles when ALL symbols are defined (e.g. 'UNITY_EDITOR', 'ENABLE_INPUT_SYSTEM')",
             "items": {
               "type": "string"
             }
@@ -2570,9 +2616,9 @@
           "savePath"
         ]
       },
-      "coverageStatus": "covered",
-      "coverageNote": "Covered by automated tests and higher-level workflows.",
-      "coverageBlocker": "verified-automated"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, saving a live scene object as a prefab through the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_asset_delete",
@@ -2686,9 +2732,9 @@
           "prefabPath"
         ]
       },
-      "coverageStatus": "covered",
-      "coverageNote": "Covered by automated tests and higher-level workflows.",
-      "coverageBlocker": "verified-automated"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, instantiating a disposable prefab into the active scene through the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_asset_list",
@@ -3141,7 +3187,7 @@
     },
     {
       "name": "unity_component_set_reference",
-      "description": "Set an object reference on a component property. Dedicated tool for wiring references between GameObjects, components, and assets. More powerful than set_property for ObjectReference fields \u00e2\u20ac\u201d supports resolution by asset path, scene GameObject name, component type, or instance ID.",
+      "description": "Set an object reference on a component property. Dedicated tool for wiring references between GameObjects, components, and assets. More powerful than set_property for ObjectReference fields â€” supports resolution by asset path, scene GameObject name, component type, or instance ID.",
       "category": "component",
       "tier": "core",
       "route": "component/set-reference",
@@ -3161,7 +3207,7 @@
           },
           "componentType": {
             "type": "string",
-            "description": "Component type containing the property (optional \u00e2\u20ac\u201d will auto-search all components)"
+            "description": "Component type containing the property (optional â€” will auto-search all components)"
           },
           "propertyName": {
             "type": "string",
@@ -3847,7 +3893,7 @@
     },
     {
       "name": "unity_get_compilation_errors",
-      "description": "Get C# compilation errors and warnings from the Unity Editor. Uses CompilationPipeline directly \u2014 independent of the console log buffer. Not affected by console clear or Play Mode log flooding. Returns errors from the last compilation cycle. Use this instead of unity_console_log when diagnosing script compilation issues.",
+      "description": "Get C# compilation errors and warnings from the Unity Editor. Uses CompilationPipeline directly — independent of the console log buffer. Not affected by console clear or Play Mode log flooding. Returns errors from the last compilation cycle. Use this instead of unity_console_log when diagnosing script compilation issues.",
       "category": "get",
       "tier": "core",
       "route": "compilation/errors",
@@ -4009,7 +4055,7 @@
         }
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, returning live material shader properties from both asset and scene targets.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -4105,7 +4151,7 @@
         ]
       },
       "coverageStatus": "live-tested",
-      "coverageNote": "Verified against a real Unity editor through the advanced audit workflow.",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, returning live renderer metadata for a scene object.",
       "coverageBlocker": "verified-live"
     },
     {
@@ -4426,7 +4472,7 @@
           },
           "parts": {
             "type": "array",
-            "description": "Composite parts \u00e2\u20ac\u201d each has a 'name' (e.g. 'positive','negative','up','down','left','right') and 'path' (e.g. '<Keyboard>/w')",
+            "description": "Composite parts â€” each has a 'name' (e.g. 'positive','negative','up','down','left','right') and 'path' (e.g. '<Keyboard>/w')",
             "items": {
               "type": "object",
               "properties": {
@@ -5071,9 +5117,9 @@
           "path"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, creating a disposable material asset on the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_memory_breakdown",
@@ -6247,7 +6293,7 @@
     },
     {
       "name": "unity_prefab_add_component",
-      "description": "Add a component to a GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Supports built-in types (Rigidbody, BoxCollider, etc.) and custom scripts.",
+      "description": "Add a component to a GameObject inside a prefab asset â€” no scene instance needed. Supports built-in types (Rigidbody, BoxCollider, etc.) and custom scripts.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/add-component",
@@ -6281,7 +6327,7 @@
     },
     {
       "name": "unity_prefab_add_gameobject",
-      "description": "Create a new child GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Optionally create as a primitive (Cube, Sphere, etc.) with position/rotation/scale.",
+      "description": "Create a new child GameObject inside a prefab asset â€” no scene instance needed. Optionally create as a primitive (Cube, Sphere, etc.) with position/rotation/scale.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/add-gameobject",
@@ -6490,7 +6536,7 @@
     },
     {
       "name": "unity_prefab_get_hierarchy",
-      "description": "Get the full hierarchy tree of a prefab asset directly from disk \u00e2\u20ac\u201d no scene instance needed. Shows all GameObjects, components, and nested children inside the prefab.",
+      "description": "Get the full hierarchy tree of a prefab asset directly from disk â€” no scene instance needed. Shows all GameObjects, components, and nested children inside the prefab.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/hierarchy",
@@ -6519,7 +6565,7 @@
     },
     {
       "name": "unity_prefab_get_properties",
-      "description": "Read all serialized properties of a component on a GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Use prefabPath to target nested children (e.g. 'Body/Head').",
+      "description": "Read all serialized properties of a component on a GameObject inside a prefab asset â€” no scene instance needed. Use prefabPath to target nested children (e.g. 'Body/Head').",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/get-properties",
@@ -6577,13 +6623,13 @@
           }
         }
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, reading both prefab asset metadata and connected scene-instance metadata.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_prefab_remove_component",
-      "description": "Remove a component from a GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed.",
+      "description": "Remove a component from a GameObject inside a prefab asset â€” no scene instance needed.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/remove-component",
@@ -6621,7 +6667,7 @@
     },
     {
       "name": "unity_prefab_remove_gameobject",
-      "description": "Delete a child GameObject from inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Cannot remove the prefab root.",
+      "description": "Delete a child GameObject from inside a prefab asset â€” no scene instance needed. Cannot remove the prefab root.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/remove-gameobject",
@@ -6714,7 +6760,7 @@
     },
     {
       "name": "unity_prefab_set_property",
-      "description": "Set a serialized property value on a component inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Supports floats, ints, strings, bools, vectors, colors, enums.",
+      "description": "Set a serialized property value on a component inside a prefab asset â€” no scene instance needed. Supports floats, ints, strings, bools, vectors, colors, enums.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/set-property",
@@ -6756,7 +6802,7 @@
     },
     {
       "name": "unity_prefab_set_reference",
-      "description": "Wire an ObjectReference property on a component inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Can reference project assets (materials, textures, prefabs, ScriptableObjects) or other GameObjects within the same prefab.",
+      "description": "Wire an ObjectReference property on a component inside a prefab asset â€” no scene instance needed. Can reference project assets (materials, textures, prefabs, ScriptableObjects) or other GameObjects within the same prefab.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/set-reference",
@@ -6776,7 +6822,7 @@
           },
           "componentType": {
             "type": "string",
-            "description": "Component type (optional \u00e2\u20ac\u201d searches all if omitted)"
+            "description": "Component type (optional â€” searches all if omitted)"
           },
           "propertyName": {
             "type": "string",
@@ -6992,7 +7038,7 @@
     },
     {
       "name": "unity_profiler_stats",
-      "description": "Get current rendering statistics: draw calls, batches, triangles, vertices, set-pass calls, frame time, render time, shadow casters, and more. The profiler does NOT need to be enabled for this \u00e2\u20ac\u201d stats come from UnityStats which is always available.",
+      "description": "Get current rendering statistics: draw calls, batches, triangles, vertices, set-pass calls, frame time, render time, shadow casters, and more. The profiler does NOT need to be enabled for this â€” stats come from UnityStats which is always available.",
       "category": "profiler",
       "tier": "advanced",
       "route": "profiler/stats",
@@ -7113,9 +7159,9 @@
           "materialPath"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC prefab/material/renderer parity probe, swapping a live renderer material through the public route surface.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_scene_hierarchy",
@@ -7662,9 +7708,9 @@
           "componentType"
         ]
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, returning live scene object matches by component type.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_search_by_layer",
@@ -7927,9 +7973,9 @@
           }
         }
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, focusing the Scene view on the selected live object.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_selection_get",
@@ -7944,9 +7990,9 @@
         "type": "object",
         "properties": {}
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, returning the current Unity selection state.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_selection_set",
@@ -7977,13 +8023,13 @@
           }
         }
       },
-      "coverageStatus": "mock-only",
-      "coverageNote": "Covered by subprocess e2e tests against the mock Unity bridge; needs live fixture validation before promotion.",
-      "coverageBlocker": "verified-mock"
+      "coverageStatus": "live-tested",
+      "coverageNote": "Verified against a real Unity editor through the standalone File IPC smoke pass, selecting a live scene object by path.",
+      "coverageBlocker": "verified-live"
     },
     {
       "name": "unity_set_object_reference",
-      "description": "[LEGACY \u00e2\u20ac\u201d prefer unity_component_set_reference] Set an object reference property on a component via the prefab system. Use unity_component_set_reference instead for richer resolution options.",
+      "description": "[LEGACY â€” prefer unity_component_set_reference] Set an object reference property on a component via the prefab system. Use unity_component_set_reference instead for richer resolution options.",
       "category": "set",
       "tier": "core",
       "route": "prefab/set-object-reference",
@@ -8644,7 +8690,7 @@
           },
           "nodeId": {
             "type": "string",
-            "description": "The node's objectId (GUID) to remove \u00e2\u20ac\u201d get from get_nodes"
+            "description": "The node's objectId (GUID) to remove â€” get from get_nodes"
           }
         },
         "required": [
@@ -8681,7 +8727,7 @@
             "description": "Property name in the serialized JSON (e.g., 'm_Value', 'm_DefaultValue')"
           },
           "value": {
-            "description": "New value \u00e2\u20ac\u201d string, number, or boolean depending on the property"
+            "description": "New value â€” string, number, or boolean depending on the property"
           }
         },
         "required": [
@@ -10253,7 +10299,7 @@
           },
           "holes": {
             "type": "array",
-            "description": "2D boolean array [row][col] \u00e2\u20ac\u201d true = solid, false = hole",
+            "description": "2D boolean array [row][col] â€” true = solid, false = hole",
             "items": {
               "type": "array",
               "items": {
@@ -10495,7 +10541,7 @@
     },
     {
       "name": "unity_testing_run_tests",
-      "description": "Start a Unity Test Runner test run. Returns a job ID immediately \u2014 use unity_testing_get_job to poll for progress and results. Supports EditMode and PlayMode tests with optional filters by test name, category, assembly, or group.",
+      "description": "Start a Unity Test Runner test run. Returns a job ID immediately — use unity_testing_get_job to poll for progress and results. Supports EditMode and PlayMode tests with optional filters by test name, category, assembly, or group.",
       "category": "testing",
       "tier": "advanced",
       "route": "testing/run-tests",
@@ -10972,7 +11018,7 @@
           },
           "textures": {
             "type": "array",
-            "description": "Ordered array of texture asset paths, one per UMAMaterial channel index. Index 0 = diffuse/albedo, index 1 = normal map, index 2 = metallic/roughness. Use null or empty string for unused channels. Example: [\"Assets/Textures/Chest_D.png\", \"Assets/Textures/Chest_N.png\", null]. Do NOT use channel0/channel1/channel2 object format \u2014 must be a flat array of strings.",
+            "description": "Ordered array of texture asset paths, one per UMAMaterial channel index. Index 0 = diffuse/albedo, index 1 = normal map, index 2 = metallic/roughness. Use null or empty string for unused channels. Example: [\"Assets/Textures/Chest_D.png\", \"Assets/Textures/Chest_N.png\", null]. Do NOT use channel0/channel1/channel2 object format — must be a flat array of strings.",
             "items": {
               "type": "string"
             }
@@ -10992,7 +11038,7 @@
     },
     {
       "name": "unity_uma_create_race",
-      "description": "Create a new UMA RaceData asset. Two modes:\n\nDUPLICATE MODE (recommended): Provide sourceRaceName to copy all settings from an existing race. The base recipe is automatically duplicated with the new race name in recipeString and compatibleRaces. Any optional parameter overrides the duplicated value.\n\nSCRATCH MODE: Omit sourceRaceName to create from scratch with sensible defaults (Humanoid, standard wardrobe slots, default physics). No base recipe is created \u2014 assign one via edit_race.\n\nEXAMPLE (duplicate):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\" }\n\nEXAMPLE (duplicate with overrides):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"raceHeight\": 1.85, \"tags\": [\"playable\", \"female\"] }\n\nEXAMPLE (from scratch):\n{ \"raceName\": \"DwarfRace\", \"outputFolder\": \"Assets/UMA/Races\", \"wardrobeSlots\": [\"Chest\", \"Legs\", \"Feet\", \"Helmet\"], \"raceHeight\": 1.2 }\n\nFBX MODE: Provide fbxPath + umaMaterialPath to create a full race from an FBX body mesh. Inspects the FBX, creates body SlotDataAssets (one per SMR), OverlayDataAssets with auto-detected textures, and assembles a base race recipe (UMATextRecipe). Optionally combine with sourceRaceName to copy wardrobeSlots/physics from an existing race.\n\nEXAMPLE (FBX mode):\n{ \"raceName\": \"HumanFemaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\", \"outputFolder\": \"Assets/UMA/Races/Female\" }\n\nEXAMPLE (FBX + copy settings from existing race):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\" }",
+      "description": "Create a new UMA RaceData asset. Two modes:\n\nDUPLICATE MODE (recommended): Provide sourceRaceName to copy all settings from an existing race. The base recipe is automatically duplicated with the new race name in recipeString and compatibleRaces. Any optional parameter overrides the duplicated value.\n\nSCRATCH MODE: Omit sourceRaceName to create from scratch with sensible defaults (Humanoid, standard wardrobe slots, default physics). No base recipe is created — assign one via edit_race.\n\nEXAMPLE (duplicate):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\" }\n\nEXAMPLE (duplicate with overrides):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"raceHeight\": 1.85, \"tags\": [\"playable\", \"female\"] }\n\nEXAMPLE (from scratch):\n{ \"raceName\": \"DwarfRace\", \"outputFolder\": \"Assets/UMA/Races\", \"wardrobeSlots\": [\"Chest\", \"Legs\", \"Feet\", \"Helmet\"], \"raceHeight\": 1.2 }\n\nFBX MODE: Provide fbxPath + umaMaterialPath to create a full race from an FBX body mesh. Inspects the FBX, creates body SlotDataAssets (one per SMR), OverlayDataAssets with auto-detected textures, and assembles a base race recipe (UMATextRecipe). Optionally combine with sourceRaceName to copy wardrobeSlots/physics from an existing race.\n\nEXAMPLE (FBX mode):\n{ \"raceName\": \"HumanFemaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\", \"outputFolder\": \"Assets/UMA/Races/Female\" }\n\nEXAMPLE (FBX + copy settings from existing race):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\" }",
       "category": "uma",
       "tier": "advanced",
       "route": null,
@@ -11123,7 +11169,7 @@
           },
           "keepAllBones": {
             "type": "boolean",
-            "description": "If true, keep all bones instead of only weighted ones (default: false \u2014 auto-extracts keepList)"
+            "description": "If true, keep all bones instead of only weighted ones (default: false — auto-extracts keepList)"
           }
         },
         "required": [
@@ -11443,7 +11489,7 @@
     },
     {
       "name": "unity_uma_inspect_fbx",
-      "description": "Inspect an FBX file to list all SkinnedMeshRenderers with vertex counts, weighted bones (keepList), and bone counts. Essential first step before creating UMA slots \u2014 shows which SMRs are available and their bone data.",
+      "description": "Inspect an FBX file to list all SkinnedMeshRenderers with vertex counts, weighted bones (keepList), and bone counts. Essential first step before creating UMA slots — shows which SMRs are available and their bone data.",
       "category": "uma",
       "tier": "advanced",
       "route": null,

@@ -14,6 +14,8 @@ from socketserver import ThreadingMixIn, TCPServer
 from urllib.parse import parse_qs, urlparse
 import uuid
 
+from click.testing import CliRunner
+
 PNG_1X1_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2p7QAAAABJRU5ErkJggg=="
 
 
@@ -57,8 +59,12 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         return self.ticket_counter
 
     def reset_state(self) -> None:
+        self.project_name = "Demo"
+        self.project_path = "C:/Projects/Demo"
+        self.unity_version = "6000.0.0f1"
         self.active_scene_name = "MainScene"
         self.active_scene_path = "Assets/Scenes/MainScene.unity"
+        self.scene_assets = {self.active_scene_path}
         self.scene_dirty = False
         self.is_playing = False
         self.execute_code_calls = []
@@ -72,6 +78,8 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         self.animation_controllers = {}
         self.terrains = {}
         self.missing_references = []
+        self.compilation_entries = []
+        self.texture_imports: dict[str, dict] = {}
         self._shadergraphs: dict = {}
         self._selection: list = []
         self._playerprefs: dict = {}
@@ -671,9 +679,53 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             name = str(payload.get("name") or "Untitled")
             self.active_scene_name = name
             self.active_scene_path = f"Assets/Scenes/{name}.unity"
+            self.scene_assets.add(self.active_scene_path)
             self.scene_dirty = False
             self.gameobjects = {}
             return {"success": True, "sceneName": name, "name": name, "path": self.active_scene_path}
+        if route == "scene/create-sandbox":
+            folder = str(payload.get("folder") or "Assets/Scenes").replace("\\", "/").rstrip("/") or "Assets/Scenes"
+            if not folder.startswith("Assets"):
+                return {"error": "Sandbox scene folder must live under Assets/."}
+            if bool(payload.get("saveIfDirty")) and bool(payload.get("discardUnsaved")):
+                return {"error": "Choose either saveIfDirty or discardUnsaved, not both."}
+            if self.scene_dirty and not bool(payload.get("saveIfDirty")) and not bool(payload.get("discardUnsaved")):
+                return {"error": "Active scene has unsaved changes. Pass saveIfDirty or discardUnsaved."}
+
+            original_path = self.active_scene_path
+            original_name = self.active_scene_name
+            scene_name = str(payload.get("name") or f"{self.project_name}_Sandbox")
+            scene_path = f"{folder}/{scene_name}.unity"
+            existed = scene_path in self.scene_assets
+            self.scene_assets.add(scene_path)
+            self.scene_dirty = False
+
+            if bool(payload.get("open")):
+                self.active_scene_name = scene_name
+                self.active_scene_path = scene_path
+                reopened_original = False
+                kept_open = True
+                active_scene_name = scene_name
+            else:
+                reopened_original = bool(original_path)
+                kept_open = not bool(original_path)
+                active_scene_name = original_name if original_name else scene_name
+                if not original_path:
+                    self.active_scene_name = scene_name
+                    self.active_scene_path = scene_path
+
+            return {
+                "success": True,
+                "sceneName": scene_name,
+                "path": scene_path,
+                "folder": folder,
+                "existed": existed,
+                "reopenedOriginal": reopened_original,
+                "keptOpen": kept_open,
+                "originalSceneName": original_name,
+                "originalScenePath": original_path,
+                "activeSceneName": active_scene_name,
+            }
         if route == "scene/open":
             path = payload.get("path") or self.active_scene_path
             discard_unsaved = bool(payload.get("discardUnsaved"))
@@ -692,6 +744,7 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                 }
             self.active_scene_path = path
             self.active_scene_name = Path(path).stem
+            self.scene_assets.add(self.active_scene_path)
             self.scene_dirty = False
             return {"success": True, "name": self.active_scene_name, "path": self.active_scene_path}
         if route == "asset/list":
@@ -1441,7 +1494,14 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             return {"success": True, "path": path}
         if route == "animation/create-controller":
             path = str(payload.get("path") or "Assets/Controller.controller")
-            self.animation_controllers[path] = {"path": path, "parameters": [], "transitions": [], "states": []}
+            self.animation_controllers[path] = {
+                "path": path,
+                "parameters": [],
+                "transitions": [],
+                "states": [],
+                "defaultState": None,
+                "entryTransitions": [],
+            }
             return {"success": True, "path": path}
         if route == "animation/set-clip-curve":
             clip_path = str(payload.get("clipPath") or "")
@@ -1487,7 +1547,17 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             }
         if route == "animation/add-parameter":
             controller_path = str(payload.get("controllerPath") or "")
-            controller = self.animation_controllers.setdefault(controller_path, {"path": controller_path, "parameters": [], "transitions": [], "states": []})
+            controller = self.animation_controllers.setdefault(
+                controller_path,
+                {
+                    "path": controller_path,
+                    "parameters": [],
+                    "transitions": [],
+                    "states": [],
+                    "defaultState": None,
+                    "entryTransitions": [],
+                },
+            )
             parameter = {
                 "name": payload.get("parameterName"),
                 "type": payload.get("parameterType"),
@@ -1495,17 +1565,136 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             }
             controller.setdefault("parameters", []).append(parameter)
             return {"success": True, "controllerPath": controller_path, "parameter": parameter}
+        if route == "animation/add-state":
+            controller_path = str(payload.get("controllerPath") or "")
+            controller = self.animation_controllers.setdefault(
+                controller_path,
+                {
+                    "path": controller_path,
+                    "parameters": [],
+                    "transitions": [],
+                    "states": [],
+                    "defaultState": None,
+                    "entryTransitions": [],
+                },
+            )
+            state = {
+                "name": payload.get("stateName"),
+                "clipPath": payload.get("clipPath"),
+                "speed": float(payload.get("speed") or 1.0),
+            }
+            controller.setdefault("states", []).append(state)
+            if bool(payload.get("isDefault")) or not controller.get("defaultState"):
+                controller["defaultState"] = state["name"]
+            state["isDefault"] = controller.get("defaultState") == state["name"]
+            return {"success": True, "controllerPath": controller_path, "state": state}
+        if route == "animation/set-default-state":
+            controller_path = str(payload.get("controllerPath") or "")
+            controller = self.animation_controllers.get(controller_path)
+            if not controller:
+                return {"error": "Animator Controller not found"}
+            state_name = str(payload.get("stateName") or "")
+            state_names = {str(state.get("name") or "") for state in controller.get("states", [])}
+            if state_name not in state_names:
+                return {"error": f"State not found: {state_name}"}
+            previous_default = controller.get("defaultState")
+            controller["defaultState"] = state_name
+            for state in controller.get("states", []):
+                state["isDefault"] = str(state.get("name") or "") == state_name
+            return {
+                "success": True,
+                "controllerPath": controller_path,
+                "layerIndex": int(payload.get("layerIndex") or 0),
+                "defaultState": state_name,
+                "previousDefaultState": previous_default,
+            }
         if route == "animation/add-transition":
             controller_path = str(payload.get("controllerPath") or "")
-            controller = self.animation_controllers.setdefault(controller_path, {"path": controller_path, "parameters": [], "transitions": [], "states": []})
+            controller = self.animation_controllers.setdefault(
+                controller_path,
+                {
+                    "path": controller_path,
+                    "parameters": [],
+                    "transitions": [],
+                    "states": [],
+                    "defaultState": None,
+                    "entryTransitions": [],
+                },
+            )
+            source_state = payload.get("sourceState")
+            destination_state = payload.get("destinationState")
+            from_any_state = bool(payload.get("fromAnyState"))
+            allow_self_transition = bool(payload.get("allowSelfTransition"))
+            if not from_any_state and not allow_self_transition and source_state and source_state == destination_state:
+                return {"error": "Self-transition is not allowed unless allowSelfTransition is true"}
             transition = {
-                "sourceState": payload.get("sourceState"),
-                "destinationState": payload.get("destinationState"),
+                "sourceState": source_state,
+                "destinationState": destination_state,
+                "fromAnyState": from_any_state,
                 "duration": payload.get("duration"),
                 "conditions": self._deep_clone(payload.get("conditions")) or [],
             }
             controller.setdefault("transitions", []).append(transition)
             return {"success": True, "controllerPath": controller_path, "transition": transition}
+        if route == "animation/controller-info":
+            path = str(payload.get("path") or "")
+            controller = self.animation_controllers.get(path)
+            if not controller:
+                return {"error": "Animator Controller not found"}
+            states = list(controller.get("states", []))
+            transitions = list(controller.get("transitions", []))
+            parameters = list(controller.get("parameters", []))
+            default_state = controller.get("defaultState")
+            entry_transitions = list(controller.get("entryTransitions", []))
+            any_state_transition_count = sum(1 for transition in transitions if transition.get("fromAnyState"))
+            state_summaries = []
+            for state in states:
+                state_name = str(state.get("name") or "")
+                state_transitions = [
+                    {
+                        "destinationState": transition.get("destinationState"),
+                        "duration": transition.get("duration"),
+                        "conditions": self._deep_clone(transition.get("conditions")) or [],
+                    }
+                    for transition in transitions
+                    if not transition.get("fromAnyState") and transition.get("sourceState") == state_name
+                ]
+                state_summaries.append(
+                    {
+                        "name": state_name,
+                        "clipPath": state.get("clipPath"),
+                        "speed": float(state.get("speed") or 1.0),
+                        "hasMotion": bool(state.get("clipPath")),
+                        "isDefault": state_name == default_state,
+                        "transitionCount": len(state_transitions),
+                        "transitions": state_transitions,
+                    }
+                )
+            return {
+                "path": path,
+                "name": Path(path).stem,
+                "layerCount": 1,
+                "parameterCount": len(parameters),
+                "transitionCount": len(transitions),
+                "stateCount": len(states),
+                "parameters": parameters,
+                "transitions": transitions,
+                "defaultState": default_state,
+                "anyStateTransitionCount": any_state_transition_count,
+                "entryTransitionCount": len(entry_transitions),
+                "layers": [
+                    {
+                        "name": "Base Layer",
+                        "index": 0,
+                        "stateCount": len(states),
+                        "transitionCount": len(transitions),
+                        "defaultState": default_state,
+                        "anyStateTransitionCount": any_state_transition_count,
+                        "entryTransitionCount": len(entry_transitions),
+                        "states": state_summaries,
+                    }
+                ],
+            }
         if route == "terrain/create":
             name = str(payload.get("name") or "Terrain")
             self._register_gameobject(name, components=["Transform", "Terrain", "TerrainCollider"], position=payload.get("position"))
@@ -1874,18 +2063,30 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
         # ── Texture routes ───────────────────────────────────────────────
         if route == "texture/info":
             path = str(payload.get("path") or "")
-            return {"path": path, "width": 512, "height": 512, "format": "RGBA32", "mipMapCount": 10, "isReadable": False, "textureType": "Default"}
+            import_state = self.texture_imports.get(path, {})
+            return {
+                "path": path,
+                "width": 512,
+                "height": 512,
+                "format": "RGBA32",
+                "mipMapCount": 10,
+                "isReadable": False,
+                "textureType": import_state.get("textureType", "Default"),
+            }
         if route == "texture/reimport":
             path = str(payload.get("path") or "")
             return {"success": True, "path": path}
         if route == "texture/set-import":
             path = str(payload.get("path") or "")
+            self.texture_imports.setdefault(path, {})["textureType"] = payload.get("textureType", "Default")
             return {"success": True, "path": path, "textureType": payload.get("textureType", "Default"), "maxSize": payload.get("maxSize", 2048)}
         if route == "texture/set-normalmap":
             path = str(payload.get("path") or "")
+            self.texture_imports.setdefault(path, {})["textureType"] = "NormalMap"
             return {"success": True, "path": path, "textureType": "NormalMap"}
         if route == "texture/set-sprite":
             path = str(payload.get("path") or "")
+            self.texture_imports.setdefault(path, {})["textureType"] = "Sprite"
             return {"success": True, "path": path, "textureType": "Sprite", "spritePivot": payload.get("pivot", {"x": 0.5, "y": 0.5})}
         # ── SpriteAtlas routes ──────────────────────────────────────────
         if route == "spriteatlas/create":
@@ -2081,9 +2282,34 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
             return {"success": True, "path": path, "mapName": map_name, "actionName": action_name, "binding": binding}
         # ── Prefab routes ────────────────────────────────────────────────
         if route == "prefab/info":
+            asset_path = str(payload.get("assetPath") or "")
             path = str(payload.get("path") or "")
-            prefab = self.prefabs.get(path, {})
-            return {"path": path, "name": prefab.get("name", path.rsplit("/", 1)[-1].replace(".prefab", "")), "componentCount": len(prefab.get("components", [])), "childCount": 0, "isVariant": False}
+            if asset_path or path.endswith(".prefab"):
+                resolved_asset_path = asset_path or path
+                prefab = self.prefabs.get(resolved_asset_path, {})
+                return {
+                    "path": resolved_asset_path,
+                    "assetPath": resolved_asset_path,
+                    "name": prefab.get("name", resolved_asset_path.rsplit("/", 1)[-1].replace(".prefab", "")),
+                    "componentCount": len(prefab.get("components", [])),
+                    "childCount": 0,
+                    "isVariant": bool(prefab.get("isVariant", False)),
+                    "isInstance": False,
+                }
+
+            instance_name = self._resolve_gameobject_name({"gameObjectPath": path})
+            instance = self.gameobjects.get(instance_name, {})
+            source_path = str(instance.get("prefabAssetPath") or "")
+            prefab = self.prefabs.get(source_path, {})
+            return {
+                "path": self._hierarchy_path(instance_name) if instance_name in self.gameobjects else path,
+                "assetPath": source_path,
+                "name": instance_name,
+                "componentCount": len(instance.get("components", [])),
+                "childCount": 0,
+                "isVariant": bool(prefab.get("isVariant", False)),
+                "isInstance": True,
+            }
         if route == "prefab/apply-overrides":
             path = str(payload.get("prefabPath") or payload.get("path") or "")
             return {"success": True, "path": path, "overridesApplied": 1}
@@ -2323,7 +2549,11 @@ class MockBridgeServer(ThreadingMixIn, TCPServer):
                     clip[k] = payload[k]
             return {"success": True, "clipPath": clip_path}
         if route == "compilation/errors":
-            return {"count": 0, "isCompiling": False, "entries": []}
+            return {
+                "count": len(self.compilation_entries),
+                "isCompiling": False,
+                "entries": list(self.compilation_entries),
+            }
         if route == "agents/list":
             return {
                 "count": 2,
@@ -2566,7 +2796,12 @@ class FullE2ETests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def run_cli(self, *args: str, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+    def run_cli(
+        self,
+        *args: str,
+        input_text: str | None = None,
+        timeout: float = 20,
+    ) -> subprocess.CompletedProcess[str]:
         command = [
             *self.cli_command,
             "--host",
@@ -2590,7 +2825,7 @@ class FullE2ETests(unittest.TestCase):
             input=input_text,
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=timeout,
             env=env,
         )
         if result.returncode != 0:
@@ -2762,6 +2997,57 @@ class FullE2ETests(unittest.TestCase):
         status_payload = json.loads(status_result.stdout.strip())
         self.assertEqual(status_payload["agent"]["agentId"], "cli-anything-unity-mcp-reviewer")
         self.assertEqual(status_payload["agent"]["profile"]["name"], "reviewer")
+
+    def test_developer_profile_commands_persist_and_expose_current_resolution(self) -> None:
+        current_result = self.run_cli("--json", "developer", "current")
+        current_payload = json.loads(current_result.stdout.strip())
+        self.assertEqual(current_payload["resolved"]["profile"]["name"], "normal")
+        self.assertEqual(current_payload["resolved"]["source"], "default")
+
+        list_result = self.run_cli("--json", "developer", "list")
+        list_payload = json.loads(list_result.stdout.strip())
+        self.assertEqual(list_payload["count"], 11)
+        self.assertEqual(
+            [profile["name"] for profile in list_payload["profiles"]],
+            [
+                "animator",
+                "builder",
+                "caveman",
+                "director",
+                "level-designer",
+                "normal",
+                "physics",
+                "review",
+                "systems",
+                "tech-artist",
+                "ui-designer",
+            ],
+        )
+        normal_profile = next(profile for profile in list_payload["profiles"] if profile["name"] == "normal")
+        self.assertTrue(normal_profile["isResolved"])
+        self.assertFalse(normal_profile["isSelected"])
+
+        use_result = self.run_cli("--json", "developer", "use", "caveman")
+        use_payload = json.loads(use_result.stdout.strip())
+        self.assertTrue(use_payload["success"])
+        self.assertEqual(use_payload["selectedProfile"], "caveman")
+        self.assertEqual(use_payload["profile"]["verbosity"], "terse")
+
+        selected_current_result = self.run_cli("--json", "developer", "current")
+        selected_current_payload = json.loads(selected_current_result.stdout.strip())
+        self.assertEqual(selected_current_payload["resolved"]["profile"]["name"], "caveman")
+        self.assertEqual(selected_current_payload["resolved"]["source"], "saved")
+
+        status_result = self.run_cli("--json", "status")
+        status_payload = json.loads(status_result.stdout.strip())
+        self.assertEqual(status_payload["developer"]["profile"]["name"], "caveman")
+        self.assertEqual(status_payload["developer"]["source"], "saved")
+
+        clear_result = self.run_cli("--json", "developer", "clear")
+        clear_payload = json.loads(clear_result.stdout.strip())
+        self.assertTrue(clear_payload["success"])
+        self.assertEqual(clear_payload["selectedProfile"], None)
+        self.assertEqual(clear_payload["resolvedProfile"]["name"], "normal")
 
     def test_agent_sessions_and_logs_proxy_live_agent_routes(self) -> None:
         sessions_result = self.run_cli("--json", "agent", "sessions")
@@ -3407,6 +3693,30 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(any("play stop" in command for command in payload["recommendedCommands"]))
         self.assertIn("snapshot", payload)
 
+    def test_debug_doctor_persists_recurring_compilation_and_queue_signals(self) -> None:
+        self.server.compilation_entries = [
+            {
+                "message": (
+                    "Assets/Scripts/Player.cs(12,8): error CS0246: "
+                    "The type or namespace name 'Foo' could not be found"
+                )
+            }
+        ]
+        self.run_cli("--json", "scene-info")
+
+        first = self.run_cli("--json", "debug", "doctor", "--recent-commands", "8")
+        first_payload = json.loads(first.stdout.strip())
+        first_titles = [item["title"] for item in first_payload["findings"]]
+        self.assertNotIn("Recurring Compilation Errors", first_titles)
+        self.assertNotIn("Recurring Queue Contention", first_titles)
+
+        second = self.run_cli("--json", "debug", "doctor", "--recent-commands", "8")
+        second_payload = json.loads(second.stdout.strip())
+        second_titles = [item["title"] for item in second_payload["findings"]]
+        self.assertIn("Recurring Compilation Errors", second_titles)
+        self.assertIn("Recurring Queue Contention", second_titles)
+        self.assertTrue(any("agent queue" in command for command in second_payload["recommendedCommands"]))
+
     def test_debug_watch_samples_summary_over_time(self) -> None:
         result = self.run_cli(
             "--json",
@@ -3578,16 +3888,40 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(payload["editorState"]["sceneDirty"])
 
     def test_workflow_audit_advanced_reports_probe_results_and_cleans_up(self) -> None:
-        result = self.run_cli(
-            "--json",
-            "workflow",
-            "audit-advanced",
-            "--timeout",
-            "5",
-            "--interval",
-            "0.1",
+        from cli_anything.unity_mcp.unity_mcp_cli import cli as unity_cli
+
+        runner = CliRunner()
+        env = os.environ.copy()
+        env["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(self.tmpdir / "memory")
+        result = runner.invoke(
+            unity_cli,
+            [
+                "--host",
+                "127.0.0.1",
+                "--default-port",
+                str(self.port),
+                "--port-range-start",
+                str(self.port),
+                "--port-range-end",
+                str(self.port),
+                "--registry-path",
+                str(self.registry_path),
+                "--session-path",
+                str(self.session_path),
+                "--json",
+                "workflow",
+                "audit-advanced",
+                "--timeout",
+                "5",
+                "--interval",
+                "0.1",
+            ],
+            env=env,
+            catch_exceptions=False,
         )
-        payload = json.loads(result.stdout.strip())
+        if result.exit_code != 0:
+            self.fail(f"CLI failed.\nOUTPUT:\n{result.output}")
+        payload = json.loads(result.output.strip())
 
         self.assertGreaterEqual(payload["summary"]["totalProbes"], 18)
         self.assertEqual(payload["summary"]["failed"], 0)
@@ -3659,6 +3993,603 @@ class FullE2ETests(unittest.TestCase):
         self.assertTrue(payload["prefab"]["success"])
         self.assertEqual(payload["savePath"], "Assets/Prefabs/EnemyRoot.prefab")
         self.assertEqual(payload["instance"]["name"], "EnemyClone")
+
+    def test_workflow_create_sandbox_scene_restores_original_scene_by_default(self) -> None:
+        result = self.run_cli("--json", "workflow", "create-sandbox-scene")
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["sceneName"], "Demo_Sandbox")
+        self.assertEqual(payload["path"], "Assets/Scenes/Demo_Sandbox.unity")
+        self.assertTrue(payload["reopenedOriginal"])
+        self.assertFalse(payload["keptOpen"])
+        self.assertEqual(payload["editorState"]["activeScene"], "MainScene")
+        self.assertIn("Assets/Scenes/Demo_Sandbox.unity", self.server.scene_assets)
+        self.assertEqual(self.server.active_scene_name, "MainScene")
+
+    def test_workflow_create_sandbox_scene_can_leave_sandbox_open_in_custom_folder(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "create-sandbox-scene",
+            "--name",
+            "GameplayLab",
+            "--folder",
+            "Assets/Scenes/Sandboxes",
+            "--open",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["sceneName"], "GameplayLab")
+        self.assertEqual(payload["path"], "Assets/Scenes/Sandboxes/GameplayLab.unity")
+        self.assertFalse(payload["reopenedOriginal"])
+        self.assertTrue(payload["keptOpen"])
+        self.assertEqual(payload["editorState"]["activeScene"], "GameplayLab")
+        self.assertEqual(self.server.active_scene_name, "GameplayLab")
+        self.assertIn("Assets/Scenes/Sandboxes/GameplayLab.unity", self.server.scene_assets)
+
+    def test_workflow_quality_fix_apply_runs_sandbox_fix(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "director",
+            "--fix",
+            "sandbox-scene",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["sceneName"], "Demo_Sandbox")
+        self.assertTrue(payload["applyResult"]["result"]["reopenedOriginal"])
+        self.assertIn("Assets/Scenes/Demo_Sandbox.unity", self.server.scene_assets)
+        self.assertEqual(self.server.active_scene_name, "MainScene")
+
+    def test_workflow_quality_fix_apply_adds_canvas_scaler(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "GraphicRaycaster"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "ui",
+            "--fix",
+            "ui-canvas-scaler",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertIn("CanvasScaler", self.server.gameobjects["HUDCanvas"]["components"])
+
+    def test_workflow_quality_fix_apply_adds_graphic_raycaster(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "ui",
+            "--fix",
+            "ui-graphic-raycaster",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertIn("GraphicRaycaster", self.server.gameobjects["HUDCanvas"]["components"])
+
+    def test_workflow_quality_fix_apply_adds_event_system(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "event-system",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["moduleType"], "StandaloneInputModule")
+        self.assertIn("EventSystem", self.server.gameobjects)
+        self.assertIn("EventSystem", self.server.gameobjects["EventSystem"]["components"])
+        self.assertIn("StandaloneInputModule", self.server.gameobjects["EventSystem"]["components"])
+
+    def test_workflow_quality_fix_apply_repairs_existing_event_system_module(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+        self.server._register_gameobject(
+            "EventSystem",
+            components=["Transform", "EventSystem"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "event-system",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["moduleType"], "StandaloneInputModule")
+        self.assertIn("StandaloneInputModule", self.server.gameobjects["EventSystem"]["components"])
+
+    def test_workflow_quality_fix_apply_dedupes_extra_event_system_components(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+        self.server._register_gameobject(
+            "EventSystem",
+            components=["Transform", "EventSystem", "StandaloneInputModule"],
+        )
+        self.server._register_gameobject(
+            "UIRoot/DuplicateEventSystem",
+            components=["Transform", "EventSystem", "StandaloneInputModule"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "event-system",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["duplicateRemovedCount"], 1)
+        self.assertNotIn("EventSystem", self.server.gameobjects["UIRoot/DuplicateEventSystem"]["components"])
+        self.assertNotIn(
+            "StandaloneInputModule",
+            self.server.gameobjects["UIRoot/DuplicateEventSystem"]["components"],
+        )
+
+    def test_workflow_quality_fix_apply_normalizes_primary_event_system_module(self) -> None:
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler", "GraphicRaycaster"],
+        )
+        self.server._register_gameobject(
+            "EventSystem",
+            components=["Transform", "EventSystem", "StandaloneInputModule", "InputSystemUIInputModule"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "event-system",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["moduleType"], "StandaloneInputModule")
+        self.assertIn("StandaloneInputModule", self.server.gameobjects["EventSystem"]["components"])
+        self.assertNotIn("InputSystemUIInputModule", self.server.gameobjects["EventSystem"]["components"])
+
+    def test_workflow_quality_fix_apply_repairs_audio_listener_setup(self) -> None:
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "UICamera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "audio-listener",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertIn("AudioListener", self.server.gameobjects["Main Camera"]["components"])
+        self.assertNotIn("AudioListener", self.server.gameobjects["UICamera"]["components"])
+
+    def test_workflow_quality_fix_apply_cleans_disposable_probe_objects(self) -> None:
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "StandaloneProbe",
+            components=["Transform"],
+        )
+        self.server._register_gameobject(
+            "DebugFixture",
+            components=["Transform"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "systems",
+            "--fix",
+            "disposable-cleanup",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 2)
+        self.assertEqual(payload["applyResult"]["result"]["removedCount"], 2)
+        self.assertIn("StandaloneProbe", payload["applyResult"]["result"]["removedPaths"])
+        self.assertIn("DebugFixture", payload["applyResult"]["result"]["removedPaths"])
+        self.assertNotIn("StandaloneProbe", self.server.gameobjects)
+        self.assertNotIn("DebugFixture", self.server.gameobjects)
+
+    def test_workflow_quality_fix_apply_adds_character_controller_to_likely_player(self) -> None:
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "PlayerAvatar",
+            components=["Transform", "CapsuleCollider"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "physics",
+            "--fix",
+            "player-character-controller",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["targetPath"], "PlayerAvatar")
+        self.assertIn("CharacterController", self.server.gameobjects["PlayerAvatar"]["components"])
+
+    def test_workflow_quality_fix_apply_repairs_texture_importers(self) -> None:
+        project = self.tmpdir / "DemoProject"
+        textures = project / "Assets" / "Textures"
+        ui = project / "Assets" / "UI"
+        textures.mkdir(parents=True, exist_ok=True)
+        ui.mkdir(parents=True, exist_ok=True)
+
+        normal_path = textures / "rock_normal.png"
+        sprite_path = ui / "ability_icon.png"
+        normal_path.write_bytes(b"fake-png")
+        sprite_path.write_bytes(b"fake-png")
+        (project / "Assets" / "Textures" / "rock_normal.png.meta").write_text(
+            "\n".join(
+                [
+                    "fileFormatVersion: 2",
+                    "TextureImporter:",
+                    "  textureType: 0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (project / "Assets" / "UI" / "ability_icon.png.meta").write_text(
+            "\n".join(
+                [
+                    "fileFormatVersion: 2",
+                    "TextureImporter:",
+                    "  textureType: 0",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "tech-art",
+            "--fix",
+            "texture-imports",
+            "--apply",
+            str(project),
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["result"]["updatedCount"], 2)
+        self.assertEqual(payload["applyResult"]["result"]["normalMapCount"], 1)
+        self.assertEqual(payload["applyResult"]["result"]["spriteCount"], 1)
+        self.assertEqual(
+            self.server.texture_imports["Assets/Textures/rock_normal.png"]["textureType"],
+            "NormalMap",
+        )
+        self.assertEqual(
+            self.server.texture_imports["Assets/UI/ability_icon.png"]["textureType"],
+            "Sprite",
+        )
+
+    def test_workflow_quality_fix_apply_creates_animation_controller(self) -> None:
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "animation",
+            "--fix",
+            "controller-scaffold",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        controller_path = payload["applyResult"]["result"]["path"]
+        self.assertTrue(controller_path.endswith("_Auto.controller"))
+        self.assertIn(controller_path, self.server.animation_controllers)
+
+    def test_workflow_quality_fix_apply_wires_animation_controller_to_animator(self) -> None:
+        self.server._register_gameobject(
+            "Hero",
+            components=["Transform", "Animator"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "animation",
+            "--fix",
+            "controller-wireup",
+            "--apply",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["applyResult"]["applied"])
+        self.assertEqual(payload["applyResult"]["mode"], "workflow")
+        wireup_result = payload["applyResult"]["result"]
+        controller_path = wireup_result["controllerPath"]
+        self.assertTrue(controller_path.endswith("_Auto.controller"))
+        self.assertTrue(str(wireup_result["targetGameObjectPath"]).endswith("Hero"))
+        self.assertIn(controller_path, self.server.animation_controllers)
+        self.assertEqual(
+            self.server.gameobjects["Hero"]["animatorController"],
+            controller_path,
+        )
+
+    def test_workflow_quality_fix_apply_writes_test_scaffold_and_improves_director_audit(self) -> None:
+        project = self.tmpdir / "DemoProject"
+        (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+        (project / "Packages").mkdir(parents=True, exist_ok=True)
+        (project / "Assets" / "Scripts" / "Player.cs").write_text(
+            "public class Player {}",
+            encoding="utf-8",
+        )
+        (project / "Packages" / "manifest.json").write_text(
+            json.dumps({"dependencies": {"com.unity.test-framework": "1.6.0"}}),
+            encoding="utf-8",
+        )
+
+        apply_result = self.run_cli(
+            "--json",
+            "workflow",
+            "quality-fix",
+            "--lens",
+            "director",
+            "--fix",
+            "test-scaffold",
+            "--apply",
+            str(project),
+        )
+        apply_payload = json.loads(apply_result.stdout.strip())
+
+        self.assertTrue(apply_payload["available"])
+        self.assertTrue(apply_payload["applyResult"]["applied"])
+        self.assertEqual(apply_payload["applyResult"]["result"]["writeCount"], 2)
+
+        audit_result = self.run_cli(
+            "--json",
+            "workflow",
+            "expert-audit",
+            "--lens",
+            "director",
+            str(project),
+        )
+        audit_payload = json.loads(audit_result.stdout.strip())
+        titles = {item["title"] for item in audit_payload["findings"]}
+
+        self.assertNotIn("No test coverage detected", titles)
+        self.assertIn("Missing project guidance", titles)
+
+    def test_workflow_improve_project_applies_safe_project_and_scene_repairs(self) -> None:
+        project = self.tmpdir / "DemoProject"
+        (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
+        (project / "Packages").mkdir(parents=True, exist_ok=True)
+        (project / "Assets" / "Scripts" / "Player.cs").write_text(
+            "public class Player {}",
+            encoding="utf-8",
+        )
+        (project / "Packages" / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "dependencies": {
+                        "com.unity.inputsystem": "1.6.0",
+                        "com.unity.test-framework": "1.6.0",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.server.project_name = "DemoProject"
+        self.server.project_path = str(project).replace("\\", "/")
+        self.server._register_gameobject(
+            "Main Camera",
+            components=["Transform", "Camera"],
+        )
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas"],
+        )
+        self.server._register_gameobject(
+            "PlayerAvatar",
+            components=["Transform", "CapsuleCollider"],
+        )
+        self.server._register_gameobject(
+            "StandaloneProbe",
+            components=["Transform"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "improve-project",
+            "--port",
+            str(self.port),
+            str(project),
+            timeout=40,
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        self.assertTrue(payload["liveUnityAvailable"])
+        self.assertGreater(payload["appliedCount"], 0)
+        self.assertEqual(payload["skippedCount"], 0)
+        self.assertIsNotNone(payload["baselineScore"])
+        self.assertIsNotNone(payload["finalScore"])
+        self.assertGreater(payload["finalScore"], payload["baselineScore"])
+        self.assertTrue(payload["projectChanged"])
+        self.assertTrue(payload["sceneChanged"])
+
+        applied_fixes = {item["fix"] for item in payload["applied"]}
+        self.assertTrue(
+            {
+                "guidance",
+                "sandbox-scene",
+                "disposable-cleanup",
+                "audio-listener",
+                "event-system",
+                "ui-canvas-scaler",
+                "ui-graphic-raycaster",
+                "player-character-controller",
+                "test-scaffold",
+            }.issubset(applied_fixes)
+        )
+        self.assertTrue((project / "AGENTS.md").exists())
+        self.assertTrue((project / "Assets" / "MCP" / "Context" / "ProjectSummary.md").exists())
+        self.assertTrue((project / "Assets" / "Tests" / "EditMode" / "DemoProjectSmokeTests.cs").exists())
+        self.assertIn("Assets/Scenes/DemoProject_Sandbox.unity", self.server.scene_assets)
+        self.assertIn("AudioListener", self.server.gameobjects["Main Camera"]["components"])
+        self.assertIn("CanvasScaler", self.server.gameobjects["HUDCanvas"]["components"])
+        self.assertIn("GraphicRaycaster", self.server.gameobjects["HUDCanvas"]["components"])
+        self.assertIn("CharacterController", self.server.gameobjects["PlayerAvatar"]["components"])
+        self.assertNotIn("StandaloneProbe", self.server.gameobjects)
+        self.assertIn("EventSystem", self.server.gameobjects)
+        self.assertIn("InputSystemUIInputModule", self.server.gameobjects["EventSystem"]["components"])
+
+    def test_workflow_expert_audit_systems_reports_live_scene_hygiene_findings(self) -> None:
+        self.server._register_gameobject(
+            "MainCamera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "SpectatorCamera",
+            components=["Transform", "Camera", "AudioListener"],
+        )
+        self.server._register_gameobject(
+            "HUDCanvas",
+            components=["Transform", "RectTransform", "Canvas", "CanvasScaler"],
+        )
+        self.server._register_gameobject(
+            "Player",
+            components=["Transform"],
+        )
+        self.server._register_gameobject(
+            "StandalonePrefabProbe",
+            components=["Transform"],
+        )
+
+        result = self.run_cli(
+            "--json",
+            "workflow",
+            "expert-audit",
+            "--lens",
+            "systems",
+        )
+        payload = json.loads(result.stdout.strip())
+
+        self.assertTrue(payload["available"])
+        titles = {item["title"] for item in payload["findings"]}
+        self.assertIn("Multiple AudioListeners in scene", titles)
+        self.assertIn("Canvas present without EventSystem", titles)
+        self.assertIn("Disposable probe/demo objects still present", titles)
 
     def test_workflow_validate_scene_reports_summary(self) -> None:
         self.server.gameobjects["Player"] = {
@@ -3835,10 +4766,44 @@ class FullE2ETests(unittest.TestCase):
             "unity_animation_add_parameter",
             {"controllerPath": controller_path, "parameterName": "Speed", "parameterType": "Float"},
         )
+        state = call_tool(
+            "unity_animation_add_state",
+            {
+                "controllerPath": controller_path,
+                "stateName": "Idle",
+                "clipPath": clip_path,
+                "speed": 1.0,
+                "isDefault": True,
+            },
+        )
+        run_state = call_tool(
+            "unity_animation_add_state",
+            {
+                "controllerPath": controller_path,
+                "stateName": "Run",
+                "clipPath": clip_path,
+                "speed": 1.25,
+                "isDefault": False,
+            },
+        )
         transition = call_tool(
             "unity_animation_add_transition",
-            {"controllerPath": controller_path, "destinationState": "Idle", "duration": 0.2},
+            {
+                "controllerPath": controller_path,
+                "sourceState": "Idle",
+                "destinationState": "Run",
+                "duration": 0.2,
+            },
         )
+        controller_info = call_tool("unity_animation_controller_info", {"path": controller_path})
+        set_default = call_tool(
+            "unity_animation_set_default_state",
+            {
+                "controllerPath": controller_path,
+                "stateName": "Run",
+            },
+        )
+        controller_info_after = call_tool("unity_animation_controller_info", {"path": controller_path})
         self.assertEqual(clip["path"], clip_path)
         self.assertEqual(controller["path"], controller_path)
         self.assertEqual(curve["propertyName"], "localPosition.x")
@@ -3847,7 +4812,26 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(len(keyframes["keyframes"]), 2)
         self.assertEqual(clip_info["eventCount"], 1)
         self.assertEqual(parameter["parameter"]["name"], "Speed")
-        self.assertEqual(transition["transition"]["destinationState"], "Idle")
+        self.assertEqual(state["state"]["name"], "Idle")
+        self.assertEqual(run_state["state"]["name"], "Run")
+        self.assertEqual(transition["transition"]["destinationState"], "Run")
+        self.assertEqual(controller_info["path"], controller_path)
+        self.assertEqual(controller_info["parameterCount"], 1)
+        self.assertEqual(controller_info["transitionCount"], 1)
+        self.assertEqual(controller_info["stateCount"], 2)
+        self.assertEqual(controller_info["layers"][0]["defaultState"], "Idle")
+        self.assertEqual(controller_info["layers"][0]["anyStateTransitionCount"], 0)
+        self.assertEqual(controller_info["layers"][0]["entryTransitionCount"], 0)
+        self.assertEqual(controller_info["layers"][0]["states"][0]["name"], "Idle")
+        self.assertTrue(controller_info["layers"][0]["states"][0]["isDefault"])
+        self.assertEqual(controller_info["layers"][0]["states"][0]["transitionCount"], 1)
+        self.assertEqual(controller_info["layers"][0]["states"][1]["name"], "Run")
+        self.assertFalse(controller_info["layers"][0]["states"][1]["isDefault"])
+        self.assertEqual(set_default["defaultState"], "Run")
+        self.assertEqual(set_default["previousDefaultState"], "Idle")
+        self.assertEqual(controller_info_after["layers"][0]["defaultState"], "Run")
+        self.assertFalse(controller_info_after["layers"][0]["states"][0]["isDefault"])
+        self.assertTrue(controller_info_after["layers"][0]["states"][1]["isDefault"])
 
         terrain = call_tool(
             "unity_terrain_create",
@@ -3938,7 +4922,7 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(remove_event["eventsRemoved"], 1)
         remove_param = call_tool("unity_animation_remove_parameter", {"controllerPath": controller_path, "parameterName": "Speed"})
         self.assertTrue(remove_param["parameterRemoved"])
-        remove_trans = call_tool("unity_animation_remove_transition", {"controllerPath": controller_path, "destinationState": "Idle"})
+        remove_trans = call_tool("unity_animation_remove_transition", {"controllerPath": controller_path, "destinationState": "Run"})
         self.assertTrue(remove_trans["transitionRemoved"])
         blend_tree = call_tool("unity_animation_create_blend_tree", {"controllerPath": controller_path, "stateName": "LocomotionBlend", "blendType": "Simple1D", "parameter": "Speed"})
         self.assertTrue(blend_tree["success"])
@@ -3949,17 +4933,88 @@ class FullE2ETests(unittest.TestCase):
         # remove-layer and remove-state require a layer/state to exist first
         remove_state = call_tool("unity_animation_remove_state", {"controllerPath": controller_path, "stateName": "LocomotionBlend"})
         self.assertTrue(remove_state["stateRemoved"])
+
+    def test_mock_bridge_rejects_animation_self_transition(self) -> None:
+        def call_tool(tool_name: str, params: dict | None = None) -> dict:
+            args = ["--json", "tool", tool_name]
+            if params is not None:
+                args.extend(["--params", json.dumps(params)])
+            result = self.run_cli(*args)
+            return json.loads(result.stdout.strip())
+
+        controller_path = "Assets/MockOnly/SelfTransition.controller"
+        clip_path = "Assets/MockOnly/SelfTransition.anim"
+        call_tool("unity_animation_create_clip", {"path": clip_path, "loop": True, "frameRate": 30})
+        call_tool("unity_animation_create_controller", {"path": controller_path})
+        call_tool(
+            "unity_animation_add_state",
+            {
+                "controllerPath": controller_path,
+                "stateName": "Idle",
+                "clipPath": clip_path,
+                "speed": 1.0,
+                "isDefault": True,
+            },
+        )
+
+        transition = call_tool(
+            "unity_animation_add_transition",
+            {
+                "controllerPath": controller_path,
+                "sourceState": "Idle",
+                "destinationState": "Idle",
+                "duration": 0.2,
+            },
+        )
+
+        self.assertIn("error", transition)
+        self.assertIn("Self-transition", transition["error"])
         remove_layer = call_tool("unity_animation_remove_layer", {"controllerPath": controller_path, "layerIndex": 0})
         self.assertFalse(remove_layer["layerRemoved"])  # no layers added yet, so nothing to remove
+
+    def test_mock_bridge_extended_mock_coverage(self) -> None:
+        catalog_path = Path(__file__).resolve().parents[1] / "data" / "upstream_tool_catalog.json"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        tool_routes = {
+            str(item.get("name") or ""): str(item.get("route") or "")
+            for item in catalog.get("tools", [])
+            if item.get("route")
+        }
+        tool_routes.update(
+            {
+                "unity_mppm_info": "scenario/info",
+                "unity_mppm_list_scenarios": "scenario/list",
+                "unity_mppm_status": "scenario/status",
+                "unity_mppm_activate_scenario": "scenario/activate",
+                "unity_mppm_start": "scenario/start",
+                "unity_mppm_stop": "scenario/stop",
+            }
+        )
+
+        def call_tool(tool_name: str, params: dict | None = None) -> dict:
+            route = tool_routes.get(tool_name)
+            if not route:
+                self.fail(f"Tool route not found for `{tool_name}`.")
+            return self.server.route_result(route, params or {})
 
         # ── Prefab mock coverage ─────────────────────────────────────────
         prefab_path = "Assets/MockOnly/MockPrefab.prefab"
         variant_path = "Assets/MockOnly/MockPrefabVariant.prefab"
         # seed the prefab store so prefab/info, hierarchy, etc. find it
         self.server.prefabs[prefab_path] = {"name": "MockPrefab", "components": ["Transform", "BoxCollider"], "isVariant": False}
-        prefab_info = call_tool("unity_prefab_info", {"path": prefab_path})
+        prefab_info = call_tool("unity_prefab_info", {"assetPath": prefab_path})
         self.assertEqual(prefab_info["name"], "MockPrefab")
         self.assertFalse(prefab_info["isVariant"])
+        self.assertFalse(prefab_info["isInstance"])
+        self.server.gameobjects["MockPrefabInstance"] = {
+            "name": "MockPrefabInstance",
+            "components": ["Transform", "MeshRenderer"],
+            "prefabAssetPath": prefab_path,
+        }
+        prefab_instance_info = call_tool("unity_prefab_info", {"path": "MockPrefabInstance"})
+        self.assertEqual(prefab_instance_info["name"], "MockPrefabInstance")
+        self.assertTrue(prefab_instance_info["isInstance"])
+        self.assertEqual(prefab_instance_info["assetPath"], prefab_path)
         hierarchy = call_tool("unity_prefab_get_hierarchy", {"path": prefab_path})
         self.assertEqual(hierarchy["name"], "MockPrefab")
         props = call_tool("unity_prefab_get_properties", {"path": prefab_path, "component": "BoxCollider"})
@@ -4451,6 +5506,16 @@ class FullE2ETests(unittest.TestCase):
 
         self.assertIn("summary", summary_payload)
         self.assertGreater(summary_payload["summary"]["countsByStatus"]["live-tested"], 0)
+        evidence = summary_payload["summary"]["evidenceSummary"]
+        self.assertEqual(evidence["liveVerifiedCount"], summary_payload["summary"]["countsByStatus"]["live-tested"])
+        self.assertEqual(evidence["automatedCoveredCount"], summary_payload["summary"]["countsByStatus"]["covered"])
+        self.assertEqual(evidence["mockOnlyCount"], summary_payload["summary"]["countsByStatus"]["mock-only"])
+        self.assertEqual(
+            evidence["remainingCount"],
+            summary_payload["summary"]["countsByStatus"]["deferred"]
+            + summary_payload["summary"]["countsByStatus"]["unsupported"],
+        )
+        self.assertIn("Do not blend", evidence["note"])
         self.assertTrue(any(tool["name"] == "unity_terrain_create" for tool in category_payload["tools"]))
         terrain_create = next(
             tool for tool in category_payload["tools"] if tool["name"] == "unity_terrain_create"

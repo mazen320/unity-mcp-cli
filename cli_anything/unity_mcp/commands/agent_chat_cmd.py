@@ -1,0 +1,98 @@
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+import click
+
+from ..core.agent_chat import ChatBridge
+from ..core.file_ipc import FileIPCClient
+from .agent_loop_cmd import _resolve_file_ipc_client
+
+
+def _emit_payload(ctx: click.Context, payload: dict) -> None:
+    if ctx.obj.json_output:
+        click.echo(json.dumps(payload))
+        return
+    click.echo(payload.get("message") or str(payload))
+
+
+@click.command("agent-chat")
+@click.argument("project_root", required=False, type=click.Path(exists=False, file_okay=False, path_type=Path))
+@click.option("--once", is_flag=True, help="Process at most one pending message and exit.")
+@click.option("--iterations", type=int, default=None, help="Poll a fixed number of times, then exit.")
+@click.option("--poll-interval", type=float, default=0.25, show_default=True, help="Seconds between polls.")
+@click.pass_context
+def agent_chat_command(
+    ctx: click.Context,
+    project_root: Path | None,
+    once: bool,
+    iterations: int | None,
+    poll_interval: float,
+) -> None:
+    """Run the File IPC chat bridge for the Unity Agent tab."""
+    from ..core.embedded_cli import EmbeddedCLIOptions
+
+    if project_root is not None:
+        file_client = FileIPCClient(project_root)
+        ctx.obj.backend.session_store.update_selection(
+            {
+                "projectName": project_root.name,
+                "projectPath": str(project_root),
+                "port": None,
+                "transport": "file-ipc",
+            }
+        )
+    else:
+        file_client = _resolve_file_ipc_client(ctx.obj.backend)
+        project_root = Path(file_client.project_path)
+
+    embedded_options = EmbeddedCLIOptions(
+        host=getattr(ctx.obj.backend.client, "host", "127.0.0.1"),
+        default_port=int(getattr(ctx.obj.backend, "default_port", 7890)),
+        registry_path=getattr(ctx.obj.backend, "registry_path", None),
+        session_path=getattr(ctx.obj.backend.session_store, "path", None),
+        port_range_start=int(getattr(ctx.obj.backend, "port_range_start", 7890)),
+        port_range_end=int(getattr(ctx.obj.backend, "port_range_end", 7899)),
+        agent_id=ctx.obj.agent_id,
+        legacy=ctx.obj.legacy_mode,
+    )
+    bridge = ChatBridge(
+        project_root,
+        file_client,
+        embedded_options=embedded_options,
+        poll_interval=max(0.05, float(poll_interval)),
+    )
+
+    if once or iterations is not None:
+        loops = 1 if once else max(0, int(iterations or 0))
+        processed = 0
+        for index in range(loops):
+            if bridge.poll_once():
+                processed += 1
+            if index + 1 < loops:
+                time.sleep(bridge.poll_interval)
+        _emit_payload(
+            ctx,
+            {
+                "success": True,
+                "projectPath": str(project_root),
+                "processed": processed > 0,
+                "processedCount": processed,
+                "historyPath": str(project_root / ".umcp" / "chat" / "history.json"),
+                "statusPath": str(project_root / ".umcp" / "agent-status.json"),
+                "message": f"Processed {processed} queued message(s).",
+            },
+        )
+        return
+
+    _emit_payload(
+        ctx,
+        {
+            "success": True,
+            "projectPath": str(project_root),
+            "message": f"Starting agent chat bridge for {project_root}. Press Ctrl+C to stop.",
+        },
+    )
+    bridge.run()

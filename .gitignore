@@ -1,4 +1,6 @@
 .cli-anything-unity-mcp/
+.tmp-agent-chat*.log
+.worktrees/
 .pip-tmp/
 .tmp-tests/
 cli_anything_unity_mcp.egg-info/

@@ -129,6 +129,22 @@ def _render_text(report: dict[str, Any]) -> str:
                 )
             elif step["label"] == "missing-references":
                 lines.append(f"  totalFound={result.get('totalFound')}")
+            elif step["label"] == "search-by-component":
+                lines.append(
+                    f"  component={result.get('component')} count={result.get('count')}"
+                )
+            elif step["label"] == "selection-get":
+                lines.append(
+                    f"  count={result.get('count')} active={result.get('activePath')}"
+                )
+            elif step["label"] == "selection-set":
+                lines.append(
+                    f"  count={result.get('count')} active={result.get('activePath')}"
+                )
+            elif step["label"] == "focus-scene-view":
+                lines.append(
+                    f"  focused={result.get('focused')} path={result.get('path')}"
+                )
             elif step["label"] == "capture":
                 captures = result.get("captures") or {}
                 lines.append(
@@ -171,6 +187,11 @@ def main() -> int:
             command=["route", "search/missing-references", "--params", _compact_json({"limit": 20})],
             label="missing-references",
         ),
+        _run_step(
+            cli_prefix=cli_prefix,
+            command=["route", "search/by-component", "--params", _compact_json({"componentType": "Transform", "limit": 5})],
+            label="search-by-component",
+        ),
         _run_step(cli_prefix=cli_prefix, command=["agent", "queue"], label="agent-queue"),
         _run_step(cli_prefix=cli_prefix, command=["agent", "sessions"], label="agent-sessions"),
         _run_step(
@@ -184,6 +205,69 @@ def main() -> int:
             label="console-readback",
         ),
     ]
+
+    primary_object_path = ""
+    for step in steps:
+        if step["label"] != "search-by-component":
+            continue
+        result = step.get("result") or {}
+        results = result.get("results") or []
+        if results:
+            primary_object_path = str(results[0].get("path") or "")
+        break
+
+    steps.append(
+        _run_step(
+            cli_prefix=cli_prefix,
+            command=["route", "selection/get"],
+            label="selection-get",
+        )
+    )
+
+    if primary_object_path:
+        steps.append(
+            _run_step(
+                cli_prefix=cli_prefix,
+                command=["route", "selection/set", "--params", _compact_json({"path": primary_object_path})],
+                label="selection-set",
+            )
+        )
+        steps.append(
+            _run_step(
+                cli_prefix=cli_prefix,
+                command=["route", "selection/focus-scene-view", "--params", _compact_json({"path": primary_object_path})],
+                label="focus-scene-view",
+            )
+        )
+    else:
+        steps.append(
+            {
+                "label": "selection-set",
+                "command": ["route", "selection/set"],
+                "required": True,
+                "success": False,
+                "returnCode": -1,
+                "durationMs": 0,
+                "stdout": "",
+                "stderr": "search-by-component returned no object path to select",
+                "parseError": None,
+                "result": None,
+            }
+        )
+        steps.append(
+            {
+                "label": "focus-scene-view",
+                "command": ["route", "selection/focus-scene-view"],
+                "required": True,
+                "success": False,
+                "returnCode": -1,
+                "durationMs": 0,
+                "stdout": "",
+                "stderr": "search-by-component returned no object path to focus",
+                "parseError": None,
+                "result": None,
+            }
+        )
 
     if not args.skip_capture:
         steps.append(

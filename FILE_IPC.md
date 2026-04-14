@@ -105,27 +105,40 @@ cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --j
 
 Unity's File IPC bridge keeps a lightweight in-memory agent registry. It records each request's `agentId`, route name, status, timestamp, and error string. There is no background polling loop in Unity; the registry updates only when commands arrive.
 
-The native `Window > CLI Anything` panel is the local cockpit for visibility and manual actions. It is not a heavy polling chat UI. That is intentional: the prompt loop stays in the CLI/agent process, while Unity stays fast.
+The native `Window > CLI Anything` panel is the local cockpit for visibility and manual actions.
+
+It now also includes a lightweight Agent tab:
+- Unity writes queued user messages into `.umcp/chat/user-inbox/`
+- the Python-side `ChatBridge` drains those messages and writes `.umcp/chat/history.json`
+- live progress is mirrored through `.umcp/agent-status.json`
+- the panel can launch the Python bridge from source with configurable harness-root and Python-launcher settings
+
+That Agent tab is intentionally thin. The prompt loop, planning, and execution stay in the CLI/agent process, while Unity stays fast and main-thread-safe.
 
 ## What Works Without AnkleBreaker
 
 Standalone File IPC currently covers the core local route surface:
 
 - `ping`
-- `scene/info`, `scene/hierarchy`, `scene/save`, `scene/new`, `scene/stats`, `search/scene-stats`
+- `scene/info`, `scene/hierarchy`, `scene/save`, `scene/new`, `scene/create-sandbox`, `scene/stats`, `search/scene-stats`
 - `project/info`
 - `context`
 - `editor/state`, `editor/play-mode`, `editor/execute-menu-item`
 - `debug/breadcrumb`
 - `compilation/errors`
 - `console/log`, `console/clear`
-- `search/missing-references`
+- `search/assets`, `search/by-component`, `search/by-layer`, `search/by-name`, `search/by-tag`, `search/missing-references`
+- `selection/get`, `selection/set`, `selection/find-by-type`, `selection/focus-scene-view`
 - `gameobject/create`, `gameobject/delete`, `gameobject/info`, `gameobject/set-active`, `gameobject/set-transform`
 - `component/add`, `component/get-properties`
-- `asset/list`
+- `asset/list`, `asset/create-material`, `asset/create-prefab`, `asset/instantiate-prefab`
+- `animation/create-clip`, `animation/clip-info`, `animation/create-controller`, `animation/assign-controller`, `animation/controller-info`, `animation/add-parameter`, `animation/add-state`, `animation/set-default-state`, `animation/add-transition`
+- `material/create`, `material/set-property`, `material/get-properties`, `material/assign`, `material/list`
+- `renderer/set-material`
+- `prefab/save`, `prefab/instantiate`, `prefab/info`, `prefab/list`
 - `script/create`, `script/read`
 - `undo/perform`, `undo/redo`, `redo/perform`
-- `graphics/game-capture`, `graphics/scene-capture`, `screenshot/game`
+- `graphics/game-capture`, `graphics/scene-capture`, `graphics/material-info`, `graphics/renderer-info`, `screenshot/game`
 - `queue/info`, `agents/list`, `agents/log`
 
 `CliAnythingWindow.cs` is optional. Copy it into `Assets/Editor/` too if you want the native `Window > CLI Anything` panel.
@@ -137,7 +150,7 @@ The standalone File IPC bridge is not the full 328-tool advanced surface yet.
 Use the AnkleBreaker Unity plugin HTTP bridge when you need the broad advanced catalog today, especially:
 
 - terrain
-- animation
+- deeper animation authoring beyond clip/controller inspection, default-state edits, controller scaffold, and controller assignment
 - shader and shader graph
 - prefab-heavy workflows
 - package management
@@ -156,14 +169,31 @@ This path has been live-tested against the `OutsideTheBox` Unity project with:
 - `scene-info`
 - `search/scene-stats`
 - `search/missing-references`
+- `search/by-component`
+- `selection/get`
+- `selection/set`
+- `selection/focus-scene-view`
 - compact `hierarchy`
 - `compilation/errors`
+- `asset/create-material`
+- `graphics/material-info`
+- `graphics/renderer-info`
+- `renderer/set-material`
+- `asset/create-prefab`
+- `asset/instantiate-prefab`
+- `prefab/info` for both asset and scene-instance targets
 - `editor/execute-menu-item`
 - inactive-object `gameobject/info`
 - `gameobject/set-active`
 - `gameobject/create`
 - `gameobject/set-transform`
 - `component/add`
+- `animation/create-clip`
+- `animation/clip-info`
+- `animation/create-controller`
+- `animation/assign-controller`
+- `animation/controller-info`
+- `animation/set-default-state`
 - `debug breadcrumb` plus direct `console/log` readback
 - `debug capture --kind both`
 - `queue/info`, `agent queue`, `agent sessions`, `agent log`, `agent watch --iterations 1`
@@ -172,9 +202,12 @@ The latest visible proof also included:
 
 - a standalone breadcrumb written into Unity and read back through `console/log`
 - live `search/scene-stats` totals from the active `McpLiveFpsPass` scene
+- live `search/by-component` matches and direct selection/focus control on `/McpLiveFpsPass`
 - direct Game View and Scene View captures returned through File IPC as PNG data
 
 ## Mental Model
+
+### Core route loop
 
 ```text
 You prompt the agent
@@ -183,4 +216,16 @@ You prompt the agent
 -> Unity reads it on the main thread
 -> Unity writes JSON into .umcp/outbox
 -> agent reads the result and keeps working
+```
+
+### In-editor chat loop
+
+```text
+You type in Window > CLI Anything > Agent
+-> Unity writes a chat message into .umcp/chat/user-inbox
+-> Python ChatBridge reads it
+-> agent/chat handler decides what to do
+-> route calls still go through .umcp/inbox and .umcp/outbox
+-> Python writes .umcp/chat/history.json and .umcp/agent-status.json
+-> Unity refreshes the Agent tab
 ```

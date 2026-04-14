@@ -69,6 +69,7 @@ class UnityMCPBackend:
         self._file_ipc_clients: Dict[str, FileIPCClient] = {}
         self.runtime_agent_id: str | None = None
         self.runtime_agent_profile: str | None = None
+        self.runtime_developer_profile: str | None = None
         self.runtime_command_path: str | None = None
         self.runtime_activity: str | None = None
 
@@ -77,11 +78,13 @@ class UnityMCPBackend:
         *,
         agent_id: str | None = None,
         agent_profile: str | None = None,
+        developer_profile: str | None = None,
         command_path: str | None = None,
         activity: str | None = None,
     ) -> None:
         self.runtime_agent_id = agent_id
         self.runtime_agent_profile = agent_profile
+        self.runtime_developer_profile = developer_profile
         self.runtime_command_path = command_path
         self.runtime_activity = activity
 
@@ -108,6 +111,7 @@ class UnityMCPBackend:
             note=note,
             agent_id=self.runtime_agent_id,
             agent_profile=self.runtime_agent_profile,
+            developer_profile=self.runtime_developer_profile,
             command_path=self.runtime_command_path,
             activity=self.runtime_activity,
         )
@@ -1388,6 +1392,10 @@ class UnityMCPBackend:
         recovery_timeout: float = 15.0,
         recovery_interval: float = 0.5,
     ) -> Any:
+        state = self.session_store.load()
+        selected_instance = state.selected_instance or {}
+        selected_path = selected_instance.get("projectPath")
+        selected_port = port if port is not None else state.selected_port
         deadline = time.monotonic() + recovery_timeout
         last_exc: Exception | None = None
 
@@ -1405,9 +1413,20 @@ class UnityMCPBackend:
                 last_exc = exc
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                target = None
+                if selected_path:
+                    target = f"project {selected_path}"
+                elif selected_port is not None:
+                    target = f"port {selected_port}"
+                else:
+                    target = "the current Unity target"
+                message = (
+                    f"Timed out recovering route {route} for {target} "
+                    f"after {recovery_timeout:.2f}s."
+                )
                 if last_exc:
-                    raise last_exc
-                raise BackendSelectionError("Unity instance recovery timed out.")
+                    message = f"{message} Last error: {last_exc}"
+                raise BackendSelectionError(message)
             try:
                 self.wait_for_selected_instance(
                     timeout=min(recovery_interval, remaining),

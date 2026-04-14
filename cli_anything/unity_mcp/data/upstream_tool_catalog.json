@@ -828,6 +828,37 @@
       }
     },
     {
+      "name": "unity_animation_set_default_state",
+      "description": "Set the default state for an Animator Controller layer without creating a transition.",
+      "category": "animation",
+      "tier": "advanced",
+      "route": "animation/set-default-state",
+      "execution": "route",
+      "unsupported": false,
+      "bridgeFunction": "setAnimationDefaultState",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "controllerPath": {
+            "type": "string",
+            "description": "Asset path of the Animator Controller"
+          },
+          "stateName": {
+            "type": "string",
+            "description": "Name of the state to make default"
+          },
+          "layerIndex": {
+            "type": "number",
+            "description": "Layer index (default: 0)"
+          }
+        },
+        "required": [
+          "controllerPath",
+          "stateName"
+        ]
+      }
+    },
+    {
       "name": "unity_animation_add_transition",
       "description": "Add a transition between states in an Animator Controller. Supports conditions, exit time, and AnyState transitions.",
       "category": "animation",

@@ -3,7 +3,13 @@
 Stores learned patterns, fixes, and structure info per Unity project so the
 CLI gets smarter over time without repeating the same discovery work.
 
-Storage: a single JSON file per project, keyed by a hash of the project path.
+Storage: a single JSON file per project, keyed by a stable project ID when
+available.
+  - Real project directories persist the ID in .umcp/project-id
+  - Legacy memory files still load from the old path-hash ID and migrate on use
+  - Non-existent/ephemeral paths fall back to the legacy path hash
+
+Store locations:
   Windows: %LOCALAPPDATA%/CLIAnything/memory/<project_id>.json
   Linux:   ~/.local/state/cli-anything-unity-mcp/memory/<project_id>.json
   Fallback: .cli-anything-unity-mcp/memory/<project_id>.json
@@ -14,7 +20,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -27,6 +35,8 @@ CATEGORY_STRUCTURE = "structure"  # project layout (pipelines, paths, packages)
 CATEGORY_PREFERENCE = "preference"  # user/agent preferences for this project
 
 ALL_CATEGORIES = {CATEGORY_FIX, CATEGORY_PATTERN, CATEGORY_STRUCTURE, CATEGORY_PREFERENCE}
+_PROJECT_ID_FILENAME = "project-id"
+_PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _default_memory_root() -> Path:
@@ -45,9 +55,50 @@ def _workspace_memory_root() -> Path:
     return Path.cwd() / ".cli-anything-unity-mcp" / "memory"
 
 
-def _project_id(project_path: str) -> str:
-    """Stable 8-char hex ID derived from the project path."""
+def _legacy_project_id(project_path: str) -> str:
+    """Legacy 8-char hex ID derived from the project path."""
     return hashlib.sha256(project_path.encode("utf-8")).hexdigest()[:8]
+
+
+def _project_id_path(project_path: str) -> Optional[Path]:
+    root = Path(project_path)
+    if not root.exists() or not root.is_dir():
+        return None
+    return root / ".umcp" / _PROJECT_ID_FILENAME
+
+
+def _read_persisted_project_id(project_path: str) -> Optional[str]:
+    id_path = _project_id_path(project_path)
+    if id_path is None:
+        return None
+    try:
+        value = id_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if value and _PROJECT_ID_PATTERN.match(value):
+        return value
+    return None
+
+
+def _ensure_persisted_project_id(project_path: str) -> Optional[str]:
+    existing = _read_persisted_project_id(project_path)
+    if existing:
+        return existing
+    id_path = _project_id_path(project_path)
+    if id_path is None:
+        return None
+    value = uuid.uuid4().hex
+    try:
+        id_path.parent.mkdir(parents=True, exist_ok=True)
+        id_path.write_text(value, encoding="utf-8")
+    except OSError:
+        return None
+    return value
+
+
+def _project_id(project_path: str) -> str:
+    """Stable project ID with legacy path-hash fallback."""
+    return _ensure_persisted_project_id(project_path) or _legacy_project_id(project_path)
 
 
 class ProjectMemory:
@@ -61,12 +112,15 @@ class ProjectMemory:
     ) -> None:
         self.project_path = project_path
         self.project_id = _project_id(project_path)
+        self.legacy_project_id = _legacy_project_id(project_path)
         env_override = os.environ.get("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR")
         self._root = Path(store_root) if store_root else _default_memory_root()
         self._fallback_root = _workspace_memory_root()
         self._allow_fallback = allow_fallback and store_root is None and not env_override
         self._store_path = self._root / f"{self.project_id}.json"
         self._fallback_path = self._fallback_root / f"{self.project_id}.json"
+        self._legacy_store_path = self._root / f"{self.legacy_project_id}.json"
+        self._legacy_fallback_path = self._fallback_root / f"{self.legacy_project_id}.json"
         self._data: Dict[str, Any] | None = None  # lazy-loaded cache
 
     # ── Internal helpers ──────────────────────────────────────────────────────
@@ -75,11 +129,27 @@ class ProjectMemory:
         if self._data is not None:
             return self._data
         data = self._read_file(self._store_path)
+        source_path = self._store_path if data is not None else None
         if data is None and self._allow_fallback:
             data = self._read_file(self._fallback_path)
+            if data is not None:
+                source_path = self._fallback_path
+        if data is None and self.legacy_project_id != self.project_id:
+            data = self._read_file(self._legacy_store_path)
+            if data is not None:
+                source_path = self._legacy_store_path
+        if data is None and self._allow_fallback and self.legacy_project_id != self.project_id:
+            data = self._read_file(self._legacy_fallback_path)
+            if data is not None:
+                source_path = self._legacy_fallback_path
         if data is None:
             data = {"projectPath": self.project_path, "entries": {}}
+            source_path = None
+        else:
+            data["projectPath"] = self.project_path
         self._data = data
+        if source_path is not None and source_path != self._store_path:
+            self._flush()
         return self._data
 
     def _flush(self) -> None:
@@ -488,6 +558,301 @@ class ProjectMemory:
                 })
         results.sort(key=lambda r: r["seenCount"], reverse=True)
         return results
+
+    @staticmethod
+    def _parse_compilation_issue(entry: Dict[str, Any]) -> Dict[str, Any] | None:
+        message = str(entry.get("message") or "").strip()
+        if not message:
+            return None
+
+        location_match = re.match(
+            r"^(?P<file>.+?)\((?P<line>\d+),(?P<column>\d+)\):\s*error\s+(?P<code>CS\d+):\s*(?P<detail>.+)$",
+            message,
+        )
+        if location_match:
+            file_path = location_match.group("file").strip()
+            code = location_match.group("code").strip()
+            detail = location_match.group("detail").strip()
+            return {
+                "key": f"{code}|{file_path}|{detail}",
+                "code": code,
+                "file": file_path,
+                "message": detail,
+                "location": f"{file_path} line {location_match.group('line')}",
+            }
+
+        code_match = re.search(r"\berror\s+(CS\d+):\s*(.+)$", message)
+        if code_match:
+            code = code_match.group(1).strip()
+            detail = code_match.group(2).strip()
+            return {
+                "key": f"{code}|{detail}",
+                "code": code,
+                "file": "",
+                "message": detail,
+                "location": "",
+            }
+        return None
+
+    def _record_pattern_tracker(
+        self,
+        tracker_name: str,
+        current_issues: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:{tracker_name}"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+
+        new_issues: List[Dict[str, Any]] = []
+        recurring_issues: List[Dict[str, Any]] = []
+        resolved_issues: List[Dict[str, Any]] = []
+
+        for issue_key, issue_info in current_issues.items():
+            prev = tracker.get(issue_key)
+            if prev:
+                seen_count = prev.get("seen_count", 1) + 1
+                first_seen = prev.get("first_seen", self._now_iso())
+                tracker[issue_key] = {
+                    **issue_info,
+                    "seen_count": seen_count,
+                    "first_seen": first_seen,
+                    "last_seen": self._now_iso(),
+                }
+                recurring_issues.append({**issue_info, "seenCount": seen_count, "firstSeen": first_seen})
+            else:
+                tracker[issue_key] = {
+                    **issue_info,
+                    "seen_count": 1,
+                    "first_seen": self._now_iso(),
+                    "last_seen": self._now_iso(),
+                }
+                new_issues.append(issue_info)
+
+        for issue_key, prev_info in list(tracker.items()):
+            if issue_key not in current_issues:
+                resolved_issues.append({
+                    **{
+                        key: value
+                        for key, value in prev_info.items()
+                        if key not in {"seen_count", "first_seen", "last_seen"}
+                    },
+                    "seenCount": prev_info.get("seen_count", 1),
+                    "firstSeen": prev_info.get("first_seen", ""),
+                    "lastSeen": prev_info.get("last_seen", ""),
+                })
+                del tracker[issue_key]
+
+        self.save(CATEGORY_PATTERN, tracker_name, {"value": tracker})
+        return {
+            "newIssues": new_issues,
+            "recurringIssues": recurring_issues,
+            "resolvedIssues": resolved_issues,
+            "totalTracked": len(tracker),
+        }
+
+    def record_compilation_errors(
+        self,
+        entries: List[Dict[str, Any]],
+        scene_name: str,
+    ) -> Dict[str, Any]:
+        current_issues: Dict[str, Dict[str, Any]] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            parsed = self._parse_compilation_issue(entry)
+            if not parsed:
+                continue
+            current_issues[parsed["key"]] = {
+                "code": parsed["code"],
+                "file": parsed["file"],
+                "message": parsed["message"],
+                "location": parsed["location"],
+                "scene": scene_name,
+            }
+        return self._record_pattern_tracker("_compilation_errors_tracker", current_issues)
+
+    def get_recurring_compilation_errors(self, min_seen: int = 2) -> List[Dict[str, Any]]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_compilation_errors_tracker"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+        results = []
+        for info in tracker.values():
+            if info.get("seen_count", 1) >= min_seen:
+                results.append({
+                    "code": info.get("code", ""),
+                    "file": info.get("file", ""),
+                    "message": info.get("message", ""),
+                    "location": info.get("location", ""),
+                    "scene": info.get("scene", ""),
+                    "seenCount": info.get("seen_count", 1),
+                    "firstSeen": info.get("first_seen", ""),
+                    "lastSeen": info.get("last_seen", ""),
+                })
+        results.sort(key=lambda item: (-int(item.get("seenCount", 0)), item.get("code", ""), item.get("file", "")))
+        return results
+
+    def record_operational_signals(
+        self,
+        signals: List[Dict[str, Any]],
+        scene_name: str,
+    ) -> Dict[str, Any]:
+        current_issues: Dict[str, Dict[str, Any]] = {}
+        for signal in signals:
+            if not isinstance(signal, dict):
+                continue
+            kind = str(signal.get("kind") or "").strip().lower()
+            key = str(signal.get("key") or "").strip()
+            if not kind or not key:
+                continue
+            current_issues[f"{kind}|{key}"] = {
+                "kind": kind,
+                "key": key,
+                "title": str(signal.get("title") or key).strip(),
+                "detail": str(signal.get("detail") or "").strip(),
+                "scene": scene_name,
+                "evidence": dict(signal.get("evidence") or {}),
+            }
+        return self._record_pattern_tracker("_operational_signals_tracker", current_issues)
+
+    def get_recurring_operational_signals(self, min_seen: int = 2) -> List[Dict[str, Any]]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_operational_signals_tracker"
+        tracker = data["entries"].get(tracker_key, {}).get("content", {}).get("value", {})
+        results = []
+        for info in tracker.values():
+            if info.get("seen_count", 1) >= min_seen:
+                results.append({
+                    "kind": info.get("kind", ""),
+                    "key": info.get("key", ""),
+                    "title": info.get("title", ""),
+                    "detail": info.get("detail", ""),
+                    "scene": info.get("scene", ""),
+                    "evidence": info.get("evidence", {}),
+                    "seenCount": info.get("seen_count", 1),
+                    "firstSeen": info.get("first_seen", ""),
+                    "lastSeen": info.get("last_seen", ""),
+                })
+        results.sort(key=lambda item: (-int(item.get("seenCount", 0)), item.get("kind", ""), item.get("key", "")))
+        return results
+
+    def record_queue_snapshot(
+        self,
+        queue: Dict[str, Any],
+        scene_name: str,
+        *,
+        max_samples: int = 20,
+    ) -> Dict[str, Any]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_queue_samples"
+        samples = list(
+            data["entries"].get(tracker_key, {}).get("content", {}).get("value", []) or []
+        )
+        samples.append(
+            {
+                "timestamp": self._now_iso(),
+                "scene": scene_name,
+                "totalQueued": int(queue.get("totalQueued") or 0),
+                "activeAgents": int(queue.get("activeAgents") or 0),
+            }
+        )
+        if max_samples > 0 and len(samples) > max_samples:
+            samples = samples[-max_samples:]
+        self.save(CATEGORY_PATTERN, "_queue_samples", {"value": samples})
+        return self.get_queue_trend_summary()
+
+    def get_queue_trend_summary(
+        self,
+        *,
+        min_stalled_samples: int = 3,
+    ) -> Dict[str, Any]:
+        data = self._load()
+        tracker_key = f"{CATEGORY_PATTERN}:_queue_samples"
+        samples = list(
+            data["entries"].get(tracker_key, {}).get("content", {}).get("value", []) or []
+        )
+        if not samples:
+            return {
+                "status": "no-history",
+                "sampleCount": 0,
+                "backlogSamples": 0,
+                "activeSamples": 0,
+                "peakQueued": 0,
+                "peakActiveAgents": 0,
+                "latestTotalQueued": 0,
+                "latestActiveAgents": 0,
+                "summary": "No queue history recorded yet.",
+            }
+
+        normalized_samples = [
+            {
+                "timestamp": str(sample.get("timestamp") or ""),
+                "scene": str(sample.get("scene") or ""),
+                "totalQueued": int(sample.get("totalQueued") or 0),
+                "activeAgents": int(sample.get("activeAgents") or 0),
+            }
+            for sample in samples
+            if isinstance(sample, dict)
+        ]
+        latest = normalized_samples[-1]
+        backlog_samples = [
+            sample for sample in normalized_samples if int(sample.get("totalQueued") or 0) > 0
+        ]
+        active_samples = [
+            sample for sample in normalized_samples if int(sample.get("activeAgents") or 0) > 0
+        ]
+
+        trailing_backlog_samples: list[Dict[str, Any]] = []
+        for sample in reversed(normalized_samples):
+            if int(sample.get("totalQueued") or 0) <= 0:
+                break
+            trailing_backlog_samples.append(sample)
+        trailing_backlog_samples.reverse()
+
+        is_stalled = (
+            len(trailing_backlog_samples) >= max(1, int(min_stalled_samples))
+            and len(
+                {
+                    (
+                        int(sample.get("totalQueued") or 0),
+                        int(sample.get("activeAgents") or 0),
+                    )
+                    for sample in trailing_backlog_samples
+                }
+            )
+            == 1
+        )
+
+        if is_stalled:
+            status = "stalled-backlog-suspected"
+            summary = "Queue backlog has stayed non-zero with the same shape across repeated samples."
+        elif len(trailing_backlog_samples) >= max(1, int(min_stalled_samples)):
+            status = "persistent-backlog"
+            summary = "Queue backlog has stayed non-zero across repeated samples."
+        elif backlog_samples:
+            status = "intermittent-backlog"
+            summary = "Queue backlog has appeared in recent samples, but it is not persisting every run."
+        elif active_samples:
+            status = "active-workers-observed"
+            summary = "Queue backlog is clear, but active Unity workers were seen in recent samples."
+        else:
+            status = "clear"
+            summary = "Recent queue samples stayed clear."
+
+        return {
+            "status": status,
+            "sampleCount": len(normalized_samples),
+            "backlogSamples": len(backlog_samples),
+            "activeSamples": len(active_samples),
+            "peakQueued": max(int(sample.get("totalQueued") or 0) for sample in normalized_samples),
+            "peakActiveAgents": max(int(sample.get("activeAgents") or 0) for sample in normalized_samples),
+            "latestTotalQueued": int(latest.get("totalQueued") or 0),
+            "latestActiveAgents": int(latest.get("activeAgents") or 0),
+            "latestTimestamp": str(latest.get("timestamp") or ""),
+            "latestScene": str(latest.get("scene") or ""),
+            "consecutiveBacklogSamples": len(trailing_backlog_samples),
+            "summary": summary,
+            "recentSamples": normalized_samples[-5:],
+        }
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
