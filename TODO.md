@@ -325,9 +325,9 @@ Make progress measurable and GitHub-ready.
 
 ### P0
 
-- Surface `workflow improve-project` directly in the Unity Agent tab.
-- Show score delta, applied fixes, skipped fixes, and markdown/export paths directly in the UI.
-- Make the Agent tab feel like a real assistant surface, not a transport log.
+- Keep the Unity Agent tab’s `improve-project` card aligned with the shared workflow payload and markdown export format.
+- Expand the same visible report treatment to benchmark, compare, and expert-audit results.
+- Keep making the Agent tab feel like a real assistant surface, not a transport log.
 - Keep one-click improvement flows aligned with the reusable workflow engine.
 
 ### P1
@@ -394,7 +394,7 @@ Remaining deferred breakdown:
 
 These are the best moves right now, in order:
 
-1. **Magic:** surface `improve-project` results directly in the Unity Agent tab.
+1. **Magic:** extend the new Agent-tab report surface beyond `improve-project` into benchmarks, audit results, and before/after summaries.
 2. **Engine:** keep moving assistant-only actions into reusable workflows.
 3. **Engine:** keep expanding standalone-first depth in prefab, material/renderer, physics, and animation.
 4. **Proof:** strengthen benchmark/evidence exports so every major fix can be shown clearly on GitHub.
@@ -402,7 +402,7 @@ These are the best moves right now, in order:
 
 ## Short Todo List
 
-- `P0` Surface `improve-project` score delta, applied fixes, skipped fixes, and report export in the Unity Agent tab.
+- `P0` Extend the new Agent-tab report card pattern to benchmark, compare, and audit outputs.
 - `P0` Keep using `tool-coverage --fixture-plan` to package Amplify Shader Editor and UMA audits before assigning optional-package work.
 - `P0` Keep bridge discovery/rebind reliable so stale selected ports do not confuse day-to-day use.
 - `P0` Keep route failures and queue/recovery diagnostics actionable.

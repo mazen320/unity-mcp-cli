@@ -2735,6 +2735,10 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Sandbox scene skipped because no live Unity session is available.", history[-1]["content"])
             self.assertIn("Quality score:", history[-1]["content"])
             self.assertIn("->", history[-1]["content"])
+            metadata = dict(history[-1].get("metadata") or {})
+            self.assertEqual(metadata.get("kind"), "improve-project")
+            self.assertIn("## Improve Project", str(metadata.get("markdown") or ""))
+            self.assertEqual(dict(metadata.get("payload") or {}).get("projectRoot"), str(project))
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -2781,6 +2785,12 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Skipped:", reply)
             self.assertIn("Sandbox scene already exists.", reply)
             self.assertIn("Quality score: 70.0 -> 89.0 (+19.0).", reply)
+            metadata = dict(bridge._history[-1].get("metadata") or {})
+            self.assertEqual(metadata.get("kind"), "improve-project")
+            self.assertEqual(dict(metadata.get("payload") or {}).get("baselineScore"), 70.0)
+            self.assertEqual(dict(metadata.get("payload") or {}).get("finalScore"), 89.0)
+            self.assertIn("## Improve Project", str(metadata.get("markdown") or ""))
+            self.assertIn("### Applied fixes", str(metadata.get("markdown") or ""))
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

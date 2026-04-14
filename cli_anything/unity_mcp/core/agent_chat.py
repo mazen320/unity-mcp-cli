@@ -63,11 +63,18 @@ class _OfflineUnityAssistant:
         except Exception as exc:
             bridge.append_message("ai", f"I hit an error while processing that: {exc}")
         else:
-            bridge.append_message("ai", reply)
+            if isinstance(reply, dict):
+                bridge.append_message(
+                    "ai",
+                    str(reply.get("content") or ""),
+                    metadata=dict(reply.get("metadata") or {}),
+                )
+            else:
+                bridge.append_message("ai", reply)
         finally:
             bridge.write_status("idle", 0, 0, "")
 
-    def _dispatch(self, content: str) -> str:
+    def _dispatch(self, content: str) -> str | dict[str, Any]:
         normalized = " ".join((content or "").strip().split())
         lowered = normalized.lower()
         if not normalized:
@@ -921,12 +928,53 @@ class _OfflineUnityAssistant:
 
         return "\n".join(lines)
 
-    def _improve_project_reply(self) -> str:
+    def _render_improve_project_markdown(self, payload: dict[str, Any]) -> str:
+        try:
+            from ..commands.workflow import _render_improve_project_markdown
+        except Exception:
+            lines = [
+                "## Improve Project",
+                "",
+                f"- Project root: `{payload.get('projectRoot')}`",
+                (
+                    f"- Quality score: `{payload.get('baselineScore')} -> {payload.get('finalScore')}` "
+                    f"(`{payload.get('scoreDelta')}`)"
+                ),
+            ]
+            return "\n".join(lines) + "\n"
+        return _render_improve_project_markdown(payload)
+
+    def _build_improve_project_reply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized_payload = dict(payload)
+        applied_items = list(normalized_payload.get("applied") or [])
+        skipped_items = list(normalized_payload.get("skipped") or [])
+        normalized_payload.setdefault("projectRoot", str(self.bridge.project_path))
+        normalized_payload.setdefault("liveUnityAvailable", self._has_live_unity())
+        normalized_payload.setdefault("appliedCount", len(applied_items))
+        normalized_payload.setdefault("skippedCount", len(skipped_items))
+        if normalized_payload.get("scoreDelta") is None:
+            try:
+                baseline_score = float(normalized_payload.get("baselineScore"))
+                final_score = float(normalized_payload.get("finalScore"))
+            except (TypeError, ValueError):
+                pass
+            else:
+                normalized_payload["scoreDelta"] = final_score - baseline_score
+        return {
+            "content": self._format_improve_project_payload(normalized_payload),
+            "metadata": {
+                "kind": "improve-project",
+                "payload": normalized_payload,
+                "markdown": self._render_improve_project_markdown(normalized_payload),
+            },
+        }
+
+    def _improve_project_reply(self) -> dict[str, Any]:
         if self.embedded_options is not None:
             try:
                 self._set_status("Running safe project improvement pass", current=0, total=1)
                 payload = self._run_embedded_cli(["workflow", "improve-project", str(self.bridge.project_path)])
-                return self._format_improve_project_payload(payload)
+                return self._build_improve_project_reply(payload)
             except Exception:
                 pass
 
@@ -1167,7 +1215,18 @@ class _OfflineUnityAssistant:
                     lines.append(f"Current quality score: {final_score:.1f}.")
             except Exception:
                 pass
-        return "\n".join(lines)
+        payload = {
+            "projectRoot": str(self.bridge.project_path),
+            "liveUnityAvailable": self._has_live_unity(),
+            "baselineScore": baseline_score,
+            "finalScore": final_score,
+            "scoreDelta": (final_score - baseline_score) if baseline_score is not None and final_score is not None else None,
+            "appliedCount": len(applied),
+            "skippedCount": len(skipped),
+            "applied": [{"summary": item} for item in applied],
+            "skipped": [{"reason": item} for item in skipped],
+        }
+        return self._build_improve_project_reply(payload)
 
     def _create_primitive_reply(self, primitive_name: str, original_text: str) -> str:
         primitive = primitive_name.capitalize()
@@ -1316,6 +1375,7 @@ class ChatBridge:
         content: str,
         steps: Optional[list] = None,
         *,
+        metadata: Dict[str, Any] | None = None,
         message_id: str | None = None,
         timestamp: str | None = None,
     ) -> None:
@@ -1329,6 +1389,8 @@ class ChatBridge:
             entry["id"] = message_id
         if steps is not None:
             entry["steps"] = steps
+        if metadata:
+            entry["metadata"] = metadata
         self._history.append(entry)
         self._write_history()
 

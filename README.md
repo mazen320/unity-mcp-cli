@@ -204,6 +204,7 @@ That panel now includes:
 - a `Goal Assistant` tab for local project scans and ranked improvement suggestions
 - an Agent tab `Connect` path that can launch the Python chat bridge from the `agent-harness` source tree with a configurable harness root plus Python launcher, instead of assuming `python -m cli_anything.unity_mcp` already works in the user's shell
 - an offline project-aware Agent chat layer that can answer greetings/help, inspect the project, run quality scores and benchmarks, scaffold guidance/tests, create sandbox scenes, save scenes, read compiler state, and create simple primitives even without external API keys
+- a dedicated Agent-tab `improve project` summary card that surfaces the latest score delta, applied fixes, skipped fixes, rerun action, and markdown export from the shared workflow payload instead of hiding that data inside chat text
 - a copyable `Agent Brief` so you can hand the current project context to the CLI agent quickly
 - generated `Suggested CLI Commands` based on the current project path and selected object
 - lightweight importer audit for model material ownership and likely normal-map or sprite import mismatches
@@ -331,6 +332,8 @@ That gives the CLI a single demoable “make this Unity project healthier” ent
 `workflow agent-chat <PROJECT_ROOT>` now seeds that explicit File IPC project into the embedded CLI session before the chat loop starts. In practice, that means an in-editor `improve project` request is no longer a separate handwritten repair path: the Agent assistant reuses the same `workflow improve-project` engine, score delta, and applied/skipped fix reporting that the shell command uses.
 
 If you want a GitHub-friendly artifact from the same run, add `--markdown-file <path>`. The workflow will write a compact markdown summary with the project root, live/offline status, quality-score delta, and the exact applied/skipped fix lists, so a single improvement pass can produce both machine-readable JSON and a human-readable status update.
+
+The Unity Agent tab now reads that same structured `improve-project` payload back from `.umcp/chat/history.json` and renders it as a report card above the chat log. That gives the in-editor surface a visible product payoff: users can rerun the pass, inspect the last score delta and fix lists at a glance, and export the exact markdown artifact without leaving Unity.
 
 `workflow benchmark-report` packages those same lens scores into a stable JSON report with overall grade, weakest lenses, severity breakdown, top findings, and project summary metadata. It also includes bounded recurring diagnostics memory for repeat compiler failures and repeat queue/bridge instability, a dedicated `queueDiagnostics` block for recurring queue pressure, and a `queueTrend` block for longer-horizon queue history, so GitHub snapshots and local benchmark artifacts keep the long-running health signal instead of only the current pass.
 

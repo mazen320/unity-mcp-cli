@@ -91,6 +91,7 @@ public class CliAnythingWindow : EditorWindow
         public string id;
         public string role;       // "user" | "ai" | "system"
         public string content;
+        public Dictionary<string, object> metadata;
         public List<AgentStepInfo> steps;
         public string timestamp;
     }
@@ -396,6 +397,7 @@ public class CliAnythingWindow : EditorWindow
                                 id        = d.ContainsKey("id")        ? d["id"]?.ToString()        ?? "" : "",
                                 role      = d.ContainsKey("role")      ? d["role"]?.ToString()      ?? "" : "",
                                 content   = d.ContainsKey("content")   ? d["content"]?.ToString()   ?? "" : "",
+                                metadata  = d.ContainsKey("metadata")  ? d["metadata"] as Dictionary<string, object> : null,
                                 timestamp = d.ContainsKey("timestamp") ? d["timestamp"]?.ToString() ?? "" : "",
                                 steps     = new List<AgentStepInfo>(),
                             };
@@ -508,7 +510,16 @@ public class CliAnythingWindow : EditorWindow
         // ── Chat history ──────────────────────────────────────────────────
         float inputHeight = 128f;
         float settingsHeight = _showAgentBridgeSettings ? 132f : 0f;
-        float chatHeight = Mathf.Max(120f, position.height - 80f - inputHeight - settingsHeight);
+        bool hasImproveProjectReport = TryGetLatestImproveProjectMessage(out var improveProjectMessage);
+        float improveProjectHeight = hasImproveProjectReport ? 174f : 0f;
+        float chatHeight = Mathf.Max(120f, position.height - 80f - inputHeight - settingsHeight - improveProjectHeight);
+
+        if (hasImproveProjectReport)
+        {
+            DrawImproveProjectSummary(improveProjectMessage);
+            EditorGUILayout.Space(4);
+        }
+
         _agentChatScroll = EditorGUILayout.BeginScrollView(_agentChatScroll,
             GUILayout.Height(chatHeight));
 
@@ -574,9 +585,12 @@ public class CliAnythingWindow : EditorWindow
 
         // Quick-action buttons
         EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("improve project", EditorStyles.miniButton)) SendAgentMessage("improve project");
         if (GUILayout.Button("context", EditorStyles.miniButton)) SendAgentMessage("context");
         if (GUILayout.Button("scene info", EditorStyles.miniButton)) SendAgentMessage("scene info");
         if (GUILayout.Button("list scripts", EditorStyles.miniButton)) SendAgentMessage("list scripts");
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("compile errors", EditorStyles.miniButton)) SendAgentMessage("compile errors");
         if (GUILayout.Button("save scene", EditorStyles.miniButton)) SendAgentMessage("save scene");
         EditorGUILayout.EndHorizontal();
@@ -633,6 +647,207 @@ public class CliAnythingWindow : EditorWindow
         if (!isUser) GUILayout.FlexibleSpace();
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.Space(3);
+    }
+
+    private bool TryGetLatestImproveProjectMessage(out AgentChatMessage message)
+    {
+        for (int index = _agentMessages.Count - 1; index >= 0; index--)
+        {
+            var candidate = _agentMessages[index];
+            if (IsImproveProjectMessage(candidate))
+            {
+                message = candidate;
+                return true;
+            }
+        }
+
+        message = new AgentChatMessage();
+        return false;
+    }
+
+    private static bool IsImproveProjectMessage(AgentChatMessage message)
+    {
+        if (message.metadata == null)
+            return false;
+        if (!message.metadata.TryGetValue("kind", out var kindValue))
+            return false;
+        return string.Equals(kindValue?.ToString(), "improve-project", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void DrawImproveProjectSummary(AgentChatMessage message)
+    {
+        var metadata = message.metadata;
+        var payload = metadata != null && metadata.TryGetValue("payload", out var payloadValue)
+            ? payloadValue as Dictionary<string, object>
+            : null;
+        string markdown = metadata != null && metadata.TryGetValue("markdown", out var markdownValue)
+            ? markdownValue?.ToString() ?? ""
+            : "";
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("Latest Improve Project", EditorStyles.boldLabel);
+        GUILayout.FlexibleSpace();
+        if (!string.IsNullOrEmpty(message.timestamp))
+            GUILayout.Label(FormatAgentTimestamp(message.timestamp), EditorStyles.miniLabel, GUILayout.Width(120));
+        using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(markdown)))
+        {
+            if (GUILayout.Button("Export Markdown", EditorStyles.miniButton, GUILayout.Width(110)))
+                ExportImproveProjectMarkdown(markdown, message.timestamp);
+        }
+        if (GUILayout.Button("Run Again", EditorStyles.miniButton, GUILayout.Width(70)))
+            SendAgentMessage("improve project");
+        EditorGUILayout.EndHorizontal();
+
+        double? baselineScore = GetDouble(payload, "baselineScore");
+        double? finalScore = GetDouble(payload, "finalScore");
+        double? scoreDelta = GetDouble(payload, "scoreDelta");
+        if (baselineScore.HasValue && finalScore.HasValue)
+        {
+            if (!scoreDelta.HasValue)
+                scoreDelta = finalScore.Value - baselineScore.Value;
+            EditorGUILayout.LabelField(
+                $"Quality score: {baselineScore.Value:0.0} -> {finalScore.Value:0.0} ({scoreDelta.Value:+0.0;-0.0;0.0})",
+                EditorStyles.label
+            );
+        }
+        else if (finalScore.HasValue)
+        {
+            EditorGUILayout.LabelField($"Quality score: {finalScore.Value:0.0}", EditorStyles.label);
+        }
+        else
+        {
+            EditorGUILayout.LabelField("Quality score: unavailable", EditorStyles.label);
+        }
+
+        int appliedCount = GetInt(payload, "appliedCount");
+        int skippedCount = GetInt(payload, "skippedCount");
+        bool liveUnityAvailable = GetBool(payload, "liveUnityAvailable");
+        EditorGUILayout.LabelField(
+            $"Applied: {appliedCount}   Skipped: {skippedCount}   Live Unity: {(liveUnityAvailable ? "yes" : "no")}",
+            EditorStyles.miniLabel
+        );
+
+        DrawImproveProjectItems("Applied", GetList(payload, "applied"), preferSummary: true, maxItems: 3);
+        DrawImproveProjectItems("Skipped", GetList(payload, "skipped"), preferSummary: false, maxItems: 2);
+
+        EditorGUILayout.EndVertical();
+    }
+
+    private void DrawImproveProjectItems(string title, List<object> items, bool preferSummary, int maxItems)
+    {
+        if (items == null || items.Count == 0)
+            return;
+
+        EditorGUILayout.Space(2);
+        GUILayout.Label(title, EditorStyles.miniBoldLabel);
+        int shown = 0;
+        foreach (var item in items)
+        {
+            if (shown >= maxItems)
+                break;
+            string line = DescribeImproveProjectItem(item, preferSummary);
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            GUILayout.Label("• " + line, EditorStyles.miniLabel);
+            shown++;
+        }
+
+        int hidden = items.Count - shown;
+        if (hidden > 0)
+            GUILayout.Label($"+ {hidden} more", EditorStyles.miniLabel);
+    }
+
+    private static string DescribeImproveProjectItem(object item, bool preferSummary)
+    {
+        if (item is Dictionary<string, object> entry)
+        {
+            string primaryKey = preferSummary ? "summary" : "reason";
+            if (entry.TryGetValue(primaryKey, out var primaryValue) && primaryValue != null)
+                return primaryValue.ToString();
+            if (entry.TryGetValue("summary", out var summaryValue) && summaryValue != null)
+                return summaryValue.ToString();
+            if (entry.TryGetValue("reason", out var reasonValue) && reasonValue != null)
+                return reasonValue.ToString();
+            if (entry.TryGetValue("fix", out var fixValue) && fixValue != null)
+                return fixValue.ToString();
+        }
+        return item?.ToString() ?? "";
+    }
+
+    private void ExportImproveProjectMarkdown(string markdown, string timestamp)
+    {
+        try
+        {
+            string projectRoot = Path.GetDirectoryName(Application.dataPath) ?? "";
+            string defaultName = "improve-project-report";
+            if (!string.IsNullOrEmpty(timestamp))
+            {
+                string safeStamp = timestamp.Replace(":", "-").Replace("T", "_").Replace("Z", "");
+                defaultName = "improve-project-" + safeStamp;
+            }
+            string path = EditorUtility.SaveFilePanel("Export Improve Project Report", projectRoot, defaultName, "md");
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            File.WriteAllText(path, markdown, new UTF8Encoding(false));
+            _agentStatusSummary = "Exported improve-project markdown report.";
+            ShowNotification(new GUIContent("Improve-project report exported"));
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[Agent] Failed to export improve-project markdown: " + ex.Message);
+        }
+    }
+
+    private static List<object> GetList(Dictionary<string, object> dict, string key)
+    {
+        if (dict == null || !dict.TryGetValue(key, out var value))
+            return null;
+        return value as List<object>;
+    }
+
+    private static double? GetDouble(Dictionary<string, object> dict, string key)
+    {
+        if (dict == null || !dict.TryGetValue(key, out var value) || value == null)
+            return null;
+        try
+        {
+            return Convert.ToDouble(value);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static int GetInt(Dictionary<string, object> dict, string key)
+    {
+        if (dict == null || !dict.TryGetValue(key, out var value) || value == null)
+            return 0;
+        try
+        {
+            return Convert.ToInt32(value);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static bool GetBool(Dictionary<string, object> dict, string key)
+    {
+        if (dict == null || !dict.TryGetValue(key, out var value) || value == null)
+            return false;
+        try
+        {
+            return Convert.ToBoolean(value);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void SendAgentMessage(string text)
