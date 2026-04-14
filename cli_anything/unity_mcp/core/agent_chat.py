@@ -873,6 +873,32 @@ class _OfflineUnityAssistant:
                 return False
         return False
 
+    def _capture_after_action(self) -> dict[str, Any]:
+        """Take a Game View + Scene View screenshot after a scene-modifying action.
+
+        Returns a dict with ``gamePath`` and ``scenePath`` keys, or empty dict on failure.
+        Used to provide visual proof after any action that changes the scene.
+        """
+        try:
+            result = self.bridge.client.call_route(
+                "graphics/capture",
+                {"kind": "both"},
+            )
+            return dict(result or {})
+        except Exception:
+            return {}
+
+    def _capture_lines(self, capture: dict[str, Any]) -> list[str]:
+        """Format capture paths as display lines for a reply message."""
+        lines: list[str] = []
+        game_path = capture.get("gamePath") or capture.get("game_path")
+        scene_path = capture.get("scenePath") or capture.get("scene_path")
+        if game_path:
+            lines.append(f"Game view: `{game_path}`")
+        if scene_path:
+            lines.append(f"Scene view: `{scene_path}`")
+        return lines
+
     def _format_improve_project_payload(self, payload: dict[str, Any]) -> str:
         applied_items = list(payload.get("applied") or [])
         skipped_items = list(payload.get("skipped") or [])
