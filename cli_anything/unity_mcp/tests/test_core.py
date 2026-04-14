@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -440,6 +441,79 @@ class CoreTests(unittest.TestCase):
             else:
                 os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = original_env
             os.chdir(original_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_project_memory_uses_persisted_project_id_across_path_moves(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            store_root = tmpdir / "memory"
+            original_project = tmpdir / "ProjectA"
+            original_project.mkdir(parents=True, exist_ok=True)
+            project_id_path = original_project / ".umcp" / "project-id"
+            project_id_path.parent.mkdir(parents=True, exist_ok=True)
+            project_id_path.write_text("demo-project-id", encoding="utf-8")
+
+            memory = ProjectMemory(str(original_project), store_root=store_root, allow_fallback=False)
+            memory.save("pattern", "scene_hygiene", {"value": "keep"})
+
+            moved_project = tmpdir / "ProjectMoved"
+            shutil.move(str(original_project), moved_project)
+
+            moved_memory = ProjectMemory(str(moved_project), store_root=store_root, allow_fallback=False)
+
+            self.assertEqual(moved_memory.project_id, "demo-project-id")
+            self.assertEqual(moved_memory.recall(category="pattern")[0]["content"]["value"], "keep")
+            self.assertEqual(
+                moved_memory.stats()["storePath"],
+                str(store_root / "demo-project-id.json"),
+            )
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_project_memory_migrates_legacy_path_hash_store_to_persisted_project_id(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            store_root = tmpdir / "memory"
+            store_root.mkdir(parents=True, exist_ok=True)
+            project_root = tmpdir / "LegacyProject"
+            project_root.mkdir(parents=True, exist_ok=True)
+            legacy_id = hashlib.sha256(str(project_root).encode("utf-8")).hexdigest()[:8]
+            legacy_path = store_root / f"{legacy_id}.json"
+            legacy_path.write_text(
+                json.dumps(
+                    {
+                        "projectPath": str(project_root),
+                        "entries": {
+                            "pattern:legacy_fix": {
+                                "category": "pattern",
+                                "key": "legacy_fix",
+                                "content": {"value": "still here"},
+                                "created": "2026-01-01T00:00:00+00:00",
+                                "updated": "2026-01-01T00:00:00+00:00",
+                                "hit_count": 0,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            project_id_path = project_root / ".umcp" / "project-id"
+            project_id_path.parent.mkdir(parents=True, exist_ok=True)
+            project_id_path.write_text("stable-project-id", encoding="utf-8")
+
+            memory = ProjectMemory(str(project_root), store_root=store_root, allow_fallback=False)
+
+            self.assertEqual(memory.project_id, "stable-project-id")
+            self.assertEqual(memory.recall(category="pattern")[0]["content"]["value"], "still here")
+
+            migrated_path = store_root / "stable-project-id.json"
+            self.assertTrue(migrated_path.exists())
+            migrated = json.loads(migrated_path.read_text(encoding="utf-8"))
+            self.assertEqual(migrated["projectPath"], str(project_root))
+            self.assertIn("pattern:legacy_fix", migrated["entries"])
+        finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_agent_profile_store_persists_selection_and_profiles(self) -> None:

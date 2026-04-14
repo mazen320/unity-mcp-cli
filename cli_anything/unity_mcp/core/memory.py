@@ -3,7 +3,13 @@
 Stores learned patterns, fixes, and structure info per Unity project so the
 CLI gets smarter over time without repeating the same discovery work.
 
-Storage: a single JSON file per project, keyed by a hash of the project path.
+Storage: a single JSON file per project, keyed by a stable project ID when
+available.
+  - Real project directories persist the ID in .umcp/project-id
+  - Legacy memory files still load from the old path-hash ID and migrate on use
+  - Non-existent/ephemeral paths fall back to the legacy path hash
+
+Store locations:
   Windows: %LOCALAPPDATA%/CLIAnything/memory/<project_id>.json
   Linux:   ~/.local/state/cli-anything-unity-mcp/memory/<project_id>.json
   Fallback: .cli-anything-unity-mcp/memory/<project_id>.json
@@ -16,6 +22,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -28,6 +35,8 @@ CATEGORY_STRUCTURE = "structure"  # project layout (pipelines, paths, packages)
 CATEGORY_PREFERENCE = "preference"  # user/agent preferences for this project
 
 ALL_CATEGORIES = {CATEGORY_FIX, CATEGORY_PATTERN, CATEGORY_STRUCTURE, CATEGORY_PREFERENCE}
+_PROJECT_ID_FILENAME = "project-id"
+_PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _default_memory_root() -> Path:
@@ -46,9 +55,50 @@ def _workspace_memory_root() -> Path:
     return Path.cwd() / ".cli-anything-unity-mcp" / "memory"
 
 
-def _project_id(project_path: str) -> str:
-    """Stable 8-char hex ID derived from the project path."""
+def _legacy_project_id(project_path: str) -> str:
+    """Legacy 8-char hex ID derived from the project path."""
     return hashlib.sha256(project_path.encode("utf-8")).hexdigest()[:8]
+
+
+def _project_id_path(project_path: str) -> Optional[Path]:
+    root = Path(project_path)
+    if not root.exists() or not root.is_dir():
+        return None
+    return root / ".umcp" / _PROJECT_ID_FILENAME
+
+
+def _read_persisted_project_id(project_path: str) -> Optional[str]:
+    id_path = _project_id_path(project_path)
+    if id_path is None:
+        return None
+    try:
+        value = id_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if value and _PROJECT_ID_PATTERN.match(value):
+        return value
+    return None
+
+
+def _ensure_persisted_project_id(project_path: str) -> Optional[str]:
+    existing = _read_persisted_project_id(project_path)
+    if existing:
+        return existing
+    id_path = _project_id_path(project_path)
+    if id_path is None:
+        return None
+    value = uuid.uuid4().hex
+    try:
+        id_path.parent.mkdir(parents=True, exist_ok=True)
+        id_path.write_text(value, encoding="utf-8")
+    except OSError:
+        return None
+    return value
+
+
+def _project_id(project_path: str) -> str:
+    """Stable project ID with legacy path-hash fallback."""
+    return _ensure_persisted_project_id(project_path) or _legacy_project_id(project_path)
 
 
 class ProjectMemory:
@@ -62,12 +112,15 @@ class ProjectMemory:
     ) -> None:
         self.project_path = project_path
         self.project_id = _project_id(project_path)
+        self.legacy_project_id = _legacy_project_id(project_path)
         env_override = os.environ.get("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR")
         self._root = Path(store_root) if store_root else _default_memory_root()
         self._fallback_root = _workspace_memory_root()
         self._allow_fallback = allow_fallback and store_root is None and not env_override
         self._store_path = self._root / f"{self.project_id}.json"
         self._fallback_path = self._fallback_root / f"{self.project_id}.json"
+        self._legacy_store_path = self._root / f"{self.legacy_project_id}.json"
+        self._legacy_fallback_path = self._fallback_root / f"{self.legacy_project_id}.json"
         self._data: Dict[str, Any] | None = None  # lazy-loaded cache
 
     # ── Internal helpers ──────────────────────────────────────────────────────
@@ -76,11 +129,27 @@ class ProjectMemory:
         if self._data is not None:
             return self._data
         data = self._read_file(self._store_path)
+        source_path = self._store_path if data is not None else None
         if data is None and self._allow_fallback:
             data = self._read_file(self._fallback_path)
+            if data is not None:
+                source_path = self._fallback_path
+        if data is None and self.legacy_project_id != self.project_id:
+            data = self._read_file(self._legacy_store_path)
+            if data is not None:
+                source_path = self._legacy_store_path
+        if data is None and self._allow_fallback and self.legacy_project_id != self.project_id:
+            data = self._read_file(self._legacy_fallback_path)
+            if data is not None:
+                source_path = self._legacy_fallback_path
         if data is None:
             data = {"projectPath": self.project_path, "entries": {}}
+            source_path = None
+        else:
+            data["projectPath"] = self.project_path
         self._data = data
+        if source_path is not None and source_path != self._store_path:
+            self._flush()
         return self._data
 
     def _flush(self) -> None:
