@@ -497,6 +497,7 @@ The main goal is to make this the best open-source Unity AI developer surface fo
 - reusable workflows that power both shell and in-editor assistant behavior
 - visible in-editor magic instead of hidden backend capability
 - benchmark and export flows that make progress provable
+- a local-first learning loop so the assistant can improve from real runs, evals, and structured memory instead of only prompt edits
 
 The product is being built in a strict hierarchy:
 - [PLAN.md](../../PLAN.md) explains how the product gets built

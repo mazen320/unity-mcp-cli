@@ -285,6 +285,9 @@ Make the system visible and satisfying inside Unity.
 3. **Proof Track**
 Make progress measurable and GitHub-ready.
 
+4. **Learning Track**
+Make the assistant improve from structured outcomes, memory, and evals.
+
 ## Engine Track
 
 ### P0
@@ -371,6 +374,37 @@ Make progress measurable and GitHub-ready.
 - Add CI coverage for report formatting and artifact generation.
 - Promote the strongest benchmark scenarios into public-facing proof for the repo.
 
+## Learning Track
+
+### P0
+
+- Write the local-first learning-system spec:
+  - run ledger
+  - structured memory
+  - eval/replay
+  - privacy and redaction rules
+- Define the minimum useful event schema for workflow runs:
+  - intent
+  - workflow chosen
+  - routes called
+  - latency
+  - errors
+  - score delta
+  - applied/skipped fixes
+  - accepted or reverted outcome when known
+- Start turning real improvement, benchmark, and repair runs into replayable eval fixtures instead of only one-off debug evidence.
+
+### P1
+
+- Add bounded local persistence for project memory, user preferences, and recurring system patterns.
+- Add opt-in redacted sync for run outcomes and artifacts instead of assuming a hosted backend by default.
+- Rank workflows, prompts, and fix paths by real outcome quality once enough structured runs exist.
+
+### P2
+
+- Add retrieval-based experience memory on top of the run/eval store.
+- Only evaluate fine-tuning or distillation after the traces are clean, labeled, and demonstrably useful.
+
 ## Current Coverage State
 
 Keep tracking tool coverage, but do it as support for the engine track rather than the whole roadmap.
@@ -398,7 +432,8 @@ These are the best moves right now, in order:
 2. **Engine:** keep moving assistant-only actions into reusable workflows.
 3. **Engine:** keep expanding standalone-first depth in prefab, material/renderer, physics, and animation.
 4. **Proof:** strengthen benchmark/evidence exports so every major fix can be shown clearly on GitHub.
-5. **Engine/Proof:** continue optional-package fixture audits (`amplify`, `uma`) through the existing coverage planning commands.
+5. **Learning:** write the local-first learning-system spec and event schema so the product can improve from real runs.
+6. **Engine/Proof:** continue optional-package fixture audits (`amplify`, `uma`) through the existing coverage planning commands.
 
 ## Short Todo List
 
@@ -407,6 +442,7 @@ These are the best moves right now, in order:
 - `P0` Keep bridge discovery/rebind reliable so stale selected ports do not confuse day-to-day use.
 - `P0` Keep route failures and queue/recovery diagnostics actionable.
 - `P0` **Always update `CHANGELOG.md`, `TODO.md`, and `AGENTS.md` when making changes.**
+- `P1` Write the local-first learning-system spec and event schema.
 - `P1` Add more category-level live-pass presets contributors can run without knowing the whole harness.
 - `P1` Add more benchmark fixtures and proof-oriented markdown/report examples.
 - `P1` Keep separating future custom-backend work from current CLI-layer work in docs and issues.
