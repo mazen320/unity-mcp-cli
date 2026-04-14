@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +48,46 @@ class _OfflineUnityAssistant:
     )
     _DISPOSABLE_OBJECT_TOKENS: tuple[str, ...] = ("probe", "fixture", "temp", "debug", "standalone")
     _PLAYER_TOKENS: tuple[str, ...] = ("player", "hero", "avatar", "character", "pawn")
+    _AUTONOMOUS_TRIGGERS: tuple[str, ...] = (
+        "fix all", "fix everything", "fix the issues",
+        "polish", "improve the", "clean up",
+        "make it better", "optimize", "refactor",
+        "do a pass", "run a pass",
+    )
+    _MOVEMENT_SCRIPT_TEMPLATE: str = """\
+using UnityEngine;
+
+[RequireComponent(typeof(CharacterController))]
+public class PlayerMovement : MonoBehaviour
+{{
+    [SerializeField] private float speed = 5f;
+    [SerializeField] private float jumpHeight = 1.5f;
+    [SerializeField] private float gravity = -9.81f;
+
+    private CharacterController _controller;
+    private Vector3 _velocity;
+    private bool _isGrounded;
+
+    private void Awake() => _controller = GetComponent<CharacterController>();
+
+    private void Update()
+    {{
+        _isGrounded = _controller.isGrounded;
+        if (_isGrounded && _velocity.y < 0) _velocity.y = -2f;
+
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
+        Vector3 move = transform.right * h + transform.forward * v;
+        _controller.Move(move * speed * Time.deltaTime);
+
+        if (Input.GetButtonDown("Jump") && _isGrounded)
+            _velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+
+        _velocity.y += gravity * Time.deltaTime;
+        _controller.Move(_velocity * Time.deltaTime);
+    }}
+}}
+"""
 
     def __init__(
         self,
@@ -109,6 +150,35 @@ class _OfflineUnityAssistant:
             return self._guidance_reply()
         if ("test scaffold" in lowered or "scaffold test" in lowered or "create tests" in lowered or "add tests" in lowered):
             return self._test_scaffold_reply()
+        # Player prototype
+        if any(phrase in lowered for phrase in (
+            "build a player", "create a player", "add a player",
+            "player controller", "player prototype", "make a player",
+            "build player", "create player",
+        )):
+            player_name = "Player"
+            name_match = re.search(r"(?:called|named|name[d]?)\s+([A-Za-z_]\w*)", normalized)
+            if name_match:
+                player_name = name_match.group(1)
+            return self._build_player_prototype_reply(player_name)
+        # Script create+attach: "create a Rotate script and attach it to Cube"
+        _script_attach_re = re.compile(
+            r"(?:create|add|write|make)\s+(?:a\s+)?([A-Za-z_]\w*)\s+script"
+            r"(?:\s+(?:and\s+)?(?:attach|add)\s+(?:it\s+)?(?:to\s+)?([A-Za-z_]\w*))?",
+            re.IGNORECASE,
+        )
+        script_match = _script_attach_re.search(normalized)
+        if script_match:
+            sname = script_match.group(1)
+            go = script_match.group(2) or "GameObject"
+            return self._build_script_attach_reply(sname, go, normalized)
+        # Check for pending autonomous plan confirmation
+        pending_plan = getattr(self.bridge, "_pending_autonomous_plan", None)
+        if pending_plan and lowered in {"yes", "go", "proceed", "do it", "execute", "run it", "confirm"}:
+            return self._execute_pending_autonomous_plan()
+        # Autonomous goal mode
+        if any(phrase in lowered for phrase in self._AUTONOMOUS_TRIGGERS):
+            return self._autonomous_goal_reply(normalized)
         create_match = self._CREATE_PRIMITIVE_RE.search(normalized)
         if create_match:
             return self._create_primitive_reply(create_match.group(1), normalized)
@@ -1286,6 +1356,219 @@ class _OfflineUnityAssistant:
             )
         return f"Could not create {primitive}.\n\n{summary}"
 
+    # -- Task 2: Player prototype flow ----------------------------------------
+
+    def _build_player_prototype_reply(self, name: str = "Player") -> str:
+        """Build a player GO with CharacterController + movement script in one flow."""
+        self._set_status("Creating player GameObject")
+        steps_done: list[str] = []
+        errors: list[str] = []
+
+        try:
+            self.bridge.client.call_route("gameobject/create", {"name": name})
+            steps_done.append(f"Created GameObject `{name}`")
+        except Exception as exc:
+            errors.append(f"Could not create GameObject: {exc}")
+            return "\n".join(errors) + "\n\nMake sure a Unity editor is connected."
+
+        self._set_status("Adding CharacterController")
+        try:
+            self.bridge.client.call_route(
+                "component/add",
+                {"gameObjectName": name, "componentType": "UnityEngine.CharacterController"},
+            )
+            steps_done.append("Added `CharacterController`")
+        except Exception as exc:
+            errors.append(f"CharacterController: {exc}")
+
+        self._set_status("Creating PlayerMovement script")
+        script_path = "Assets/Scripts/PlayerMovement.cs"
+        try:
+            result = self._run_embedded_cli([
+                "script", "create",
+                "--name", "PlayerMovement",
+                "--path", script_path,
+                "--content", self._MOVEMENT_SCRIPT_TEMPLATE,
+            ])
+            actual_path = (result or {}).get("path") or script_path
+            steps_done.append(f"Created `{actual_path}`")
+        except Exception as exc:
+            errors.append(f"Script creation: {exc}")
+
+        self._set_status("Attaching PlayerMovement to GameObject")
+        try:
+            self.bridge.client.call_route(
+                "component/add",
+                {"gameObjectName": name, "componentType": "PlayerMovement"},
+            )
+            steps_done.append("Attached `PlayerMovement` to GameObject")
+        except Exception as exc:
+            errors.append(f"Script attach: {exc}")
+
+        self._set_status("Capturing scene")
+        capture = self._capture_after_action()
+        capture_lines = self._capture_lines(capture)
+
+        lines = [f"Built player prototype `{name}`:", ""] + steps_done
+        if errors:
+            lines += [""] + errors
+        if capture_lines:
+            lines += [""] + capture_lines
+        lines += [
+            "",
+            "Next: press Play and test movement with WASD + Space.",
+            "Ask me to adjust speed, add a camera follow, or write tests for the controller.",
+        ]
+        return "\n".join(lines)
+
+    # -- Task 3: Script create+attach flow ------------------------------------
+
+    def _build_script_attach_reply(
+        self,
+        script_name: str,
+        go_name: str,
+        description: str = "",
+    ) -> str:
+        """Create a C# script and attach it to a named GameObject."""
+        self._set_status(f"Creating {script_name}.cs")
+        steps_done: list[str] = []
+        errors: list[str] = []
+        script_path = f"Assets/Scripts/{script_name}.cs"
+
+        comment = f"// {description}" if description else "// TODO: implement"
+        script_content = (
+            f"using UnityEngine;\n\n"
+            f"public class {script_name} : MonoBehaviour\n{{\n"
+            f"    {comment}\n"
+            f"    private void Start() {{ }}\n"
+            f"    private void Update() {{ }}\n"
+            f"}}\n"
+        )
+
+        try:
+            result = self._run_embedded_cli([
+                "script", "create",
+                "--name", script_name,
+                "--path", script_path,
+                "--content", script_content,
+            ])
+            actual_path = (result or {}).get("path") or script_path
+            steps_done.append(f"Created `{actual_path}`")
+        except Exception as exc:
+            errors.append(f"Script creation failed: {exc}")
+            return "\n".join(errors)
+
+        self._set_status(f"Attaching {script_name} to {go_name}")
+        try:
+            self.bridge.client.call_route(
+                "component/add",
+                {"gameObjectName": go_name, "componentType": script_name},
+            )
+            steps_done.append(f"Attached `{script_name}` to `{go_name}`")
+        except Exception as exc:
+            errors.append(f"Attach failed: {exc}")
+
+        capture = self._capture_after_action()
+        capture_lines = self._capture_lines(capture)
+
+        lines = [f"Created and attached `{script_name}` to `{go_name}`:", ""] + steps_done
+        if errors:
+            lines += [""] + errors
+        if capture_lines:
+            lines += [""] + capture_lines
+        lines += ["", f"Open `{script_path}` to implement the logic."]
+        return "\n".join(lines)
+
+    # -- Task 5: Autonomous goal mode -----------------------------------------
+
+    def _autonomous_goal_reply(self, goal: str) -> str:
+        """Autonomous mode: audit state, build a plan, ask for confirmation."""
+        self._set_status("Auditing project for goal planning")
+
+        try:
+            score_result = self._run_embedded_cli(["--json", "workflow", "quality-score"])
+        except Exception as exc:
+            return (
+                f"I couldn't audit the project to build a plan: {exc}\n\n"
+                "Make sure Unity is connected and try again."
+            )
+
+        lens_scores = (score_result or {}).get("lensScores") or []
+        all_findings: list[dict[str, Any]] = []
+        for lens in lens_scores:
+            for finding in (lens.get("findings") or []):
+                all_findings.append({**finding, "_lens": lens.get("name", "")})
+
+        if not all_findings:
+            return (
+                f"I ran an audit for goal: **{goal}**\n\n"
+                "Good news: no actionable issues right now. "
+                "The project looks healthy."
+            )
+
+        severity_rank = {"error": 0, "warning": 1, "info": 2}
+        all_findings.sort(key=lambda f: severity_rank.get(str(f.get("severity") or "info"), 2))
+        plan_steps = all_findings[:5]
+
+        lines = [f"Goal: **{goal}**", "", "Here's my plan based on the current audit:", ""]
+        for i, finding in enumerate(plan_steps, 1):
+            title = str(finding.get("title") or "Fix")
+            detail = str(finding.get("detail") or "")
+            severity = str(finding.get("severity") or "info")
+            icon = "error" if severity == "error" else "warning" if severity == "warning" else "info"
+            lines.append(f"{i}. [{icon}] **{title}**" + (f" -- {detail}" if detail else ""))
+
+        lines += [
+            "",
+            "Reply **yes** or **go** and I'll execute these steps one by one.",
+        ]
+
+        self.bridge._pending_autonomous_plan = plan_steps
+        self.bridge._pending_autonomous_goal = goal
+
+        return "\n".join(lines)
+
+    def _execute_pending_autonomous_plan(self) -> str:
+        """Execute the pending autonomous plan step by step."""
+        plan = getattr(self.bridge, "_pending_autonomous_plan", [])
+        goal = getattr(self.bridge, "_pending_autonomous_goal", "your goal")
+
+        if not plan:
+            return "No pending plan to execute. Try stating your goal again."
+
+        self.bridge._pending_autonomous_plan = None
+        self.bridge._pending_autonomous_goal = None
+
+        self._set_status("Executing plan")
+        results_lines = [f"Executing plan for: **{goal}**", ""]
+
+        for i, finding in enumerate(plan, 1):
+            title = str(finding.get("title") or "Fix")
+            lens = str(finding.get("_lens") or "systems")
+            self._set_status(f"Step {i}: {title}")
+            try:
+                fix_result = self._run_embedded_cli([
+                    "--json", "workflow", "quality-fix",
+                    "--lens", lens,
+                    "--fix", title.lower().replace(" ", "-"),
+                    "--apply",
+                ])
+                success = (fix_result or {}).get("applied") or (fix_result or {}).get("success")
+                if success:
+                    results_lines.append(f"Step {i}: {title} -- done")
+                else:
+                    skip_reason = (fix_result or {}).get("skippedReason") or "not applicable"
+                    results_lines.append(f"Step {i}: {title} -- skipped ({skip_reason})")
+            except Exception as exc:
+                results_lines.append(f"Step {i}: {title} -- {exc}")
+
+        capture = self._capture_after_action()
+        capture_lines = self._capture_lines(capture)
+        if capture_lines:
+            results_lines += [""] + capture_lines
+        results_lines += ["", "Done. Ask me to audit again to see the score delta."]
+        return "\n".join(results_lines)
+
     def _best_effort_agent_reply(self, content: str) -> str:
         planned = self._try_model_backed_plan(content)
         if planned:
@@ -1341,6 +1624,7 @@ class ChatBridge:
         handler: Optional[Callable[[str, "ChatBridge"], None]] = None,
         embedded_options: "EmbeddedCLIOptions | None" = None,
         poll_interval: float = 0.25,
+        watchdog_interval: float = 60.0,  # check project health every 60 seconds
     ) -> None:
         self.project_path = Path(project_path)
         self.client = file_client
@@ -1365,12 +1649,20 @@ class ChatBridge:
         self._last_status_write = 0.0
         self._status_heartbeat_interval = 2.0
 
+        # Watchdog state
+        self._watchdog_interval: float = watchdog_interval
+        self._watchdog_thread: threading.Thread | None = None
+        self._watchdog_running = False
+        self._watchdog_surfaced: set[str] = set()  # finding titles already shown this session
+
     # ── Public API ────────────────────────────────────────────────────────
 
     def run(self) -> None:
         """Block and process messages until stopped."""
         self._running = True
         self._ensure_ready()
+        if self._watchdog_interval > 0:
+            self._start_watchdog()
 
         while self._running:
             try:
@@ -1383,6 +1675,7 @@ class ChatBridge:
 
     def stop(self) -> None:
         self._running = False
+        self._stop_watchdog()
 
     def poll_once(self) -> bool:
         """Process at most one pending chat message."""
@@ -1426,6 +1719,62 @@ class ChatBridge:
         self._status_total = total
         self._status_action = action
         self._write_status(state, current, total, action)
+
+    def _watchdog_filter_new(self, findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return only findings not already surfaced this session."""
+        new: list[dict[str, Any]] = []
+        for finding in findings:
+            key = str(finding.get("title") or "")
+            if key and key not in self._watchdog_surfaced:
+                new.append(finding)
+        return new
+
+    def _watchdog_surface_findings(self, findings: list[dict[str, Any]]) -> None:
+        """Post proactive message for new findings, mark them as surfaced."""
+        if not findings:
+            return
+        lines = ["I noticed a few things while watching your project:", ""]
+        for finding in findings[:3]:  # cap at 3 to avoid noise
+            title = str(finding.get("title") or "Finding")
+            detail = str(finding.get("detail") or "")
+            severity = str(finding.get("severity") or "info")
+            icon = "warning" if severity == "warning" else "error" if severity == "error" else "info"
+            lines.append(f"[{icon}] **{title}**" + (f": {detail}" if detail else ""))
+            self._watchdog_surfaced.add(title)
+        lines += ["", "Ask me to fix any of these or run `inspect project` for the full picture."]
+        self.append_message("ai", "\n".join(lines))
+
+    def _watchdog_loop(self) -> None:
+        """Background thread: periodically run a lightweight project health check."""
+        while self._watchdog_running:
+            time.sleep(self._watchdog_interval)
+            if not self._watchdog_running:
+                break
+            try:
+                result = self._assistant._run_embedded_cli(["--json", "workflow", "quality-score"])
+                findings = (result or {}).get("findings") or []
+                new_findings = self._watchdog_filter_new(findings)
+                self._watchdog_surface_findings(new_findings)
+            except Exception:
+                pass  # watchdog never crashes the bridge
+
+    def _start_watchdog(self) -> None:
+        """Start the background watchdog thread."""
+        if self._watchdog_thread and self._watchdog_thread.is_alive():
+            return
+        self._watchdog_running = True
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop,
+            daemon=True,
+            name="unity-mcp-watchdog",
+        )
+        self._watchdog_thread.start()
+
+    def _stop_watchdog(self) -> None:
+        """Stop the watchdog thread (signals it to exit; does not null the ref)."""
+        self._watchdog_running = False
+        if self._watchdog_thread and self._watchdog_thread.is_alive():
+            self._watchdog_thread.join(timeout=2.0)
 
     # ── Internal ──────────────────────────────────────────────────────────
 
