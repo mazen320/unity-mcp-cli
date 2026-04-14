@@ -9,7 +9,7 @@ If you are a coding agent working in this repository, treat the CLI layer as the
 - Prioritize the Unity CLI, debugging surface, tool coverage, and bridge reliability.
 - Do not add or push sample or fixture work unless the user explicitly asks for it.
 - Use temporary probes, captures, and debug commands to validate changes instead of building demo content.
-- For the Bezi-like assistant, agent loop, chat UI, and File IPC work, treat [PLAN.md](C:/Users/mazen/OneDrive/Desktop/New%20Unity%20MCP%20Replacement/CLI/PLAN.md) as the source of truth.
+- For the Bezi-like assistant, agent loop, chat UI, and File IPC work, treat [PLAN.md](../../PLAN.md) as the source of truth.
 - Keep implementation aligned to the phase order in `PLAN.md` unless the user explicitly asks to override it.
 - When a protocol detail changes in code, update `PLAN.md` in the same pass so future agents do not drift.
 - For Agent-tab chat work, do not assume a correctly prepared external shell. The Unity panel should own bridge startup or surface an explicit in-editor connect flow.

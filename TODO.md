@@ -258,170 +258,124 @@ From this point forward, every batch of changes must update:
 
 ## Definition Of Done
 
-We should consider the tool layer "done enough" when all of these are true:
+We should consider the product "done enough" when all of these are true:
 
-- every curated MCP tool has automated coverage
-- every important upstream advanced-tool category has at least one live validation path
-- failure cases produce useful debug output instead of silent breakage
-- the CLI can explain likely Unity failures in one pass instead of forcing manual detective work
-- contributors can see what is implemented, what is partially supported, and what is intentionally deferred
+- the engine is reliable enough for day-to-day Unity work
+- the visible Unity surface makes the intelligence obvious and satisfying
+- major capabilities are benchmarkable and exportable
+- assistant behavior is mostly powered by reusable workflows instead of special-case chat logic
+- contributors can tell which work belongs to the engine, the visible product, or the proof layer
 
-## Track 1: MCP And Tool Coverage
+## Execution Tracks
+
+This file follows the same hierarchy as the main roadmap:
+
+- `PLAN.md` explains how the product gets built
+- `README.md` explains what the product is becoming
+- this file explains what happens next
+
+The execution backlog is organized into three tracks:
+
+1. **Engine Track**
+Build the reusable system.
+
+2. **Magic Track**
+Make the system visible and satisfying inside Unity.
+
+3. **Proof Track**
+Make progress measurable and GitHub-ready.
+
+## Engine Track
 
 ### P0
 
-- Expand the coverage matrix so fewer tools remain in `deferred`.
-- Keep each tool tagged as one of:
-  - `covered`
-  - `live-tested`
-  - `mock-only`
-  - `unsupported`
-  - `deferred`
-- Keep blocker labels actionable so `deferred` never means "ignored forever."
-- Refresh the machine-readable coverage file whenever status changes.
-- Keep the `tool-coverage` command aligned with the checked-in matrix.
+- Keep converting assistant-only behavior into top-level reusable workflows.
+- Keep expanding standalone-first ownership in high-value Unity categories:
+  - prefab
+  - material / renderer
+  - physics
+  - animation
+- Keep bridge/session/recovery behavior reliable so selected targets do not drift or silently degrade.
+- Keep route failures actionable with route, transport, target, and next-command context.
+- Expand memory-backed validation beyond missing references:
+  - recurring compiler failures
+  - queue contention
+  - bridge restart patterns
 
 ### P1
 
-- Expand live validation beyond the current safe categories:
-  - `ui`
-  - `audio`
-  - `lighting`
-  - `animation`
-  - `terrain`
-  - `navmesh`
-  - `shadergraph`
-- Add category-specific probe builders so these tools can be exercised safely in disposable scenes.
-- Normalize more parameter mismatches between catalog expectations and live plugin routes.
+- Expand live validation beyond current safe categories:
+  - UI
+  - audio
+  - lighting
+  - terrain
+  - navmesh
+  - shadergraph
+- Normalize more parameter mismatches between the catalog and live routes.
+- Keep unsupported surfaces explicit and actionable instead of vaguely deferred.
+- Start separating current CLI-layer work from future custom Unity-backend work.
 
 ### P2
 
-- Add support notes for package-dependent tools.
-- Make unsupported tools fail clearly with actionable explanations.
-- Add a generated report that lists dynamic routes missing from the catalog snapshot.
+- Add deeper package-aware route notes and support guidance.
+- Add generated reports for dynamic route/catalog drift.
+- Keep reducing plugin-only dependence where standalone ownership is realistic.
 
-## Track 2: Testing And Debugging
+## Magic Track
+
+### P0
+
+- Surface `workflow improve-project` directly in the Unity Agent tab.
+- Show score delta, applied fixes, skipped fixes, and markdown/export paths directly in the UI.
+- Make the Agent tab feel like a real assistant surface, not a transport log.
+- Keep one-click improvement flows aligned with the reusable workflow engine.
+
+### P1
+
+- Surface expert-lens audits clearly in Unity:
+  - score
+  - grade
+  - findings
+  - supported fixes
+  - confidence/context availability
+- Add visible before/after summaries for major repair flows.
+- Improve Unity-side presentation of:
+  - benchmarks
+  - compare reports
+  - captures
+  - fix reports
+
+### P2
+
+- Move toward richer model-backed orchestration on top of the workflow layer.
+- Keep “magic” concrete: users should always see what changed, why, and what comes next.
+
+## Proof Track
 
 ### P0
 
 - Keep `scripts/run_live_mcp_pass.py` as the source of truth for live validation.
-- Expand and tune the named pass profiles:
-  - `core`
-  - `advanced`
-  - `heavy`
-  - `graphics`
-  - `ui`
-  - `terrain`
-- Save each run to a timestamped report file by default when `--debug` is enabled.
-- Keep the live-pass summary mode focused on failures, timeouts, and bridge port hops.
-- Keep improving the failure-first text rendering for `debug trace --summary` so the plain CLI view stays easy to scan mid-conversation.
+- Keep `workflow benchmark-report`, `benchmark-compare`, and `improve-project --markdown-file` as first-class evidence outputs.
+- Save timestamped report artifacts for heavy/debug runs.
+- Keep benchmark and markdown artifacts easy to drop into GitHub issues, PRs, and devlogs.
 
 ### P1
 
-- Capture Unity console before and after every heavy workflow.
-- Capture Scene view and Game view automatically for visual workflows.
-- Add detection for:
-  - play-mode timeout
-  - compilation error
-  - bridge rebind
-  - scene-dirty prompt risk
-  - missing renderer/material output
-- Add regression tests for previously fixed issues:
-  - Input System mismatch
-  - double HUD/canvas overlays
-  - port rebind after play mode
-  - dirty-scene reset prompts
+- Add more named benchmark fixtures and repeatable scene scenarios.
+- Capture Scene/Game evidence for visually meaningful workflows.
+- Add lightweight visual-review heuristics where they materially improve proof quality.
+- Make side-by-side before/after comparisons easier for benchmark and capture outputs.
 
 ### P2
 
-- Add CI jobs for unit tests plus a report-only dry run of live-pass formatting logic.
-- Add a "known flaky" section if any Unity-side plugin behaviors remain inconsistent.
+- Add CI coverage for report formatting and artifact generation.
+- Promote the strongest benchmark scenarios into public-facing proof for the repo.
 
-## Track 3: Unity Assistant Quality
+## Current Coverage State
 
-### P0
+Keep tracking tool coverage, but do it as support for the engine track rather than the whole roadmap.
 
-- ~~Keep improving `debug snapshot`, `debug doctor`, `debug watch`, and `debug capture` so the CLI feels like an actual Unity assistant.~~ **Done** — doctor now has memory, error heuristics, structure drift, fix-loop learning.
-- ~~Include the most recent CLI command history in failure triage.~~ **Done** — doctor includes `recentCommands`.
-- ~~Explain likely causes for compilation failures.~~ **Done** — `error_heuristics.py` maps 25 CS codes + 19 Unity patterns.
-- ~~Explain likely causes for missing scripts or references.~~ **Done** — doctor detects these.
-- Explain likely causes for:
-  - queue contention (partially done — doctor detects queue backlog)
-  - bridge restarts or timeouts
-  - play-mode state leaks
-- ~~Prefer commands that recommend the next useful CLI action instead of dumping raw state only.~~ **Done** — `recommendedCommands` in every doctor report.
-
-### P1
-
-- Better route-level timeouts and bridge recovery hints now report the route being recovered, the selected project/port, and the last blocking transport error. Queue-backed failures now also point at `agent queue` and `agent sessions`; deeper queue diagnostics still need expansion.
-- `debug doctor` now distinguishes queued backlog from active Unity workers instead of collapsing both into one generic queue warning, returns a compact `queueDiagnostics` block, and records queue history into a `queueTrend` summary. Next queue work should focus on richer stalled-queue heuristics and benchmark comparisons that reason more deeply about queue trends, not just deltas.
-- Expand issue-specific helper commands for common Unity failures.
-- Make tool errors more actionable by surfacing route, category, likely blocker, and suggested retry path.
-- Continue expanding `core/error_heuristics.py` with edge-case Unity failures as they appear in real projects.
-- Expand memory-backed validation beyond missing references, starting with recurring compiler errors and queue contention.
-
-### P2
-
-- Start separating "CLI layer" work from "future custom Unity backend" work so backend independence becomes a real track, not just an idea.
-
-## Track 4: Validation Probes
-
-### P0
-
-- Keep validation centered on temporary probe creation, scene checks, and screenshot review instead of demo/sample content.
-- Make probe-driven validation stable enough to test:
-  - script sync
-  - play-mode transitions
-  - screenshot capture
-  - material/visibility sanity
-  - advanced-category route safety
-
-### P1
-
-- Add a lightweight capture review command that summarizes obvious visual problems from the last run.
-- Store capture metadata in the debug report so visual regressions can be tracked over time.
-
-## Track 5: Visual Verification
-
-### P0
-
-- Make screenshot capture part of every visually meaningful workflow.
-- Save paired Scene/Game captures into the runtime capture folder with predictable names.
-- Add simple visual heuristics:
-  - too bright
-  - too dark
-  - empty frame
-  - HUD overlap
-  - missing crosshair
-
-### P1
-
-- Add comparison support so two validation runs can be reviewed side by side.
-- Flag when the Game view is clearly blocked by first-person meshes or bad camera placement.
-
-## Track 6: Contributor Clarity
-
-### P0
-
-- Publish the tool coverage matrix in the repo.
-- Link this file from the README.
-- Add a "good first issue" bucket:
-  - tool alias fixes
-  - category probe builders
-  - new live-pass profiles
-  - new high-level workflows
-
-### P1
-
-- Open GitHub issues for each major category instead of keeping all planning in one file.
-- Tag issues by:
-  - `tool-coverage`
-  - `live-testing`
-  - `visual-quality`
-  - `workflow`
-  - `docs`
-
-## Coverage State (as of 2026-04-10 continued session)
+Current status snapshot:
 
 | Status | Count |
 |---|---|
@@ -434,35 +388,36 @@ We should consider the tool layer "done enough" when all of these are true:
 | **Coverage %** | **86.6%** |
 
 Remaining deferred breakdown:
-`amplify` (23), `uma` (15).
+`amplify` (23), `uma` (15)
 
 ## Immediate Next Priorities
 
 These are the best moves right now, in order:
 
-1. **Run optional-package live fixture audits** — `amplify` and `uma` now represent the remaining deferred surface; use `tool-coverage --fixture-plan` before assigning work.
-2. ~~**Add more error heuristics** — serialization errors, prefab issues, asset import failures.~~ **Done** — 25 CS codes + 19 Unity patterns now covered.
-3. **Expand memory-backed validation** — recurring compiler errors, queue contention, and bridge restarts.
-4. **Add automatic Scene/Game capture review** to heavy workflows (opt-in, lightweight).
-5. **Turn highest-value roadmap items into GitHub issues.**
-6. **Prototype Unity Hub discovery** — use `tool-coverage --support-plan` first so Hub work stays separate from editor-bridge work.
+1. **Magic:** surface `improve-project` results directly in the Unity Agent tab.
+2. **Engine:** keep moving assistant-only actions into reusable workflows.
+3. **Engine:** keep expanding standalone-first depth in prefab, material/renderer, physics, and animation.
+4. **Proof:** strengthen benchmark/evidence exports so every major fix can be shown clearly on GitHub.
+5. **Engine/Proof:** continue optional-package fixture audits (`amplify`, `uma`) through the existing coverage planning commands.
 
 ## Short Todo List
 
-- `P0` Use `tool-coverage --fixture-plan` to package the Amplify Shader Editor and UMA audits before assigning optional-package work.
-- `P0` Use `tool-coverage --next-batch` to assign safe live-audit slices to parallel contributors after the fixture plan is understood.
-- `P0` Use `tool-coverage --support-plan` before starting Unity Hub work so unsupported tools stay tracked as a separate backend integration.
+- `P0` Surface `improve-project` score delta, applied fixes, skipped fixes, and report export in the Unity Agent tab.
+- `P0` Keep using `tool-coverage --fixture-plan` to package Amplify Shader Editor and UMA audits before assigning optional-package work.
 - `P0` Keep bridge discovery/rebind reliable so stale selected ports do not confuse day-to-day use.
-- `P0` **Always update `CHANGELOG.md`, `TODO.md`, and `AGENTS.md` when making changes** — this is now a hard rule.
-- `P1` Add category-level live-pass presets that contributors can run without knowing the whole harness.
-- `P1` Route failures now mention route, tool, transport, and suggested next command. Next improvement is better queue/timeout-specific triage beyond the current recovery message.
-- ~~`P1` Add more Unity-specific heuristics to `error_heuristics.py` (serialization, prefab, asset import).~~ **Done** — 25 CS codes, 19 Unity patterns.
-- `P2` Start separating future custom-backend work from current CLI-layer work in issues and docs.
+- `P0` Keep route failures and queue/recovery diagnostics actionable.
+- `P0` **Always update `CHANGELOG.md`, `TODO.md`, and `AGENTS.md` when making changes.**
+- `P1` Add more category-level live-pass presets contributors can run without knowing the whole harness.
+- `P1` Add more benchmark fixtures and proof-oriented markdown/report examples.
+- `P1` Keep separating future custom-backend work from current CLI-layer work in docs and issues.
 
 ## Notes
 
-- The CLI remains the primary product.
-- The thin MCP adapter should stay curated and efficient, not balloon into hundreds of noisy top-level tools.
+- The CLI remains the main reusable engine.
+- The Unity Agent tab is the main visible product layer on top of that engine.
+- The thin MCP adapter should stay curated and efficient.
 - Commands belong in `commands/`, not in the entrypoint `unity_mcp_cli.py`.
-- Memory is auto-populated — don't manually save things that `workflow inspect` already caches.
-- If we later build a clean-room Unity backend, this roadmap should split into "CLI/MCP layer" and "Unity runtime/backend layer".
+- Memory is auto-populated; don’t manually save things `workflow inspect` already caches.
+- If we later build a clean-room Unity backend, the engine track should split into:
+  - CLI/workflow layer
+  - Unity runtime/backend layer

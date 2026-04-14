@@ -25,15 +25,22 @@ The goal is not just “a CLI wrapper around Unity MCP.” The goal is a serious
 
 ## The Product Direction
 
-The long-term direction is:
+The product is being built with a **dual-track method**:
+- **Engine track**: standalone-first Unity control, reusable workflows, expert audits, bounded fixes, and benchmark/evidence tooling
+- **Magic track**: every engine improvement must turn into something visible and satisfying for the Unity user within one or two steps
+
+That means the goal is not just a good backend or just a flashy chat surface. The goal is a real Unity developer system that is reliable, visible, and measurable.
+
+The strategic direction is:
 - **File IPC as the primary transport** for zero-config, fast, main-thread-safe Unity control
-- **CLI workflows as the main product surface** for agents and power users
-- **plugin HTTP compatibility** for deeper advanced coverage while standalone depth catches up
-- **agent-oriented UX** like project context injection, debug-first workflows, benchmarkable quality checks, and in-editor visibility
+- **CLI workflows as the reusable product engine** for agents and power users
+- **plugin HTTP compatibility** while standalone depth catches up
+- **in-editor product magic** like score deltas, applied/skipped fixes, exports, and visible assistant outcomes
+- **proof-first iteration** through benchmark reports, comparisons, captures, and markdown artifacts
 
 If you want the shortest description, it is this:
 
-> An early open-source attempt at a File-IPC-first Unity agent layer, built to make AI agents actually usable for real Unity work.
+> An open-source attempt at a real Unity AI developer: File-IPC-first, workflow-driven, visibly useful in-editor, and backed by proof instead of claims.
 
 ## Pick A Bridge
 
@@ -475,18 +482,25 @@ cli-anything-unity-mcp --json tool-coverage --summary --handoff-plan
 
 `--handoff-plan` is the quick "what is left?" view. It summarizes the remaining 44 tools into the optional-package live-audit track and the Unity Hub backend track.
 
-## Product Direction
+## Roadmap Hierarchy
 
-The main goal is to make this the best open-source Unity agent surface for real project work:
+The main goal is to make this the best open-source Unity AI developer surface for real project work:
 
 - stronger debugging than raw MCP transport
 - faster inner loops through File IPC
 - safer planning and verification before edits
 - better recovery around play mode and bridge rebinding
 - higher standalone route depth over time
-- room for custom tools and eventually deeper backend independence
+- reusable workflows that power both shell and in-editor assistant behavior
+- visible in-editor magic instead of hidden backend capability
+- benchmark and export flows that make progress provable
 
-Validation should happen through CLI diagnostics, tool audits, captures, and temporary probes. The shipped product surface is the CLI layer plus the standalone-first bridge path.
+The product is being built in a strict hierarchy:
+- [PLAN.md](../../PLAN.md) explains how the product gets built
+- this README explains what the product is becoming
+- [TODO.md](TODO.md) explains what happens next
+
+Validation should happen through CLI diagnostics, tool audits, captures, temporary probes, benchmark artifacts, and markdown summaries. The shipped product surface is the CLI layer plus the standalone-first bridge path, with the Unity Agent tab becoming the visible layer on top.
 
 ## Repo Boundaries
 
@@ -499,6 +513,7 @@ This repo stays focused on the CLI layer. If you need more beginner setup help, 
 ## Docs
 
 - [START_HERE.md](START_HERE.md): beginner-friendly walkthrough
+- [PLAN.md](../../PLAN.md): canonical product roadmap and method
 - [FILE_IPC.md](FILE_IPC.md): standalone core route setup without the AnkleBreaker plugin
 - [PLUGIN_SETUP.md](PLUGIN_SETUP.md): plugin install steps
 - [TEST.md](TEST.md): validation commands and test flows
