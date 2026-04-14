@@ -453,17 +453,18 @@ cli-anything-unity-mcp --json tool-coverage --summary --handoff-plan
 
 Current checked-in matrix:
 
-- `328` upstream catalog tools
-- `32` live-tested
-- `37` covered
-- `215` mock-only
-- `38` deferred
-- `6` unsupported
+- `329` upstream catalog tools
+- `46` live-verified in a real Unity editor
+- `35` automated-covered through the CLI/workflow test surface
+- `204` mock-only through the mock Unity bridge
+- `44` remaining: `38` deferred + `6` unsupported
 
 Important nuance:
 
+- Do not blend those buckets into a single confidence percentage
 - `unsupported` currently means Unity Hub-only functionality
 - `deferred` means known work that still needs wrapper depth, live audits, or package-specific validation
+- `tool-coverage --summary` returns `summary.evidenceSummary` with the same breakdown for reporting/export surfaces
 
 Use:
 

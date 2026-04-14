@@ -823,6 +823,35 @@ def _coverage_handoff_plan(tools: list[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _coverage_evidence_summary(counts_by_status: Dict[str, int]) -> Dict[str, Any]:
+    live_verified = int(counts_by_status.get("live-tested", 0))
+    automated_covered = int(counts_by_status.get("covered", 0))
+    mock_only = int(counts_by_status.get("mock-only", 0))
+    deferred = int(counts_by_status.get("deferred", 0))
+    unsupported = int(counts_by_status.get("unsupported", 0))
+    remaining = deferred + unsupported
+    return {
+        "liveVerifiedCount": live_verified,
+        "automatedCoveredCount": automated_covered,
+        "mockOnlyCount": mock_only,
+        "remainingCount": remaining,
+        "remainingByStatus": {
+            "deferred": deferred,
+            "unsupported": unsupported,
+        },
+        "headline": (
+            f"{live_verified} live-verified, "
+            f"{automated_covered} automated-covered, "
+            f"{mock_only} mock-only, "
+            f"{remaining} remaining"
+        ),
+        "note": (
+            "Do not blend live-tested, covered, and mock-only into one confidence percentage. "
+            "Report them separately."
+        ),
+    }
+
+
 def build_tool_coverage_matrix(
     category: str | None = None,
     status: str | None = None,
@@ -880,6 +909,7 @@ def build_tool_coverage_matrix(
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "totalTools": len(tools),
         "countsByStatus": counts_by_status,
+        "evidenceSummary": _coverage_evidence_summary(counts_by_status),
         "countsByCategory": counts_by_category,
         "filters": {
             "category": category,

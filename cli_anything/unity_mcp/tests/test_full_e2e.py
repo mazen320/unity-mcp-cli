@@ -5506,6 +5506,16 @@ class FullE2ETests(unittest.TestCase):
 
         self.assertIn("summary", summary_payload)
         self.assertGreater(summary_payload["summary"]["countsByStatus"]["live-tested"], 0)
+        evidence = summary_payload["summary"]["evidenceSummary"]
+        self.assertEqual(evidence["liveVerifiedCount"], summary_payload["summary"]["countsByStatus"]["live-tested"])
+        self.assertEqual(evidence["automatedCoveredCount"], summary_payload["summary"]["countsByStatus"]["covered"])
+        self.assertEqual(evidence["mockOnlyCount"], summary_payload["summary"]["countsByStatus"]["mock-only"])
+        self.assertEqual(
+            evidence["remainingCount"],
+            summary_payload["summary"]["countsByStatus"]["deferred"]
+            + summary_payload["summary"]["countsByStatus"]["unsupported"],
+        )
+        self.assertIn("Do not blend", evidence["note"])
         self.assertTrue(any(tool["name"] == "unity_terrain_create" for tool in category_payload["tools"]))
         terrain_create = next(
             tool for tool in category_payload["tools"] if tool["name"] == "unity_terrain_create"

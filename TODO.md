@@ -10,11 +10,11 @@ It focuses on three outcomes:
 
 ## Current Baseline
 
-As of 2026-04-12:
+As of 2026-04-14:
 
 - `162/162` automated tests passing
 - heavy live MCP pass passing `15/15`
-- tool coverage: `40` live-tested, `37` covered, `207` mock-only, `38` deferred, `6` unsupported
+- tool coverage snapshot: `46` live-verified, `35` automated-covered, `204` mock-only, `38` deferred, `6` unsupported
 - `unsupported` currently maps to the Unity Hub surface only
 - deferred tools carry blocker labels like `stateful-live-audit`, `package-dependent-live-audit`, `unity-hub-integration`
 - thin MCP adapter is working
@@ -186,7 +186,7 @@ If you are an AI agent picking up work on this repo, read these first:
   - Runtime: StackOverflow, OutOfMemory, Addressables errors
 
 #### Massive Mock Coverage Push (2026-04-10 continued)
-Coverage moved from `47.9%` → `86.6%` (215 mock-only, 38 deferred, out of 328 total):
+Historical blended route-status snapshot moved from `47.9%` → `86.6%` at that checkpoint. Treat that as a status milestone, not a single confidence metric:
 
 **Batch 1 — terrain (25) + animation (12) = 37 tools**
 - All terrain mutation routes now have mock bridge handlers + test assertions
@@ -209,7 +209,7 @@ Coverage moved from `47.9%` → `86.6%` (215 mock-only, 38 deferred, out of 328 
 - 94/94 tests passing after fixes, the context main-thread regression coverage, fixture-plan coverage, support-plan coverage, handoff-plan coverage, and file-IPC coverage
 
 **Latest cleanup — SpriteAtlas, MPPM, CLI meta wrappers, and broad advanced-tool tail**
-- Current matrix now reports `32` live-tested, `37` covered, `215` mock-only, and `38` deferred.
+- Current matrix now reports `46` live-verified, `35` automated-covered, `204` mock-only, `38` deferred, and `6` unsupported.
 - SpriteAtlas is mock-only covered; do not list it as a package-dependent skip anymore.
 - CLI meta wrappers (`unity_advanced_tool`, `unity_list_advanced_tools`, `unity_list_instances`, `unity_select_instance`) and route wrappers (`agents/list`, `console/log`) are now covered.
 - MPPM/scenario route overrides (`scenario/info`, `scenario/list`, `scenario/status`, `scenario/activate`, `scenario/start`, `scenario/stop`) are now mock-only covered.
@@ -411,16 +411,18 @@ Current status snapshot:
 
 | Status | Count |
 |---|---|
-| `live-tested` | 32 |
-| `covered` | 37 |
-| `mock-only` | 215 |
+| `live-tested` | 46 |
+| `covered` | 35 |
+| `mock-only` | 204 |
 | `unsupported` | 6 |
 | `deferred` | 38 |
-| **Total** | **328** |
-| **Coverage %** | **86.6%** |
+| **Total** | **329** |
 
 Remaining deferred breakdown:
 `amplify` (23), `uma` (15)
+
+Reporting rule:
+- Do not blend `live-tested`, `covered`, and `mock-only` into one confidence percentage. Use `summary.evidenceSummary` instead.
 
 ## Immediate Next Priorities
 

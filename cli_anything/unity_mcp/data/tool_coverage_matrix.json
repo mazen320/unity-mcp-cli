@@ -1,7 +1,7 @@
 {
   "summary": {
     "catalogVersion": "unknown",
-    "generatedAt": "2026-04-11T17:19:27.177589+00:00",
+    "generatedAt": "2026-04-14T04:10:54.550567+00:00",
     "totalTools": 329,
     "countsByStatus": {
       "live-tested": 46,
@@ -9,6 +9,18 @@
       "mock-only": 204,
       "unsupported": 6,
       "deferred": 38
+    },
+    "evidenceSummary": {
+      "liveVerifiedCount": 46,
+      "automatedCoveredCount": 35,
+      "mockOnlyCount": 204,
+      "remainingCount": 44,
+      "remainingByStatus": {
+        "deferred": 38,
+        "unsupported": 6
+      },
+      "headline": "46 live-verified, 35 automated-covered, 204 mock-only, 44 remaining",
+      "note": "Do not blend live-tested, covered, and mock-only into one confidence percentage. Report them separately."
     },
     "countsByCategory": {
       "meta": {
@@ -2304,7 +2316,7 @@
           },
           "references": {
             "type": "array",
-            "description": "Assembly references \u00e2\u20ac\u201d names (e.g. 'Unity.TextMeshPro') or GUID refs (e.g. 'GUID:xxx')",
+            "description": "Assembly references â€” names (e.g. 'Unity.TextMeshPro') or GUID refs (e.g. 'GUID:xxx')",
             "items": {
               "type": "string"
             }
@@ -2348,7 +2360,7 @@
           },
           "defineConstraints": {
             "type": "array",
-            "description": "Define constraints \u00e2\u20ac\u201d assembly only compiles when ALL symbols are defined (e.g. 'UNITY_EDITOR', 'ENABLE_INPUT_SYSTEM')",
+            "description": "Define constraints â€” assembly only compiles when ALL symbols are defined (e.g. 'UNITY_EDITOR', 'ENABLE_INPUT_SYSTEM')",
             "items": {
               "type": "string"
             }
@@ -3175,7 +3187,7 @@
     },
     {
       "name": "unity_component_set_reference",
-      "description": "Set an object reference on a component property. Dedicated tool for wiring references between GameObjects, components, and assets. More powerful than set_property for ObjectReference fields \u00e2\u20ac\u201d supports resolution by asset path, scene GameObject name, component type, or instance ID.",
+      "description": "Set an object reference on a component property. Dedicated tool for wiring references between GameObjects, components, and assets. More powerful than set_property for ObjectReference fields â€” supports resolution by asset path, scene GameObject name, component type, or instance ID.",
       "category": "component",
       "tier": "core",
       "route": "component/set-reference",
@@ -3195,7 +3207,7 @@
           },
           "componentType": {
             "type": "string",
-            "description": "Component type containing the property (optional \u00e2\u20ac\u201d will auto-search all components)"
+            "description": "Component type containing the property (optional â€” will auto-search all components)"
           },
           "propertyName": {
             "type": "string",
@@ -3881,7 +3893,7 @@
     },
     {
       "name": "unity_get_compilation_errors",
-      "description": "Get C# compilation errors and warnings from the Unity Editor. Uses CompilationPipeline directly \u2014 independent of the console log buffer. Not affected by console clear or Play Mode log flooding. Returns errors from the last compilation cycle. Use this instead of unity_console_log when diagnosing script compilation issues.",
+      "description": "Get C# compilation errors and warnings from the Unity Editor. Uses CompilationPipeline directly — independent of the console log buffer. Not affected by console clear or Play Mode log flooding. Returns errors from the last compilation cycle. Use this instead of unity_console_log when diagnosing script compilation issues.",
       "category": "get",
       "tier": "core",
       "route": "compilation/errors",
@@ -4460,7 +4472,7 @@
           },
           "parts": {
             "type": "array",
-            "description": "Composite parts \u00e2\u20ac\u201d each has a 'name' (e.g. 'positive','negative','up','down','left','right') and 'path' (e.g. '<Keyboard>/w')",
+            "description": "Composite parts â€” each has a 'name' (e.g. 'positive','negative','up','down','left','right') and 'path' (e.g. '<Keyboard>/w')",
             "items": {
               "type": "object",
               "properties": {
@@ -6281,7 +6293,7 @@
     },
     {
       "name": "unity_prefab_add_component",
-      "description": "Add a component to a GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Supports built-in types (Rigidbody, BoxCollider, etc.) and custom scripts.",
+      "description": "Add a component to a GameObject inside a prefab asset â€” no scene instance needed. Supports built-in types (Rigidbody, BoxCollider, etc.) and custom scripts.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/add-component",
@@ -6315,7 +6327,7 @@
     },
     {
       "name": "unity_prefab_add_gameobject",
-      "description": "Create a new child GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Optionally create as a primitive (Cube, Sphere, etc.) with position/rotation/scale.",
+      "description": "Create a new child GameObject inside a prefab asset â€” no scene instance needed. Optionally create as a primitive (Cube, Sphere, etc.) with position/rotation/scale.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/add-gameobject",
@@ -6524,7 +6536,7 @@
     },
     {
       "name": "unity_prefab_get_hierarchy",
-      "description": "Get the full hierarchy tree of a prefab asset directly from disk \u00e2\u20ac\u201d no scene instance needed. Shows all GameObjects, components, and nested children inside the prefab.",
+      "description": "Get the full hierarchy tree of a prefab asset directly from disk â€” no scene instance needed. Shows all GameObjects, components, and nested children inside the prefab.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/hierarchy",
@@ -6553,7 +6565,7 @@
     },
     {
       "name": "unity_prefab_get_properties",
-      "description": "Read all serialized properties of a component on a GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Use prefabPath to target nested children (e.g. 'Body/Head').",
+      "description": "Read all serialized properties of a component on a GameObject inside a prefab asset â€” no scene instance needed. Use prefabPath to target nested children (e.g. 'Body/Head').",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/get-properties",
@@ -6617,7 +6629,7 @@
     },
     {
       "name": "unity_prefab_remove_component",
-      "description": "Remove a component from a GameObject inside a prefab asset \u00e2\u20ac\u201d no scene instance needed.",
+      "description": "Remove a component from a GameObject inside a prefab asset â€” no scene instance needed.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/remove-component",
@@ -6655,7 +6667,7 @@
     },
     {
       "name": "unity_prefab_remove_gameobject",
-      "description": "Delete a child GameObject from inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Cannot remove the prefab root.",
+      "description": "Delete a child GameObject from inside a prefab asset â€” no scene instance needed. Cannot remove the prefab root.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/remove-gameobject",
@@ -6748,7 +6760,7 @@
     },
     {
       "name": "unity_prefab_set_property",
-      "description": "Set a serialized property value on a component inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Supports floats, ints, strings, bools, vectors, colors, enums.",
+      "description": "Set a serialized property value on a component inside a prefab asset â€” no scene instance needed. Supports floats, ints, strings, bools, vectors, colors, enums.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/set-property",
@@ -6790,7 +6802,7 @@
     },
     {
       "name": "unity_prefab_set_reference",
-      "description": "Wire an ObjectReference property on a component inside a prefab asset \u00e2\u20ac\u201d no scene instance needed. Can reference project assets (materials, textures, prefabs, ScriptableObjects) or other GameObjects within the same prefab.",
+      "description": "Wire an ObjectReference property on a component inside a prefab asset â€” no scene instance needed. Can reference project assets (materials, textures, prefabs, ScriptableObjects) or other GameObjects within the same prefab.",
       "category": "prefab",
       "tier": "advanced",
       "route": "prefab-asset/set-reference",
@@ -6810,7 +6822,7 @@
           },
           "componentType": {
             "type": "string",
-            "description": "Component type (optional \u00e2\u20ac\u201d searches all if omitted)"
+            "description": "Component type (optional â€” searches all if omitted)"
           },
           "propertyName": {
             "type": "string",
@@ -7026,7 +7038,7 @@
     },
     {
       "name": "unity_profiler_stats",
-      "description": "Get current rendering statistics: draw calls, batches, triangles, vertices, set-pass calls, frame time, render time, shadow casters, and more. The profiler does NOT need to be enabled for this \u00e2\u20ac\u201d stats come from UnityStats which is always available.",
+      "description": "Get current rendering statistics: draw calls, batches, triangles, vertices, set-pass calls, frame time, render time, shadow casters, and more. The profiler does NOT need to be enabled for this â€” stats come from UnityStats which is always available.",
       "category": "profiler",
       "tier": "advanced",
       "route": "profiler/stats",
@@ -8017,7 +8029,7 @@
     },
     {
       "name": "unity_set_object_reference",
-      "description": "[LEGACY \u00e2\u20ac\u201d prefer unity_component_set_reference] Set an object reference property on a component via the prefab system. Use unity_component_set_reference instead for richer resolution options.",
+      "description": "[LEGACY â€” prefer unity_component_set_reference] Set an object reference property on a component via the prefab system. Use unity_component_set_reference instead for richer resolution options.",
       "category": "set",
       "tier": "core",
       "route": "prefab/set-object-reference",
@@ -8678,7 +8690,7 @@
           },
           "nodeId": {
             "type": "string",
-            "description": "The node's objectId (GUID) to remove \u00e2\u20ac\u201d get from get_nodes"
+            "description": "The node's objectId (GUID) to remove â€” get from get_nodes"
           }
         },
         "required": [
@@ -8715,7 +8727,7 @@
             "description": "Property name in the serialized JSON (e.g., 'm_Value', 'm_DefaultValue')"
           },
           "value": {
-            "description": "New value \u00e2\u20ac\u201d string, number, or boolean depending on the property"
+            "description": "New value â€” string, number, or boolean depending on the property"
           }
         },
         "required": [
@@ -10287,7 +10299,7 @@
           },
           "holes": {
             "type": "array",
-            "description": "2D boolean array [row][col] \u00e2\u20ac\u201d true = solid, false = hole",
+            "description": "2D boolean array [row][col] â€” true = solid, false = hole",
             "items": {
               "type": "array",
               "items": {
@@ -10529,7 +10541,7 @@
     },
     {
       "name": "unity_testing_run_tests",
-      "description": "Start a Unity Test Runner test run. Returns a job ID immediately \u2014 use unity_testing_get_job to poll for progress and results. Supports EditMode and PlayMode tests with optional filters by test name, category, assembly, or group.",
+      "description": "Start a Unity Test Runner test run. Returns a job ID immediately — use unity_testing_get_job to poll for progress and results. Supports EditMode and PlayMode tests with optional filters by test name, category, assembly, or group.",
       "category": "testing",
       "tier": "advanced",
       "route": "testing/run-tests",
@@ -11006,7 +11018,7 @@
           },
           "textures": {
             "type": "array",
-            "description": "Ordered array of texture asset paths, one per UMAMaterial channel index. Index 0 = diffuse/albedo, index 1 = normal map, index 2 = metallic/roughness. Use null or empty string for unused channels. Example: [\"Assets/Textures/Chest_D.png\", \"Assets/Textures/Chest_N.png\", null]. Do NOT use channel0/channel1/channel2 object format \u2014 must be a flat array of strings.",
+            "description": "Ordered array of texture asset paths, one per UMAMaterial channel index. Index 0 = diffuse/albedo, index 1 = normal map, index 2 = metallic/roughness. Use null or empty string for unused channels. Example: [\"Assets/Textures/Chest_D.png\", \"Assets/Textures/Chest_N.png\", null]. Do NOT use channel0/channel1/channel2 object format — must be a flat array of strings.",
             "items": {
               "type": "string"
             }
@@ -11026,7 +11038,7 @@
     },
     {
       "name": "unity_uma_create_race",
-      "description": "Create a new UMA RaceData asset. Two modes:\n\nDUPLICATE MODE (recommended): Provide sourceRaceName to copy all settings from an existing race. The base recipe is automatically duplicated with the new race name in recipeString and compatibleRaces. Any optional parameter overrides the duplicated value.\n\nSCRATCH MODE: Omit sourceRaceName to create from scratch with sensible defaults (Humanoid, standard wardrobe slots, default physics). No base recipe is created \u2014 assign one via edit_race.\n\nEXAMPLE (duplicate):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\" }\n\nEXAMPLE (duplicate with overrides):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"raceHeight\": 1.85, \"tags\": [\"playable\", \"female\"] }\n\nEXAMPLE (from scratch):\n{ \"raceName\": \"DwarfRace\", \"outputFolder\": \"Assets/UMA/Races\", \"wardrobeSlots\": [\"Chest\", \"Legs\", \"Feet\", \"Helmet\"], \"raceHeight\": 1.2 }\n\nFBX MODE: Provide fbxPath + umaMaterialPath to create a full race from an FBX body mesh. Inspects the FBX, creates body SlotDataAssets (one per SMR), OverlayDataAssets with auto-detected textures, and assembles a base race recipe (UMATextRecipe). Optionally combine with sourceRaceName to copy wardrobeSlots/physics from an existing race.\n\nEXAMPLE (FBX mode):\n{ \"raceName\": \"HumanFemaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\", \"outputFolder\": \"Assets/UMA/Races/Female\" }\n\nEXAMPLE (FBX + copy settings from existing race):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\" }",
+      "description": "Create a new UMA RaceData asset. Two modes:\n\nDUPLICATE MODE (recommended): Provide sourceRaceName to copy all settings from an existing race. The base recipe is automatically duplicated with the new race name in recipeString and compatibleRaces. Any optional parameter overrides the duplicated value.\n\nSCRATCH MODE: Omit sourceRaceName to create from scratch with sensible defaults (Humanoid, standard wardrobe slots, default physics). No base recipe is created — assign one via edit_race.\n\nEXAMPLE (duplicate):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\" }\n\nEXAMPLE (duplicate with overrides):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"raceHeight\": 1.85, \"tags\": [\"playable\", \"female\"] }\n\nEXAMPLE (from scratch):\n{ \"raceName\": \"DwarfRace\", \"outputFolder\": \"Assets/UMA/Races\", \"wardrobeSlots\": [\"Chest\", \"Legs\", \"Feet\", \"Helmet\"], \"raceHeight\": 1.2 }\n\nFBX MODE: Provide fbxPath + umaMaterialPath to create a full race from an FBX body mesh. Inspects the FBX, creates body SlotDataAssets (one per SMR), OverlayDataAssets with auto-detected textures, and assembles a base race recipe (UMATextRecipe). Optionally combine with sourceRaceName to copy wardrobeSlots/physics from an existing race.\n\nEXAMPLE (FBX mode):\n{ \"raceName\": \"HumanFemaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\", \"outputFolder\": \"Assets/UMA/Races/Female\" }\n\nEXAMPLE (FBX + copy settings from existing race):\n{ \"raceName\": \"HumanFemaleRace\", \"sourceRaceName\": \"HumanMaleRace\", \"fbxPath\": \"Assets/.../SK_Hu_F_FullBody.fbx\", \"umaMaterialPath\": \"Assets/.../UMA_ClothesBase.asset\" }",
       "category": "uma",
       "tier": "advanced",
       "route": null,
@@ -11157,7 +11169,7 @@
           },
           "keepAllBones": {
             "type": "boolean",
-            "description": "If true, keep all bones instead of only weighted ones (default: false \u2014 auto-extracts keepList)"
+            "description": "If true, keep all bones instead of only weighted ones (default: false — auto-extracts keepList)"
           }
         },
         "required": [
@@ -11477,7 +11489,7 @@
     },
     {
       "name": "unity_uma_inspect_fbx",
-      "description": "Inspect an FBX file to list all SkinnedMeshRenderers with vertex counts, weighted bones (keepList), and bone counts. Essential first step before creating UMA slots \u2014 shows which SMRs are available and their bone data.",
+      "description": "Inspect an FBX file to list all SkinnedMeshRenderers with vertex counts, weighted bones (keepList), and bone counts. Essential first step before creating UMA slots — shows which SMRs are available and their bone data.",
       "category": "uma",
       "tier": "advanced",
       "route": null,

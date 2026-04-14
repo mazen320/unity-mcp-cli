@@ -607,6 +607,23 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(tools["unity_terrain_create_grid"]["coverageStatus"], "mock-only")
         self.assertIn("mock Unity bridge", tools["unity_terrain_create_grid"]["coverageNote"])
         self.assertGreaterEqual(payload["summary"]["countsByStatus"]["live-tested"], 1)
+        evidence = payload["summary"]["evidenceSummary"]
+        self.assertEqual(evidence["liveVerifiedCount"], payload["summary"]["countsByStatus"]["live-tested"])
+        self.assertEqual(evidence["automatedCoveredCount"], payload["summary"]["countsByStatus"]["covered"])
+        self.assertEqual(evidence["mockOnlyCount"], payload["summary"]["countsByStatus"]["mock-only"])
+        self.assertEqual(
+            evidence["remainingCount"],
+            payload["summary"]["countsByStatus"]["deferred"] + payload["summary"]["countsByStatus"]["unsupported"],
+        )
+        self.assertEqual(
+            evidence["remainingByStatus"],
+            {
+                "deferred": payload["summary"]["countsByStatus"]["deferred"],
+                "unsupported": payload["summary"]["countsByStatus"]["unsupported"],
+            },
+        )
+        self.assertIn("Do not blend", evidence["note"])
+        self.assertIn("live-verified", evidence["headline"])
 
         full_payload = build_tool_coverage_matrix()
         all_tools = {tool["name"]: tool for tool in full_payload["tools"]}
