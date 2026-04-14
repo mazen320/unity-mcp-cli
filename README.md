@@ -518,6 +518,7 @@ This repo stays focused on the CLI layer. If you need more beginner setup help, 
 
 - [START_HERE.md](START_HERE.md): beginner-friendly walkthrough
 - [PLAN.md](../../PLAN.md): canonical product roadmap and method
+- [docs/superpowers/specs/2026-04-14-learning-system-design.md](docs/superpowers/specs/2026-04-14-learning-system-design.md): local-first learning-system design
 - [FILE_IPC.md](FILE_IPC.md): standalone core route setup without the AnkleBreaker plugin
 - [PLUGIN_SETUP.md](PLUGIN_SETUP.md): plugin install steps
 - [TEST.md](TEST.md): validation commands and test flows

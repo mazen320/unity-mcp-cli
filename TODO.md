@@ -378,11 +378,9 @@ Make the assistant improve from structured outcomes, memory, and evals.
 
 ### P0
 
-- Write the local-first learning-system spec:
-  - run ledger
-  - structured memory
-  - eval/replay
-  - privacy and redaction rules
+- Turn the written local-first learning-system spec into an implementation plan:
+  - `docs/superpowers/specs/2026-04-14-learning-system-design.md`
+  - start with Phase L1 run ledger only
 - Define the minimum useful event schema for workflow runs:
   - intent
   - workflow chosen
