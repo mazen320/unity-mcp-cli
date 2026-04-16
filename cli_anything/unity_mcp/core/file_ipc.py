@@ -289,9 +289,9 @@ class ContextInjector:
         self._context = None
         self._context_is_full = False
 
-    def as_system_prompt(self) -> str:
+    def as_system_prompt(self, *, full: bool = False) -> str:
         """Return a compact system-prompt block describing the Unity project."""
-        ctx = self.get()
+        ctx = self.get(full=full)
         if not ctx:
             return "## Unity Project Context\n(not connected)"
 
@@ -333,6 +333,18 @@ class ContextInjector:
         if console_errors and not compile_errors:
             msg = console_errors[0].get("message", "") if isinstance(console_errors[0], dict) else str(console_errors[0])
             lines.append(f"Recent error: {msg[:120]}")
+
+        if full:
+            legacy_context = ctx.get("legacyContext") or []
+            if legacy_context:
+                lines.append("")
+                lines.append("## Project Guidance")
+                for entry in legacy_context[:4]:
+                    category = str(entry.get("category") or "Context").strip()
+                    content = " ".join(str(entry.get("content") or "").split())
+                    if not content:
+                        continue
+                    lines.append(f"{category}: {content[:400]}" + ("..." if len(content) > 400 else ""))
 
         return "\n".join(lines)
 

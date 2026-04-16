@@ -2171,6 +2171,28 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(payload["state"], "idle")
             self.assertEqual(payload["pid"], os.getpid())
             self.assertEqual(payload["projectPath"], str(project))
+            self.assertIn("llmAvailable", payload)
+            self.assertIn("llmProvider", payload)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_bridge_status_reports_llm_provider(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+                bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+                bridge.write_status("idle", 0, 0, "")
+
+            status_path = project / ".umcp" / "agent-status.json"
+            payload = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["llmAvailable"])
+            self.assertEqual(payload["llmProvider"], "OpenAI")
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

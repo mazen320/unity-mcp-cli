@@ -206,9 +206,36 @@ Available routes:
 Return ONLY a valid JSON array, no prose, no markdown code fences."""
 
 
-def _generate_plan_from_intent(intent: str, *, model: str | None) -> list | None:
+def _generate_plan_from_intent(
+    intent: str,
+    *,
+    model: str | None,
+    context_prompt: str | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> list | None:
     """Call an AI API to convert intent to a plan. Returns None if unavailable."""
-    messages = [{"role": "user", "content": f"Intent: {intent}"}]
+    messages: list[dict[str, str]] = []
+    if context_prompt:
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Unity project context for this request:\n"
+                    f"{context_prompt}"
+                ),
+            }
+        )
+    for entry in history or []:
+        role = str(entry.get("role") or "").strip().lower()
+        content = str(entry.get("content") or "").strip()
+        if not content:
+            continue
+        if role in {"assistant", "ai"}:
+            mapped_role = "assistant"
+        else:
+            mapped_role = "user"
+        messages.append({"role": mapped_role, "content": content})
+    messages.append({"role": "user", "content": f"Intent: {intent}"})
 
     # Try Anthropic
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")

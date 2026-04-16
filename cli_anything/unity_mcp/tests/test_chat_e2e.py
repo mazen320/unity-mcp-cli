@@ -10,6 +10,7 @@ Tests for Track 2A tasks:
 
 from __future__ import annotations
 
+import os
 import shutil
 import unittest
 import uuid
@@ -199,6 +200,83 @@ class ChatE2ETests(unittest.TestCase):
 
         result = assistant._dispatch("polish the combat feel")
         assistant._autonomous_goal_reply.assert_called_once_with("polish the combat feel")
+
+    # ── LLM-first chat behavior ──────────────────────────────────────────────
+
+    def test_best_effort_reply_requires_model_for_freeform_requests(self):
+        """Freeform chat should state that a model provider is required when none is configured."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.dict(os.environ, {}, clear=True):
+            reply = assistant._best_effort_agent_reply("build a full inventory system for this scene")
+
+        assert "model provider" in reply.lower()
+        assert "openai_api_key" in reply.lower() or "anthropic_api_key" in reply.lower()
+
+    def test_try_model_backed_plan_passes_full_context_and_recent_history(self):
+        """Model-backed planning should receive fresh full context and recent chat history."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            (project / "AGENTS.md").write_text("Keep URP and avoid demo residue.\n", encoding="utf-8")
+
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = [
+                {"role": "user", "content": "inspect project"},
+                {"role": "ai", "content": "Here is the project summary."},
+                {"role": "user", "content": "now add a proper player controller"},
+            ]
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: McpLiveFpsPass"
+
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[{"step": 1, "description": "Create player", "route": "gameobject/create", "params": {}}],
+                ) as generate_plan:
+                    with patch("cli_anything.unity_mcp.core.agent_chat.AgentLoop") as loop_cls:
+                        loop_cls.return_value.execute.return_value = []
+
+                        assistant._try_model_backed_plan("create a player controller for the active scene")
+
+            bridge._context.as_system_prompt.assert_called_once_with(full=True)
+            kwargs = generate_plan.call_args.kwargs
+            assert kwargs["history"] == [
+                {"role": "user", "content": "inspect project"},
+                {"role": "assistant", "content": "Here is the project summary."},
+                {"role": "user", "content": "now add a proper player controller"},
+            ]
+            assert "Unity Project Context" in kwargs["context_prompt"]
+            assert "Keep URP and avoid demo residue." in kwargs["context_prompt"]
+
+    def test_capture_after_action_invalidates_cached_context(self):
+        """Scene captures should invalidate cached context before reading proof artifacts."""
+        from unittest.mock import MagicMock
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        bridge.client.call_route.return_value = {
+            "gamePath": "/tmp/game.png",
+            "scenePath": "/tmp/scene.png",
+        }
+        bridge._context = MagicMock()
+
+        assistant = _OfflineUnityAssistant(bridge)
+        result = assistant._capture_after_action()
+
+        assert result.get("gamePath") == "/tmp/game.png"
+        bridge._context.invalidate.assert_called_once()
 
 
 if __name__ == "__main__":

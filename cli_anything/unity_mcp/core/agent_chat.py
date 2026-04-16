@@ -245,6 +245,65 @@ public class PlayerMovement : MonoBehaviour
         scene = dict(context.get("scene") or {})
         return str(scene.get("name") or "unknown")
 
+    def _configured_model_provider(self) -> str | None:
+        if os.environ.get("OPENAI_API_KEY"):
+            return "OpenAI"
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return "Anthropic"
+        return None
+
+    def _recent_history(self, limit: int = 6) -> list[dict[str, str]]:
+        entries = list(getattr(self.bridge, "_history", []) or [])
+        recent: list[dict[str, str]] = []
+        for entry in entries[-limit:]:
+            role = str(entry.get("role") or "").strip().lower()
+            content = str(entry.get("content") or "").strip()
+            if not content or role not in {"user", "ai", "assistant"}:
+                continue
+            recent.append(
+                {
+                    "role": "assistant" if role in {"ai", "assistant"} else "user",
+                    "content": content,
+                }
+            )
+        return recent
+
+    def _project_instructions(self) -> str:
+        agents_path = self.bridge.project_path / "AGENTS.md"
+        if not agents_path.exists():
+            return ""
+        try:
+            text = agents_path.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+        normalized = " ".join(text.split())
+        if not normalized:
+            return ""
+        return normalized[:1200] + ("..." if len(normalized) > 1200 else "")
+
+    def _model_context_prompt(self) -> str:
+        sections: list[str] = []
+        try:
+            prompt = self.bridge._context.as_system_prompt(full=True)
+        except Exception:
+            prompt = ""
+        prompt = str(prompt or "").strip()
+        if prompt:
+            sections.append(prompt)
+        instructions = self._project_instructions()
+        if instructions:
+            sections.append(f"## Project Instructions\n{instructions}")
+        return "\n\n".join(section for section in sections if section)
+
+    def _invalidate_context_cache(self) -> None:
+        context = getattr(self.bridge, "_context", None)
+        invalidate = getattr(context, "invalidate", None)
+        if callable(invalidate):
+            try:
+                invalidate()
+            except Exception:
+                pass
+
     def _greeting_reply(self) -> str:
         project_name = self._project_name()
         active_scene = self._active_scene_name()
@@ -949,6 +1008,7 @@ public class PlayerMovement : MonoBehaviour
         Returns a dict with ``gamePath`` and ``scenePath`` keys, or empty dict on failure.
         Used to provide visual proof after any action that changes the scene.
         """
+        self._invalidate_context_cache()
         try:
             result = self.bridge.client.call_route(
                 "graphics/capture",
@@ -1570,22 +1630,24 @@ public class PlayerMovement : MonoBehaviour
         return "\n".join(results_lines)
 
     def _best_effort_agent_reply(self, content: str) -> str:
+        provider = self._configured_model_provider()
+        if not provider:
+            return (
+                "This request needs a configured model provider. The Unity Agent tab can still run bounded commands "
+                "like `improve project`, `inspect project`, `benchmark`, `compile errors`, and basic scene actions, "
+                "but open-ended chat is disabled until `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is available in the "
+                "bridge process."
+            )
         planned = self._try_model_backed_plan(content)
         if planned:
             return planned
         return (
-            "I can help with project audits, quality scoring, benchmarks, compile errors, "
-            "scene info, hierarchy, saving scenes, sandbox scenes, guidance/test scaffolding, "
-            "and basic primitive creation right now.\n\n"
-            "Try asking:\n"
-            "- improve project\n"
-            "- inspect project\n"
-            "- benchmark\n"
-            "- compile errors\n"
-            "- create sandbox scene\n"
-            "- create guidance\n"
-            "- create cube at 0 1 0\n\n"
-            "For more open-ended build tasks, connect a model provider so I can turn the request into an agent loop plan."
+            f"{provider} is configured, but I could not turn that request into a safe executable Unity plan.\n\n"
+            "Try asking for a concrete outcome such as:\n"
+            "- create a player controller for the active scene\n"
+            "- add a reticle canvas and event system\n"
+            "- create a sandbox scene and save it\n\n"
+            "If this should have been understood, the next thing to inspect is the live project context being fed to the planner."
         )
 
     def _try_model_backed_plan(self, content: str) -> str | None:
@@ -1593,14 +1655,20 @@ public class PlayerMovement : MonoBehaviour
             from ..commands.agent_loop_cmd import _generate_plan_from_intent
         except Exception:
             return None
-        if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        if not self._configured_model_provider():
             return None
         self._set_status("Planning task with model")
-        steps = _generate_plan_from_intent(content, model=None)
+        steps = _generate_plan_from_intent(
+            content,
+            model=None,
+            context_prompt=self._model_context_prompt(),
+            history=self._recent_history(),
+        )
         if not isinstance(steps, list) or not steps:
             return None
         loop = AgentLoop(self.bridge.client, max_retries=1, status_path=self.bridge._status_path)
         results = loop.execute(steps)
+        self._invalidate_context_cache()
         return (
             f"I planned {len(steps)} step(s) and executed them.\n\n"
             f"{format_results(results, color=False)}"
@@ -1934,6 +2002,7 @@ class ChatBridge:
     def _write_status(self, state: str, current: int, total: int, action: str) -> None:
         try:
             self._status_path.parent.mkdir(parents=True, exist_ok=True)
+            llm_provider = "OpenAI" if os.environ.get("OPENAI_API_KEY") else "Anthropic" if os.environ.get("ANTHROPIC_API_KEY") else None
             payload = {
                 "state": state,
                 "currentStep": current,
@@ -1941,6 +2010,8 @@ class ChatBridge:
                 "currentAction": action,
                 "pid": os.getpid(),
                 "projectPath": str(self.project_path),
+                "llmAvailable": bool(llm_provider),
+                "llmProvider": llm_provider,
                 "lastUpdated": datetime.now(timezone.utc).isoformat(),
             }
             tmp = self._status_path.with_suffix(".tmp")

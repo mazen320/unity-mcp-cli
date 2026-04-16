@@ -111,6 +111,8 @@ public class CliAnythingWindow : EditorWindow
         public int    totalSteps;
         public string currentAction;
         public int    pid;
+        public bool   llmAvailable;
+        public string llmProvider;
     }
 
     private struct AgentBridgeLauncher
@@ -344,6 +346,8 @@ public class CliAnythingWindow : EditorWindow
                     totalSteps   = data.ContainsKey("totalSteps")    ? Convert.ToInt32(data["totalSteps"])   : 0,
                     currentAction= data.ContainsKey("currentAction") ? data["currentAction"]?.ToString() ?? "" : "",
                     pid          = data.ContainsKey("pid")           ? Convert.ToInt32(data["pid"]) : 0,
+                    llmAvailable = data.ContainsKey("llmAvailable")  && Convert.ToBoolean(data["llmAvailable"]),
+                    llmProvider  = data.ContainsKey("llmProvider")   ? data["llmProvider"]?.ToString() ?? "" : "",
                 };
                 _agentBridgeLive = (DateTime.UtcNow - File.GetLastWriteTimeUtc(statusPath)).TotalSeconds < 30.0;
                 _agentBridgePid = _agentStatus.pid;
@@ -458,6 +462,14 @@ public class CliAnythingWindow : EditorWindow
         var bridgeColor = _agentBridgeLive ? new Color(0.3f, 0.8f, 1f) : new Color(1f, 0.7f, 0.25f);
         GUI.color = bridgeColor;
         GUILayout.Label(_agentBridgeLive ? "● Chat Live" : "● Chat Off", EditorStyles.miniLabel, GUILayout.Width(90));
+        GUI.color = prevColor;
+
+        var llmColor = _agentStatus.llmAvailable ? new Color(0.35f, 0.85f, 0.55f) : new Color(1f, 0.65f, 0.25f);
+        GUI.color = llmColor;
+        string llmLabel = _agentStatus.llmAvailable && !string.IsNullOrEmpty(_agentStatus.llmProvider)
+            ? $"● {_agentStatus.llmProvider}"
+            : "● LLM Off";
+        GUILayout.Label(llmLabel, EditorStyles.miniLabel, GUILayout.Width(90));
         GUI.color = prevColor;
 
         if (_agentStatus.state == "executing" && _agentStatus.totalSteps > 0)
