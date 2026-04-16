@@ -10,7 +10,23 @@ Tests for Track 2A tasks:
 
 from __future__ import annotations
 
+import shutil
 import unittest
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+
+
+@contextmanager
+def _workspace_temp_dir() -> str:
+    root = Path.cwd() / ".tmp-tests"
+    root.mkdir(parents=True, exist_ok=True)
+    tmpdir = root / uuid.uuid4().hex
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    try:
+        yield str(tmpdir)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 class ChatE2ETests(unittest.TestCase):
@@ -22,9 +38,8 @@ class ChatE2ETests(unittest.TestCase):
         from unittest.mock import MagicMock
         from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
         from cli_anything.unity_mcp.core.file_ipc import FileIPCClient
-        import tempfile
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with _workspace_temp_dir() as tmp:
             client = MagicMock(spec=FileIPCClient)
             client.call_route.return_value = {
                 "gamePath": "/tmp/game.png",
@@ -58,9 +73,8 @@ class ChatE2ETests(unittest.TestCase):
         """_build_player_prototype_reply calls create GO, add CharacterController, create script."""
         from unittest.mock import MagicMock
         from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
-        import tempfile
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with _workspace_temp_dir() as tmp:
             client = MagicMock()
             client.call_route.return_value = {"name": "Player", "id": "abc123"}
             bridge = MagicMock()
@@ -113,13 +127,12 @@ class ChatE2ETests(unittest.TestCase):
 
     def test_watchdog_thread_starts_and_stops(self):
         """ChatBridge watchdog thread starts and stops correctly."""
-        import tempfile
         import time
         from unittest.mock import MagicMock
         from cli_anything.unity_mcp.core.agent_chat import ChatBridge
         from cli_anything.unity_mcp.core.file_ipc import FileIPCClient
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with _workspace_temp_dir() as tmp:
             client = MagicMock(spec=FileIPCClient)
             bridge = ChatBridge(tmp, client, poll_interval=0.05, watchdog_interval=0.1)
             bridge._ensure_ready()
@@ -135,12 +148,11 @@ class ChatE2ETests(unittest.TestCase):
 
     def test_watchdog_does_not_post_duplicate_findings(self):
         """Watchdog suppresses findings already surfaced in this session."""
-        import tempfile
         from unittest.mock import MagicMock
         from cli_anything.unity_mcp.core.agent_chat import ChatBridge
         from cli_anything.unity_mcp.core.file_ipc import FileIPCClient
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with _workspace_temp_dir() as tmp:
             client = MagicMock(spec=FileIPCClient)
             bridge = ChatBridge(tmp, client)
             bridge._ensure_ready()
