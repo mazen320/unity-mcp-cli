@@ -22,6 +22,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -84,6 +85,25 @@ public class CliAnythingWindow : EditorWindow
     private double  _agentLaunchPendingUntil;
     private static readonly string[] AgentProviderOptions = { "auto", "openrouter", "openai", "anthropic" };
     private string  _agentApiKey = "";
+
+    // Model picker state
+    private bool        _showModelPicker = false;
+    private string      _modelSearchQuery = "";
+    private Vector2     _modelPickerScroll;
+    private string[]    _fetchedModels = null;       // id list from OpenRouter
+    private string[]    _fetchedModelNames = null;   // display names
+    private bool        _fetchingModels = false;
+    private string      _modelFetchError = null;
+
+    private static readonly string[] OpenAIModels = {
+        "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo",
+        "o1", "o1-mini", "o3-mini",
+    };
+    private static readonly string[] AnthropicModels = {
+        "claude-opus-4-5-20251001", "claude-sonnet-4-5-20251001",
+        "claude-haiku-4-5-20251001", "claude-3-5-sonnet-20241022",
+        "claude-3-5-haiku-20241022", "claude-3-opus-20240229",
+    };
 
     private const string AgentHarnessRootPrefKey   = "CliAnything.AgentBridge.HarnessRoot";
     private const string AgentPythonPrefKey        = "CliAnything.AgentBridge.PythonLauncher";
@@ -1006,10 +1026,7 @@ public class CliAnythingWindow : EditorWindow
         _agentPreferredProvider = AgentProviderOptions[Mathf.Clamp(providerIndex, 0, AgentProviderOptions.Length - 1)];
         EditorGUILayout.EndHorizontal();
 
-        EditorGUILayout.BeginHorizontal();
-        GUILayout.Label("Model", GUILayout.Width(88));
-        _agentPreferredModel = EditorGUILayout.TextField(_agentPreferredModel);
-        EditorGUILayout.EndHorizontal();
+        DrawModelPicker();
 
         EditorGUILayout.BeginHorizontal();
         GUILayout.Label("API Key", GUILayout.Width(88));
@@ -1064,6 +1081,205 @@ public class CliAnythingWindow : EditorWindow
         EditorPrefs.SetString(AgentLastLaunchPrefKey, _agentLastLaunchCommand ?? "");
         SaveAgentModelConfig();
     }
+
+    // ── Model picker ─────────────────────────────────────────────────────────
+
+    private void DrawModelPicker()
+    {
+        // Row: label + current value button + optional refresh for openrouter
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("Model", GUILayout.Width(88));
+
+        string displayLabel = string.IsNullOrWhiteSpace(_agentPreferredModel)
+            ? "— pick a model —"
+            : _agentPreferredModel;
+
+        if (GUILayout.Button(displayLabel, EditorStyles.popup))
+        {
+            _showModelPicker = !_showModelPicker;
+            if (_showModelPicker && _agentPreferredProvider == "openrouter" && _fetchedModels == null && !_fetchingModels)
+                FetchOpenRouterModels();
+        }
+
+        if (_agentPreferredProvider == "openrouter")
+        {
+            using (new EditorGUI.DisabledScope(_fetchingModels))
+            {
+                if (GUILayout.Button(_fetchingModels ? "…" : "↻", GUILayout.Width(22)))
+                {
+                    _fetchedModels = null;
+                    _fetchedModelNames = null;
+                    _modelFetchError = null;
+                    FetchOpenRouterModels();
+                    _showModelPicker = true;
+                }
+            }
+        }
+
+        // Manual text field for typing when needed
+        string typed = EditorGUILayout.TextField(_agentPreferredModel, GUILayout.Width(120));
+        if (typed != _agentPreferredModel)
+        {
+            _agentPreferredModel = typed;
+            _showModelPicker = false;
+        }
+
+        EditorGUILayout.EndHorizontal();
+
+        if (!_showModelPicker) return;
+
+        // Inline dropdown panel
+        string provider = _agentPreferredProvider;
+        string[] ids, names;
+
+        if (provider == "openrouter")
+        {
+            if (_fetchingModels)
+            {
+                EditorGUILayout.HelpBox("Fetching models from OpenRouter…", MessageType.None);
+                return;
+            }
+            if (_modelFetchError != null)
+            {
+                EditorGUILayout.HelpBox("Fetch failed: " + _modelFetchError, MessageType.Warning);
+            }
+            ids   = _fetchedModels   ?? new string[0];
+            names = _fetchedModelNames ?? new string[0];
+        }
+        else if (provider == "openai")
+        {
+            ids = names = OpenAIModels;
+        }
+        else if (provider == "anthropic")
+        {
+            ids = names = AnthropicModels;
+        }
+        else
+        {
+            // auto — show all known
+            ids   = OpenAIModels.Concat(AnthropicModels).ToArray();
+            names = ids;
+        }
+
+        // Search bar
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("Search", GUILayout.Width(88));
+        _modelSearchQuery = EditorGUILayout.TextField(_modelSearchQuery);
+        if (GUILayout.Button("✕", GUILayout.Width(20))) { _modelSearchQuery = ""; GUI.FocusControl(null); }
+        EditorGUILayout.EndHorizontal();
+
+        // Filtered results
+        string q = _modelSearchQuery.ToLowerInvariant();
+        var filtered = ids
+            .Select((id, i) => (id, display: i < names.Length ? names[i] : id))
+            .Where(m => string.IsNullOrEmpty(q)
+                        || m.id.ToLowerInvariant().Contains(q)
+                        || m.display.ToLowerInvariant().Contains(q))
+            .ToList();
+
+        int maxRows = Mathf.Min(filtered.Count, 10);
+        float rowH  = EditorGUIUtility.singleLineHeight + 2;
+        float panelH = maxRows * rowH + 4;
+
+        _modelPickerScroll = EditorGUILayout.BeginScrollView(
+            _modelPickerScroll,
+            GUILayout.Height(panelH));
+
+        foreach (var (id, display) in filtered)
+        {
+            bool selected = id == _agentPreferredModel;
+            GUIStyle style = selected ? EditorStyles.boldLabel : EditorStyles.label;
+
+            EditorGUILayout.BeginHorizontal();
+            if (selected) GUILayout.Label("✓", GUILayout.Width(14));
+            else          GUILayout.Label("", GUILayout.Width(14));
+
+            if (GUILayout.Button(display, style))
+            {
+                _agentPreferredModel = id;
+                _showModelPicker = false;
+                _modelSearchQuery = "";
+                GUI.FocusControl(null);
+                Repaint();
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+
+        if (filtered.Count == 0)
+            EditorGUILayout.LabelField(ids.Length == 0 ? "No models loaded yet — hit ↻" : "No matches", EditorStyles.miniLabel);
+
+        EditorGUILayout.EndScrollView();
+    }
+
+    private void FetchOpenRouterModels()
+    {
+        if (_fetchingModels) return;
+        _fetchingModels = true;
+        _modelFetchError = null;
+        Repaint();
+
+        Task.Run(() =>
+        {
+            try
+            {
+                var wc = new System.Net.WebClient();
+                wc.Headers["User-Agent"] = "unity-ai-agent/1.0";
+                // Public endpoint — no auth needed to list models.
+                string json = wc.DownloadString("https://openrouter.ai/api/v1/models");
+                ParseOpenRouterModels(json);
+            }
+            catch (Exception ex)
+            {
+                _modelFetchError = ex.Message;
+            }
+            finally
+            {
+                _fetchingModels = false;
+                // Must repaint on the main thread — schedule via EditorApplication.
+                EditorApplication.delayCall += Repaint;
+            }
+        });
+    }
+
+    private void ParseOpenRouterModels(string json)
+    {
+        try
+        {
+            var root = StandaloneRouteHandler.MiniJson.Deserialize(json);
+            var dataList = root.ContainsKey("data") ? root["data"] as List<object> : null;
+            if (dataList == null) return;
+
+            var ids   = new List<string>();
+            var names = new List<string>();
+
+            foreach (var item in dataList)
+            {
+                var model = item as Dictionary<string, object>;
+                if (model == null) continue;
+                string id   = model.ContainsKey("id")   ? model["id"]?.ToString()   : null;
+                string name = model.ContainsKey("name") ? model["name"]?.ToString() : null;
+                if (string.IsNullOrEmpty(id)) continue;
+                ids.Add(id);
+                names.Add(string.IsNullOrEmpty(name) ? id : name);
+            }
+
+            // Sort: free models first (":free" suffix), then alphabetically by id.
+            var sorted = ids
+                .Select((id, i) => (id, name: names[i]))
+                .OrderBy(m => m.id.EndsWith(":free") ? 0 : 1)
+                .ThenBy(m => m.id)
+                .ToList();
+
+            _fetchedModels     = sorted.Select(m => m.id).ToArray();
+            _fetchedModelNames = sorted.Select(m => m.name).ToArray();
+        }
+        catch (Exception ex)
+        {
+            _modelFetchError = "Parse error: " + ex.Message;
+        }
+    }
+
+    // ── End model picker ──────────────────────────────────────────────────────
 
     private string GetAgentConfigPath()
     {
