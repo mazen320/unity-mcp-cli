@@ -52,6 +52,18 @@ If you want the shortest description, it is this:
 | File IPC | fastest local agent loop, debugging, standalone-first workflows, zero-config setup | no | no |
 | Plugin HTTP | full advanced Unity route surface today | yes | yes |
 
+## Hero Workflows
+
+The public surface should stay tighter than the internal tool catalog. These are the workflows that matter most:
+
+- `inspect project` — collect live Unity state plus disk-side project guidance and asset signals
+- `improve project` — run the bounded hygiene pass and report score delta, applied fixes, and skipped fixes
+- `quality score` / `expert audit` — score the project through specialist lenses like `systems`, `physics`, `animation`, `tech-art`, and `ui`
+- `debug doctor` — turn Unity failures into actionable likely causes and next steps
+- `benchmark report` / `benchmark compare` — generate before/after evidence for GitHub, demos, and regression tracking
+
+That is the main product loop today: inspect, improve, verify, and prove what changed.
+
 ## What This Repo Already Does
 
 - discovers running Unity editors or standalone File IPC projects
@@ -81,12 +93,20 @@ That makes it the best route for the future "ask the agent to build something in
 ## Architecture In One Glance
 
 ```text
-Prompt -> agent -> cli-anything-unity-mcp -> File IPC or plugin HTTP -> Unity
+Prompt -> router/planner -> workflow executor -> verifier -> File IPC or plugin HTTP -> Unity
 ```
 
 Today:
 - **File IPC** is the preferred standalone path for fast core editor control and agent iteration
 - **plugin HTTP** is the compatibility path for broader advanced coverage
+
+Inside the product, the intended agent stack is:
+
+- **Router / planner** — understand the user request and decide whether it should become a direct tool call, a bounded workflow, or a deeper model-planned task
+- **Workflow executor** — run the real Unity work through the CLI/workflow layer instead of freeform chat magic
+- **Verifier** — compile, inspect, capture, benchmark, and report what actually changed
+
+This is the main design choice behind the repo: not one giant “smart” chat agent, but a grounded Unity developer loop.
 
 ## What Makes This Different
 
@@ -241,6 +261,27 @@ cli-anything-unity-mcp --json --developer-profile caveman debug doctor --port <p
 ```
 
 If no developer profile is selected, the CLI resolves to `normal`. Non-default developer profiles also show up in CLI status output and can label Unity-side trace breadcrumbs more clearly during active sessions.
+
+## In-Editor Agent
+
+The Unity `Agent` tab is not just a transport log anymore. The current direction is:
+
+- **LLM-first for open-ended requests**
+- **workflow-first for execution**
+- **evidence-first for results**
+
+The bridge now reports whether an LLM provider is available and which model is selected. Model selection is project-local through `.umcp/agent-config.json`, and the Unity Agent settings can write that file for you.
+
+Current project-local bridge config shape:
+
+```json
+{
+  "preferredProvider": "auto",
+  "preferredModel": "gpt-5-codex"
+}
+```
+
+Use `auto` for provider when you just want the bridge to choose whichever supported provider is configured in the process environment.
 
 ## Using This With Codex
 

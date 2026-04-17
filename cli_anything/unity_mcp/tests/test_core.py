@@ -2196,6 +2196,32 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_bridge_status_reports_selected_model_from_agent_config(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / ".umcp").mkdir(parents=True, exist_ok=True)
+            (project / ".umcp" / "agent-config.json").write_text(
+                json.dumps({"preferredProvider": "openai", "preferredModel": "gpt-5-codex"}),
+                encoding="utf-8",
+            )
+
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+                bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+                bridge.write_status("idle", 0, 0, "")
+
+            status_path = project / ".umcp" / "agent-status.json"
+            payload = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["llmProvider"], "OpenAI")
+            self.assertEqual(payload["llmModel"], "gpt-5-codex")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_bridge_idle_poll_refreshes_status_heartbeat(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "MyProject"

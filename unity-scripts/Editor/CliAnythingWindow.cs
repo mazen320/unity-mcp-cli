@@ -77,9 +77,12 @@ public class CliAnythingWindow : EditorWindow
     private bool    _agentAutoStartOnSend = true;
     private string  _agentHarnessRoot = "";
     private string  _agentPythonLauncher = "";
+    private string  _agentPreferredProvider = "auto";
+    private string  _agentPreferredModel = "";
     private string  _agentLastLaunchCommand = "";
     private int     _agentBridgePid;
     private double  _agentLaunchPendingUntil;
+    private static readonly string[] AgentProviderOptions = { "auto", "openai", "anthropic" };
 
     private const string AgentHarnessRootPrefKey   = "CliAnything.AgentBridge.HarnessRoot";
     private const string AgentPythonPrefKey        = "CliAnything.AgentBridge.PythonLauncher";
@@ -113,6 +116,7 @@ public class CliAnythingWindow : EditorWindow
         public int    pid;
         public bool   llmAvailable;
         public string llmProvider;
+        public string llmModel;
     }
 
     private struct AgentBridgeLauncher
@@ -348,6 +352,7 @@ public class CliAnythingWindow : EditorWindow
                     pid          = data.ContainsKey("pid")           ? Convert.ToInt32(data["pid"]) : 0,
                     llmAvailable = data.ContainsKey("llmAvailable")  && Convert.ToBoolean(data["llmAvailable"]),
                     llmProvider  = data.ContainsKey("llmProvider")   ? data["llmProvider"]?.ToString() ?? "" : "",
+                    llmModel     = data.ContainsKey("llmModel")      ? data["llmModel"]?.ToString() ?? "" : "",
                 };
                 _agentBridgeLive = (DateTime.UtcNow - File.GetLastWriteTimeUtc(statusPath)).TotalSeconds < 30.0;
                 _agentBridgePid = _agentStatus.pid;
@@ -470,6 +475,8 @@ public class CliAnythingWindow : EditorWindow
             ? $"● {_agentStatus.llmProvider}"
             : "● LLM Off";
         GUILayout.Label(llmLabel, EditorStyles.miniLabel, GUILayout.Width(90));
+        if (_agentStatus.llmAvailable && !string.IsNullOrEmpty(_agentStatus.llmModel))
+            GUILayout.Label(_agentStatus.llmModel, EditorStyles.miniLabel, GUILayout.Width(120));
         GUI.color = prevColor;
 
         if (_agentStatus.state == "executing" && _agentStatus.totalSteps > 0)
@@ -521,7 +528,7 @@ public class CliAnythingWindow : EditorWindow
 
         // ── Chat history ──────────────────────────────────────────────────
         float inputHeight = 128f;
-        float settingsHeight = _showAgentBridgeSettings ? 132f : 0f;
+        float settingsHeight = _showAgentBridgeSettings ? 176f : 0f;
         bool hasImproveProjectReport = TryGetLatestImproveProjectMessage(out var improveProjectMessage);
         float improveProjectHeight = hasImproveProjectReport ? 174f : 0f;
         float chatHeight = Mathf.Max(120f, position.height - 80f - inputHeight - settingsHeight - improveProjectHeight);
@@ -990,8 +997,22 @@ public class CliAnythingWindow : EditorWindow
         }
         EditorGUILayout.EndHorizontal();
 
+        int providerIndex = Array.IndexOf(AgentProviderOptions, string.IsNullOrEmpty(_agentPreferredProvider) ? "auto" : _agentPreferredProvider);
+        if (providerIndex < 0) providerIndex = 0;
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("Provider", GUILayout.Width(88));
+        providerIndex = EditorGUILayout.Popup(providerIndex, AgentProviderOptions);
+        _agentPreferredProvider = AgentProviderOptions[Mathf.Clamp(providerIndex, 0, AgentProviderOptions.Length - 1)];
+        EditorGUILayout.EndHorizontal();
+
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("Model", GUILayout.Width(88));
+        _agentPreferredModel = EditorGUILayout.TextField(_agentPreferredModel);
+        EditorGUILayout.EndHorizontal();
+
         _agentAutoStartOnSend = EditorGUILayout.ToggleLeft("Auto-start bridge when sending while offline", _agentAutoStartOnSend);
         EditorGUILayout.LabelField("Launcher examples: py -3.12, py -3.11, python, or a full python.exe path.", EditorStyles.miniLabel);
+        EditorGUILayout.LabelField("Model examples: gpt-5-codex, gpt-5.4, gpt-5.4-mini, claude-haiku-4-5-20251001.", EditorStyles.miniLabel);
 
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("Save Settings", EditorStyles.miniButton, GUILayout.Width(92)))
@@ -1020,6 +1041,7 @@ public class CliAnythingWindow : EditorWindow
             _agentHarnessRoot = TryDiscoverHarnessRoot();
         if (string.IsNullOrWhiteSpace(_agentPythonLauncher))
             _agentPythonLauncher = "py -3.12";
+        LoadAgentModelConfig();
     }
 
     private void SaveAgentBridgeSettings()
@@ -1028,6 +1050,55 @@ public class CliAnythingWindow : EditorWindow
         EditorPrefs.SetString(AgentPythonPrefKey, _agentPythonLauncher ?? "");
         EditorPrefs.SetBool(AgentAutoStartPrefKey, _agentAutoStartOnSend);
         EditorPrefs.SetString(AgentLastLaunchPrefKey, _agentLastLaunchCommand ?? "");
+        SaveAgentModelConfig();
+    }
+
+    private string GetAgentConfigPath()
+    {
+        string projectRoot = Path.GetDirectoryName(Application.dataPath);
+        return Path.Combine(projectRoot, ".umcp", "agent-config.json");
+    }
+
+    private void LoadAgentModelConfig()
+    {
+        _agentPreferredProvider = "auto";
+        _agentPreferredModel = "";
+        string configPath = GetAgentConfigPath();
+        if (!File.Exists(configPath))
+            return;
+        try
+        {
+            string raw = File.ReadAllText(configPath);
+            var data = StandaloneRouteHandler.MiniJson.Deserialize(raw);
+            _agentPreferredProvider = data.ContainsKey("preferredProvider")
+                ? (data["preferredProvider"]?.ToString() ?? "auto").ToLowerInvariant()
+                : "auto";
+            _agentPreferredModel = data.ContainsKey("preferredModel")
+                ? data["preferredModel"]?.ToString() ?? ""
+                : "";
+            if (Array.IndexOf(AgentProviderOptions, _agentPreferredProvider) < 0)
+                _agentPreferredProvider = "auto";
+        }
+        catch { }
+    }
+
+    private void SaveAgentModelConfig()
+    {
+        try
+        {
+            string configPath = GetAgentConfigPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(configPath) ?? "");
+            var payload = new Dictionary<string, object>
+            {
+                { "preferredProvider", string.IsNullOrWhiteSpace(_agentPreferredProvider) ? "auto" : _agentPreferredProvider },
+                { "preferredModel", (_agentPreferredModel ?? "").Trim() },
+            };
+            File.WriteAllText(configPath, StandaloneRouteHandler.MiniJson.Serialize(payload));
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[Agent] Failed to save agent-config.json: " + ex.Message);
+        }
     }
 
     private bool TryLaunchAgentBridge(bool userInitiated)

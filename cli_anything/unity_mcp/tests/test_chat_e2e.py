@@ -260,6 +260,43 @@ class ChatE2ETests(unittest.TestCase):
             assert "Unity Project Context" in kwargs["context_prompt"]
             assert "Keep URP and avoid demo residue." in kwargs["context_prompt"]
 
+    def test_try_model_backed_plan_uses_project_selected_model(self):
+        """Model-backed planning should respect the project agent-config model selection."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            umcp = project / ".umcp"
+            umcp.mkdir(parents=True, exist_ok=True)
+            (umcp / "agent-config.json").write_text(
+                '{"preferredProvider":"openai","preferredModel":"gpt-5-codex"}',
+                encoding="utf-8",
+            )
+
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: Demo"
+
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[{"step": 1, "description": "Create player", "route": "gameobject/create", "params": {}}],
+                ) as generate_plan:
+                    with patch("cli_anything.unity_mcp.core.agent_chat.AgentLoop") as loop_cls:
+                        loop_cls.return_value.execute.return_value = []
+
+                        assistant._try_model_backed_plan("create a player controller for the active scene")
+
+            kwargs = generate_plan.call_args.kwargs
+            assert kwargs["model"] == "gpt-5-codex"
+
     def test_capture_after_action_invalidates_cached_context(self):
         """Scene captures should invalidate cached context before reading proof artifacts."""
         from unittest.mock import MagicMock

@@ -246,11 +246,44 @@ public class PlayerMovement : MonoBehaviour
         return str(scene.get("name") or "unknown")
 
     def _configured_model_provider(self) -> str | None:
+        preferred = self._preferred_provider()
+        if preferred == "openai" and os.environ.get("OPENAI_API_KEY"):
+            return "OpenAI"
+        if preferred == "anthropic" and os.environ.get("ANTHROPIC_API_KEY"):
+            return "Anthropic"
         if os.environ.get("OPENAI_API_KEY"):
             return "OpenAI"
         if os.environ.get("ANTHROPIC_API_KEY"):
             return "Anthropic"
         return None
+
+    def _selected_model(self) -> str | None:
+        model = self._load_agent_config().get("preferredModel")
+        if model:
+            return str(model).strip() or None
+        provider = self._configured_model_provider()
+        if provider == "OpenAI":
+            return "gpt-5-codex"
+        if provider == "Anthropic":
+            return "claude-haiku-4-5-20251001"
+        return None
+
+    def _preferred_provider(self) -> str | None:
+        provider = self._load_agent_config().get("preferredProvider")
+        normalized = str(provider or "").strip().lower()
+        if normalized in {"openai", "anthropic"}:
+            return normalized
+        return None
+
+    def _load_agent_config(self) -> dict[str, Any]:
+        config_path = self.bridge.project_path / ".umcp" / "agent-config.json"
+        if not config_path.exists():
+            return {}
+        try:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return dict(raw) if isinstance(raw, dict) else {}
 
     def _recent_history(self, limit: int = 6) -> list[dict[str, str]]:
         entries = list(getattr(self.bridge, "_history", []) or [])
@@ -1660,7 +1693,7 @@ public class PlayerMovement : MonoBehaviour
         self._set_status("Planning task with model")
         steps = _generate_plan_from_intent(
             content,
-            model=None,
+            model=self._selected_model(),
             context_prompt=self._model_context_prompt(),
             history=self._recent_history(),
         )
@@ -2002,7 +2035,8 @@ class ChatBridge:
     def _write_status(self, state: str, current: int, total: int, action: str) -> None:
         try:
             self._status_path.parent.mkdir(parents=True, exist_ok=True)
-            llm_provider = "OpenAI" if os.environ.get("OPENAI_API_KEY") else "Anthropic" if os.environ.get("ANTHROPIC_API_KEY") else None
+            llm_provider = self._assistant._configured_model_provider()
+            llm_model = self._assistant._selected_model() if llm_provider else None
             payload = {
                 "state": state,
                 "currentStep": current,
@@ -2012,6 +2046,7 @@ class ChatBridge:
                 "projectPath": str(self.project_path),
                 "llmAvailable": bool(llm_provider),
                 "llmProvider": llm_provider,
+                "llmModel": llm_model,
                 "lastUpdated": datetime.now(timezone.utc).isoformat(),
             }
             tmp = self._status_path.with_suffix(".tmp")
