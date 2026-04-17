@@ -39,7 +39,10 @@ jobs:
           cli_anything.unity_mcp.tests.test_coverage
           cli_anything.unity_mcp.tests.test_file_ipc
           cli_anything.unity_mcp.tests.test_heuristics
+          cli_anything.unity_mcp.tests.test_learning_ledger
           cli_anything.unity_mcp.tests.test_memory
+          cli_anything.unity_mcp.tests.test_physics_feel
+          cli_anything.unity_mcp.tests.test_skills_base
           cli_anything.unity_mcp.tests.test_chat_e2e
           cli_anything.unity_mcp.tests.test_full_e2e
           -v

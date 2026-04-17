@@ -38,7 +38,8 @@ As of 2026-04-14:
 - Added a bounded File IPC `physics/set-gravity` route in `StandaloneRouteHandler.cs` so the specialist flow can apply gravity changes honestly instead of faking the result.
 - Physics-feel applies now write before/after Game-view captures under `.umcp/captures/physics-feel/`.
 - Added a minimal append-only local run ledger in `.umcp/ledger/runs.jsonl`, and physics-feel applies now log chosen action, before/after values, capture paths, and failure state there.
-- Immediate next specialist-skill task: live-verify the anchor demo in Unity, then decide whether `animation` or `ui` should be the next Stage 2/3 skill template.
+- Added `docs/skills/WRITING_A_SKILL.md` so the next specialist skill can clone the same audit → propose → apply → capture → ledger → docs pattern without reverse-engineering the physics-feel commits.
+- Immediate next specialist-skill task: live-verify the anchor demo in Unity, then use `docs/skills/WRITING_A_SKILL.md` to choose one next Stage 2/3 skill template: `animation` or `ui`.
 
 ## Latest CLI Layer Pass
 

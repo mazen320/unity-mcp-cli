@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **specialist-skill contributor guide** — added `docs/skills/WRITING_A_SKILL.md`, which turns the physics-feel anchor into a reusable contributor template: standard files, commit order, required tests, CI expectations, live-verification checklist, and the common failure modes to avoid when cloning the next skill.
 - **physics-feel specialist skill anchor** — added `core/skills/physics_feel.py` as the first Phase 4 specialist-skill path. It audits floatiness from live project context, proposes three tuning paths with real tradeoffs, applies bounded Rigidbody/gravity changes, captures before/after proof, and logs the run to the new local learning ledger.
 - **physics-feel chat routing** — the offline Unity Agent path now recognizes requests like `my player feels floaty`, returns diagnosis plus three numbered tuning paths, and supports follow-up `apply 1`, `apply 2`, or `apply 3` replies instead of dropping that request into generic freeform fallback.
 - **bounded File IPC gravity route** — Standalone File IPC now exposes `physics/set-gravity`, which lets specialist physics flows apply global gravity changes honestly through the same local bridge path instead of pretending the value changed.

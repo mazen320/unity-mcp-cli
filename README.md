@@ -65,6 +65,8 @@ The public surface should stay tighter than the internal tool catalog. These are
 
 That is the main product loop today: inspect, improve, verify, and prove what changed.
 
+The physics-feel path is also the first contributor template for Phase 4 specialist skills. If you are cloning that shape for `animation`, `ui`, or another domain, start with [docs/skills/WRITING_A_SKILL.md](docs/skills/WRITING_A_SKILL.md).
+
 ## What This Repo Already Does
 
 - discovers running Unity editors or standalone File IPC projects
