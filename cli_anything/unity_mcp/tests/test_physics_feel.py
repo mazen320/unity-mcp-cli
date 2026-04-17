@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 
 from cli_anything.unity_mcp.core.skills import ProjectContext
@@ -389,6 +390,15 @@ def test_apply_physics_feel_updates_values_and_writes_before_after_capture(tmp_p
         path = Path(capture_path)
         assert path.exists()
         assert path.suffix == ".png"
+    ledger_path = tmp_path / ".umcp" / "ledger" / "runs.jsonl"
+    assert ledger_path.exists()
+    entries = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert entries[-1]["skill"] == "physics_feel"
+    assert entries[-1]["chosen_action"] == "physics_feel/snappy"
     assert [route for route, _ in bridge.client.calls] == [
         "graphics/game-capture",
         "physics/set-gravity",

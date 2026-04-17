@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ..expert_lenses import grade_score
+from ..learning import append_run
 from .base import (
     ActionOutcome,
     AuditFinding,
@@ -508,12 +509,12 @@ def _bridge_call_route(bridge: Any, route: str, params: dict[str, Any]) -> dict[
 
 
 def _project_root_from_bridge(bridge: Any, action: ProposedAction) -> Path:
-    preview_path = str(action.preview.get("project_path") or "").strip()
-    if preview_path:
-        return Path(preview_path)
     bridge_path = getattr(bridge, "project_path", None) or getattr(bridge, "project_root", None)
     if bridge_path:
         return Path(bridge_path)
+    preview_path = str(action.preview.get("project_path") or "").strip()
+    if preview_path:
+        return Path(preview_path)
     return Path.cwd()
 
 
@@ -587,7 +588,7 @@ def apply_physics_feel(action: ProposedAction, bridge: Any) -> ActionOutcome:
         if after_capture.path:
             captures.append(after_capture.path)
     except Exception as exc:
-        return ActionOutcome(
+        outcome = ActionOutcome(
             action_id=action.action_id,
             applied=False,
             before=before,
@@ -595,6 +596,20 @@ def apply_physics_feel(action: ProposedAction, bridge: Any) -> ActionOutcome:
             captures=[],
             error=str(exc),
         )
+        append_run(
+            project_root,
+            {
+                "skill": "physics_feel",
+                "request": "physics feel apply",
+                "chosen_action": action.action_id,
+                "before": before,
+                "after": before,
+                "captures": [],
+                "applied": False,
+                "error": outcome.error,
+            },
+        )
+        return outcome
 
     if "jump_power_mult" in action.preview:
         notes.append(
@@ -606,7 +621,7 @@ def apply_physics_feel(action: ProposedAction, bridge: Any) -> ActionOutcome:
         "gravity_y": float(action.preview.get("gravity_y", before["gravity_y"])),
         "drag": float(action.preview.get("drag", before["drag"])),
     }
-    return ActionOutcome(
+    outcome = ActionOutcome(
         action_id=action.action_id,
         applied=True,
         before=before,
@@ -615,6 +630,21 @@ def apply_physics_feel(action: ProposedAction, bridge: Any) -> ActionOutcome:
         error=None,
         notes=notes,
     )
+    append_run(
+        project_root,
+        {
+            "skill": "physics_feel",
+            "request": "physics feel apply",
+            "chosen_action": action.action_id,
+            "before": before,
+            "after": after,
+            "captures": captures,
+            "applied": True,
+            "error": None,
+            "notes": notes,
+        },
+    )
+    return outcome
 
 
 # --------------------------------------------------------------------------- #
