@@ -1920,8 +1920,46 @@ class ChatBridge:
 
     # ── Public API ────────────────────────────────────────────────────────
 
+    def _check_single_instance(self) -> bool:
+        """Return True if this process may run; False if another bridge is already live."""
+        try:
+            if not self._status_path.exists():
+                return True
+            raw = self._status_path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+            other_pid = int(data.get("pid") or 0)
+            if other_pid == os.getpid():
+                return True
+            # Check staleness — if status is > 10 s old the other process is gone.
+            last_mtime = self._status_path.stat().st_mtime
+            if (time.time() - last_mtime) > 10.0:
+                return True
+            # Try to see if that PID is actually running.
+            try:
+                os.kill(other_pid, 0)  # signal 0 = existence check, no-op on Windows
+                is_running = True
+            except (OSError, SystemError):
+                is_running = False
+            return not is_running
+        except Exception:
+            return True
+
     def run(self) -> None:
         """Block and process messages until stopped."""
+        if not self._check_single_instance():
+            import sys
+            pid_hint = ""
+            try:
+                data = json.loads(self._status_path.read_text(encoding="utf-8"))
+                pid_hint = f" (PID {data.get('pid', '?')})"
+            except Exception:
+                pass
+            print(
+                f"[agent-chat] Another bridge is already running{pid_hint}. "
+                "Stop it first or wait for it to become stale.",
+                file=sys.stderr,
+            )
+            return
         self._running = True
         self._ensure_ready()
         if self._watchdog_interval > 0:

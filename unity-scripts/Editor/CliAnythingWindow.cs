@@ -354,41 +354,52 @@ public class CliAnythingWindow : EditorWindow
         string pingPath = Path.Combine(_agentUmcpRoot, "ping.json");
         _agentConnected = File.Exists(pingPath) && (DateTime.UtcNow - File.GetLastWriteTimeUtc(pingPath)).TotalSeconds < 10.0;
 
-        // Read agent-status.json
+        // Read agent-status.json — use sticky semantics: only clear on confirmed stale (>30 s).
         string statusPath = Path.Combine(_agentUmcpRoot, "agent-status.json");
         _agentBridgeLive = false;
         _agentStatusSummary = "";
-        if (File.Exists(statusPath))
+        bool statusFileExists = File.Exists(statusPath);
+        if (statusFileExists)
         {
             try
             {
                 string raw = File.ReadAllText(statusPath);
                 var data = StandaloneRouteHandler.MiniJson.Deserialize(raw);
-                _agentStatus = new AgentStatus
+                // Only accept the read if it contains at least a "state" key (guard against empty tmp-rename window).
+                if (data != null && data.ContainsKey("state"))
                 {
-                    state        = data.ContainsKey("state")         ? data["state"]?.ToString()        ?? "" : "",
-                    currentStep  = data.ContainsKey("currentStep")   ? Convert.ToInt32(data["currentStep"])  : 0,
-                    totalSteps   = data.ContainsKey("totalSteps")    ? Convert.ToInt32(data["totalSteps"])   : 0,
-                    currentAction= data.ContainsKey("currentAction") ? data["currentAction"]?.ToString() ?? "" : "",
-                    pid          = data.ContainsKey("pid")           ? Convert.ToInt32(data["pid"]) : 0,
-                    llmAvailable = data.ContainsKey("llmAvailable")  && Convert.ToBoolean(data["llmAvailable"]),
-                    llmProvider  = data.ContainsKey("llmProvider")   ? data["llmProvider"]?.ToString() ?? "" : "",
-                    llmModel     = data.ContainsKey("llmModel")      ? data["llmModel"]?.ToString() ?? "" : "",
-                };
+                    _agentStatus = new AgentStatus
+                    {
+                        state        = data.ContainsKey("state")         ? data["state"]?.ToString()        ?? "" : "",
+                        currentStep  = data.ContainsKey("currentStep")   ? Convert.ToInt32(data["currentStep"])  : 0,
+                        totalSteps   = data.ContainsKey("totalSteps")    ? Convert.ToInt32(data["totalSteps"])   : 0,
+                        currentAction= data.ContainsKey("currentAction") ? data["currentAction"]?.ToString() ?? "" : "",
+                        pid          = data.ContainsKey("pid")           ? Convert.ToInt32(data["pid"]) : 0,
+                        llmAvailable = data.ContainsKey("llmAvailable")  && Convert.ToBoolean(data["llmAvailable"]),
+                        llmProvider  = data.ContainsKey("llmProvider")   ? data["llmProvider"]?.ToString() ?? "" : "",
+                        llmModel     = data.ContainsKey("llmModel")      ? data["llmModel"]?.ToString() ?? "" : "",
+                    };
+                    _agentBridgePid = _agentStatus.pid;
+                }
                 _agentBridgeLive = (DateTime.UtcNow - File.GetLastWriteTimeUtc(statusPath)).TotalSeconds < 30.0;
-                _agentBridgePid = _agentStatus.pid;
                 if (_agentBridgeLive)
                     _agentLaunchPendingUntil = 0;
                 _agentStatusSummary = _agentBridgeLive
                     ? ("Chat bridge " + (_agentStatus.state == "" ? "ready" : _agentStatus.state) + (_agentBridgePid > 0 ? $" (PID {_agentBridgePid})" : ""))
                     : "Chat bridge stale";
             }
-            catch { }
+            catch { /* keep last known good _agentStatus */ }
         }
         else
         {
-            _agentStatus = new AgentStatus();
-            _agentBridgePid = 0;
+            // Only wipe status if the file has been missing long enough that no bridge is running.
+            // A brief absence during atomic tmp→rename should not cause a flash to "LLM Off".
+            double staleSecs = (DateTime.UtcNow - File.GetLastWriteTimeUtc(statusPath)).TotalSeconds;
+            if (staleSecs > 30.0)
+            {
+                _agentStatus = new AgentStatus();
+                _agentBridgePid = 0;
+            }
             _agentStatusSummary = "Chat bridge offline";
         }
 
