@@ -1915,6 +1915,7 @@ class ChatBridge:
         self._watchdog_thread: threading.Thread | None = None
         self._watchdog_running = False
         self._watchdog_surfaced: set[str] = set()  # finding titles already shown this session
+        self._project_env_mtime: float = 0.0
         self._project_env_loaded_keys = self._load_project_env()
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -2202,7 +2203,34 @@ class ChatBridge:
                 continue
             os.environ[key] = value
             loaded.add(key)
+        self._project_env_mtime: float = (
+            self._project_env_path.stat().st_mtime
+            if self._project_env_path.exists() else 0.0
+        )
         return loaded
+
+    def _reload_project_env_if_changed(self) -> None:
+        """Re-read agent.env when its mtime changes (e.g. user saved a new API key)."""
+        try:
+            mtime = (
+                self._project_env_path.stat().st_mtime
+                if self._project_env_path.exists() else 0.0
+            )
+        except Exception:
+            return
+        if mtime <= self._project_env_mtime:
+            return
+        # File changed — reload all keys, overwriting even previously set values.
+        parsed = _parse_project_env_file(self._project_env_path)
+        loaded: set[str] = set()
+        for key in _PROJECT_ENV_KEYS:
+            value = parsed.get(key)
+            if not value:
+                continue
+            os.environ[key] = value
+            loaded.add(key)
+        self._project_env_loaded_keys = loaded
+        self._project_env_mtime = mtime
 
     def _llm_config_source(self, llm_provider: str | None) -> str | None:
         if llm_provider == "OpenAI":
@@ -2224,6 +2252,7 @@ class ChatBridge:
 
     def _write_status(self, state: str, current: int, total: int, action: str) -> None:
         try:
+            self._reload_project_env_if_changed()
             self._status_path.parent.mkdir(parents=True, exist_ok=True)
             llm_provider = self._assistant._configured_model_provider()
             llm_model = self._assistant._selected_model() if llm_provider else None
