@@ -18,13 +18,18 @@ standalone File IPC and plugin HTTP transports.
 """
 from __future__ import annotations
 
+import base64
 from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from ..expert_lenses import grade_score
 from .base import (
+    ActionOutcome,
     AuditFinding,
     AuditResult,
+    ProofArtifact,
     ProjectContext,
     ProposedAction,
 )
@@ -280,6 +285,7 @@ def audit_physics_feel(context: ProjectContext) -> AuditResult:
         "contextAvailable": True,
         "playerFound": player_node is not None,
         "playerPath": _node_label(player_node) if player_node else None,
+        "projectPath": context.project_path,
         "gravityY": gravity_y,
         "tuning": tuning,
     }
@@ -419,6 +425,8 @@ def propose_physics_feel_tuning(
     """
     summary = audit.summary or {}
     gravity_y = float(summary.get("gravityY", _DEFAULT_GRAVITY_Y))
+    player_path = str(summary.get("playerPath") or "")
+    project_path = str(summary.get("projectPath") or "")
     tuning = summary.get("tuning") if isinstance(summary.get("tuning"), dict) else {}
     drag = float(tuning.get("drag") if tuning.get("drag") is not None else 0.0)
 
@@ -431,7 +439,14 @@ def propose_physics_feel_tuning(
                 "The player reaches the apex sooner and falls harder, which reads as responsive "
                 "and precise. Tradeoff: less hangtime for corrective air movement."
             ),
-            preview={"gravity_y": -25.0, "drag": drag},
+            preview={
+                "player_path": player_path,
+                "project_path": project_path,
+                "current_gravity_y": gravity_y,
+                "current_drag": drag,
+                "gravity_y": -25.0,
+                "drag": drag,
+            },
             reversible=True,
         ),
         ProposedAction(
@@ -443,7 +458,14 @@ def propose_physics_feel_tuning(
                 "so movement reads heavier and more intentional. Tradeoff: horizontal air moves "
                 "feel lower-energy."
             ),
-            preview={"gravity_y": gravity_y, "drag": 2.0},
+            preview={
+                "player_path": player_path,
+                "project_path": project_path,
+                "current_gravity_y": gravity_y,
+                "current_drag": drag,
+                "gravity_y": gravity_y,
+                "drag": 2.0,
+            },
             reversible=True,
         ),
         ProposedAction(
@@ -455,10 +477,142 @@ def propose_physics_feel_tuning(
                 "arcade bounce. Tradeoff: if you rely on global Physics.gravity, every other "
                 "Rigidbody in the scene falls faster too."
             ),
-            preview={"gravity_y": -30.0, "drag": drag, "jump_power_mult": 1.4},
+            preview={
+                "player_path": player_path,
+                "project_path": project_path,
+                "current_gravity_y": gravity_y,
+                "current_drag": drag,
+                "gravity_y": -30.0,
+                "drag": drag,
+                "jump_power_mult": 1.4,
+            },
             reversible=True,
         ),
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Apply + proof                                                               #
+# --------------------------------------------------------------------------- #
+
+
+def _bridge_client(bridge: Any) -> Any:
+    client = getattr(bridge, "client", None)
+    return client if client is not None else bridge
+
+
+def _bridge_call_route(bridge: Any, route: str, params: dict[str, Any]) -> dict[str, Any]:
+    client = _bridge_client(bridge)
+    result = client.call_route(route, params)
+    return dict(result or {})
+
+
+def _project_root_from_bridge(bridge: Any, action: ProposedAction) -> Path:
+    preview_path = str(action.preview.get("project_path") or "").strip()
+    if preview_path:
+        return Path(preview_path)
+    bridge_path = getattr(bridge, "project_path", None) or getattr(bridge, "project_root", None)
+    if bridge_path:
+        return Path(bridge_path)
+    return Path.cwd()
+
+
+def _capture_dir(project_root: Path) -> Path:
+    target = project_root / ".umcp" / "captures" / "physics-feel"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def capture_proof(bridge: Any, tag: str, *, project_root: Path) -> ProofArtifact:
+    """Capture a single Game view proof image and persist it locally."""
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+    output_path = _capture_dir(project_root) / f"{stamp}-{tag}.png"
+    result = _bridge_call_route(bridge, "graphics/game-capture", {"width": 960, "height": 540})
+    encoded = str(result.get("base64") or "").strip()
+    if not encoded:
+        raise ValueError("graphics/game-capture did not return image data.")
+    output_path.write_bytes(base64.b64decode(encoded))
+    return ProofArtifact(
+        kind=f"screenshot-{tag}",
+        path=str(output_path),
+        data={
+            "tag": tag,
+            "width": int(result.get("width") or 960),
+            "height": int(result.get("height") or 540),
+        },
+    )
+
+
+def apply_physics_feel(action: ProposedAction, bridge: Any) -> ActionOutcome:
+    """Apply one bounded tuning path via existing physics routes."""
+    player_path = str(action.preview.get("player_path") or "").strip()
+    if not player_path:
+        return ActionOutcome(
+            action_id=action.action_id,
+            applied=False,
+            before={},
+            after={},
+            captures=[],
+            error="No player path was available for this physics-feel action.",
+        )
+
+    before = {
+        "player_path": player_path,
+        "gravity_y": float(action.preview.get("current_gravity_y", _DEFAULT_GRAVITY_Y)),
+        "drag": float(action.preview.get("current_drag", 0.0)),
+    }
+    project_root = _project_root_from_bridge(bridge, action)
+    captures: list[str] = []
+    notes: list[str] = []
+
+    try:
+        before_capture = capture_proof(bridge, "before", project_root=project_root)
+        if before_capture.path:
+            captures.append(before_capture.path)
+
+        payload: dict[str, Any] = {
+            "gameObject": player_path,
+            "drag": float(action.preview.get("drag", before["drag"])),
+        }
+        if "useGravity" in action.preview:
+            payload["useGravity"] = bool(action.preview["useGravity"])
+        if "mass" in action.preview:
+            payload["mass"] = float(action.preview["mass"])
+
+        _bridge_call_route(bridge, "physics/set-rigidbody", payload)
+
+        after_capture = capture_proof(bridge, "after", project_root=project_root)
+        if after_capture.path:
+            captures.append(after_capture.path)
+    except Exception as exc:
+        return ActionOutcome(
+            action_id=action.action_id,
+            applied=False,
+            before=before,
+            after=before,
+            captures=[],
+            error=str(exc),
+        )
+
+    if "jump_power_mult" in action.preview:
+        notes.append(
+            "Jump power multiplier was suggested but not auto-applied yet; this MVP only adjusts Rigidbody tuning."
+        )
+
+    after = {
+        "player_path": player_path,
+        "gravity_y": float(action.preview.get("gravity_y", before["gravity_y"])),
+        "drag": float(action.preview.get("drag", before["drag"])),
+    }
+    return ActionOutcome(
+        action_id=action.action_id,
+        applied=True,
+        before=before,
+        after=after,
+        captures=captures,
+        error=None,
+        notes=notes,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -467,8 +621,10 @@ def propose_physics_feel_tuning(
 
 
 __all__ = [
+    "apply_physics_feel",
     "airtime_estimate",
     "audit_physics_feel",
+    "capture_proof",
     "floatiness_score",
     "propose_physics_feel_tuning",
 ]

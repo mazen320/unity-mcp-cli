@@ -1,8 +1,12 @@
 """Tests for the physics_feel audit (Step 2 of the anchor demo build)."""
 from __future__ import annotations
 
+import base64
+from pathlib import Path
+
 from cli_anything.unity_mcp.core.skills import ProjectContext
 from cli_anything.unity_mcp.core.skills.physics_feel import (
+    apply_physics_feel,
     airtime_estimate,
     audit_physics_feel,
     floatiness_score,
@@ -317,3 +321,101 @@ def test_propose_uses_current_audit_values_in_preview() -> None:
     assert proposals[2].preview["gravity_y"] == -30.0
     assert proposals[2].preview["drag"] == 1.25
     assert proposals[2].preview["jump_power_mult"] == 1.4
+
+
+class _RouteClientStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    def call_route(self, route: str, params: dict) -> dict:
+        self.calls.append((route, dict(params)))
+        if route == "physics/set-rigidbody":
+            return {
+                "success": True,
+                "mass": params.get("mass", 1.0),
+                "useGravity": params.get("useGravity", True),
+            }
+        if route == "graphics/game-capture":
+            payload = base64.b64encode(b"fake-png").decode("ascii")
+            return {"success": True, "base64": payload, "width": 960, "height": 540}
+        raise AssertionError(f"Unexpected route: {route}")
+
+
+class _RouteBridgeStub:
+    def __init__(self, project_path: Path) -> None:
+        self.project_path = project_path
+        self.client = _RouteClientStub()
+
+
+class _ErrorBridgeStub:
+    def __init__(self, project_path: Path) -> None:
+        self.project_path = project_path
+        self.client = self
+
+    def call_route(self, route: str, params: dict) -> dict:
+        raise RuntimeError(f"route failed: {route}")
+
+
+def test_apply_physics_feel_updates_values_and_writes_before_after_capture(tmp_path: Path) -> None:
+    inspect = _inspect_with_nodes(
+        [
+            {
+                "name": "Player",
+                "path": "Player",
+                "components": ["Rigidbody", "CapsuleCollider"],
+                "tuning": {
+                    "drag": 0.0,
+                    "jumpPower": 10.0,
+                },
+            }
+        ]
+    )
+    audit = audit_physics_feel(_ctx(inspect=inspect))
+    action = propose_physics_feel_tuning(audit, "my player feels floaty")[0]
+    bridge = _RouteBridgeStub(tmp_path)
+
+    outcome = apply_physics_feel(action, bridge)
+
+    assert outcome.applied is True
+    assert outcome.before["gravity_y"] == -9.81
+    assert outcome.before["drag"] == 0.0
+    assert outcome.after["gravity_y"] == -25.0
+    assert outcome.after["drag"] == 0.0
+    assert outcome.error is None
+    assert len(outcome.captures) == 2
+    for capture_path in outcome.captures:
+        path = Path(capture_path)
+        assert path.exists()
+        assert path.suffix == ".png"
+    assert [route for route, _ in bridge.client.calls] == [
+        "graphics/game-capture",
+        "physics/set-rigidbody",
+        "graphics/game-capture",
+    ]
+
+
+def test_apply_physics_feel_returns_error_without_partial_capture_on_route_failure(
+    tmp_path: Path,
+) -> None:
+    inspect = _inspect_with_nodes(
+        [
+            {
+                "name": "Player",
+                "path": "Player",
+                "components": ["Rigidbody", "CapsuleCollider"],
+                "tuning": {
+                    "drag": 0.2,
+                    "jumpPower": 9.0,
+                },
+            }
+        ]
+    )
+    audit = audit_physics_feel(_ctx(inspect=inspect))
+    action = propose_physics_feel_tuning(audit, "movement feels wrong")[1]
+    bridge = _ErrorBridgeStub(tmp_path)
+
+    outcome = apply_physics_feel(action, bridge)
+
+    assert outcome.applied is False
+    assert outcome.captures == []
+    assert "route failed" in str(outcome.error)
