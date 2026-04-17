@@ -102,7 +102,7 @@ using UnityEngine;
 
 [RequireComponent(typeof(CharacterController))]
 public class PlayerMovement : MonoBehaviour
-{{
+{
     [SerializeField] private float speed = 5f;
     [SerializeField] private float jumpHeight = 1.5f;
     [SerializeField] private float gravity = -9.81f;
@@ -114,7 +114,7 @@ public class PlayerMovement : MonoBehaviour
     private void Awake() => _controller = GetComponent<CharacterController>();
 
     private void Update()
-    {{
+    {
         _isGrounded = _controller.isGrounded;
         if (_isGrounded && _velocity.y < 0) _velocity.y = -2f;
 
@@ -128,8 +128,8 @@ public class PlayerMovement : MonoBehaviour
 
         _velocity.y += gravity * Time.deltaTime;
         _controller.Move(_velocity * Time.deltaTime);
-    }}
-}}
+    }
+}
 """
 
     def __init__(
