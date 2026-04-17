@@ -174,19 +174,19 @@ _PLAN_SYSTEM_PROMPT = """You are a Unity AI developer assistant. Convert the use
 Each step:
   { "step": N, "description": "...", "route": "route/name", "params": {...}, "onError": "abort"|"continue" }
 
-Available routes:
+Available routes (use EXACT param names shown):
   gameobject/create     (name, primitiveType[Cube|Sphere|Capsule|Cylinder|Plane|Quad|Empty], parent, position{x,y,z})
   gameobject/delete     (name)
-  gameobject/duplicate  (gameObject, name)
-  gameobject/rename     (gameObject, name)
-  gameobject/set-transform (name, position{x,y,z}, rotation{x,y,z}, scale{x,y,z})
-  gameobject/set-tag    (gameObject, tag)
-  gameobject/set-layer  (gameObject, layerName)
-  component/add         (gameObject, component)
-  component/remove      (gameObject, component)
-  component/set-property (gameObject, component, property, value)
-  component/wire-reference (gameObject, component, field, target)
-  script/create         (name, folder, content)
+  gameobject/duplicate  (gameObjectPath, name)
+  gameobject/rename     (gameObjectPath, name)
+  gameobject/set-transform (gameObjectPath, position{x,y,z}, rotation{x,y,z}, scale{x,y,z})
+  gameobject/set-tag    (gameObjectPath, tag)
+  gameobject/set-layer  (gameObjectPath, layerName)
+  component/add         (gameObjectPath, componentType)   ← use exact names: gameObjectPath and componentType
+  component/remove      (gameObjectPath, componentType)
+  component/set-property (gameObjectPath, componentType, property, value)
+  component/wire-reference (gameObjectPath, componentType, field, target)
+  script/create         (path, content)   ← path is the full asset path e.g. "Assets/Scripts/Foo.cs"
   script/update         (path, content)
   material/create       (name, folder, shader)
   material/set-property (path, property, color{r,g,b,a} | value | texture)

@@ -1330,8 +1330,14 @@ public static class StandaloneRouteHandler
 
     private static object HandleComponentAdd(Dictionary<string, object> p)
     {
-        string goPath = GetString(p, "gameObjectPath", GetString(p, "path", ""));
-        string componentType = GetString(p, "componentType", GetString(p, "type", ""));
+        // Accept multiple param name variants so plan-generated, Python and HTTP callers all work.
+        string goPath = GetString(p, "gameObjectPath",
+                        GetString(p, "path",
+                        GetString(p, "gameObject",
+                        GetString(p, "name", ""))));
+        string componentType = GetString(p, "componentType",
+                               GetString(p, "type",
+                               GetString(p, "component", "")));
         var go = FindGameObject(goPath);
         if (go == null)
             return new ErrorResult { error = "GameObject not found: " + goPath };

@@ -1617,8 +1617,8 @@ public class PlayerMovement : MonoBehaviour
         errors: list[str] = []
 
         try:
-            self.bridge.client.call_route("gameobject/create", {"name": name})
-            steps_done.append(f"Created GameObject `{name}`")
+            self.bridge.client.call_route("gameobject/create", {"name": name, "primitiveType": "Capsule"})
+            steps_done.append(f"Created Capsule GameObject `{name}`")
         except Exception as exc:
             errors.append(f"Could not create GameObject: {exc}")
             return "\n".join(errors) + "\n\nMake sure a Unity editor is connected."
@@ -1627,7 +1627,7 @@ public class PlayerMovement : MonoBehaviour
         try:
             self.bridge.client.call_route(
                 "component/add",
-                {"gameObjectName": name, "componentType": "UnityEngine.CharacterController"},
+                {"gameObjectPath": name, "componentType": "UnityEngine.CharacterController"},
             )
             steps_done.append("Added `CharacterController`")
         except Exception as exc:
@@ -1635,27 +1635,42 @@ public class PlayerMovement : MonoBehaviour
 
         self._set_status("Creating PlayerMovement script")
         script_path = "Assets/Scripts/PlayerMovement.cs"
+        script_created = False
         try:
-            result = self._run_embedded_cli([
-                "script", "create",
-                "--name", "PlayerMovement",
-                "--path", script_path,
-                "--content", self._MOVEMENT_SCRIPT_TEMPLATE,
-            ])
+            result = self.bridge.client.call_route(
+                "script/create",
+                {"path": script_path, "content": self._MOVEMENT_SCRIPT_TEMPLATE},
+            )
             actual_path = (result or {}).get("path") or script_path
             steps_done.append(f"Created `{actual_path}`")
+            script_created = True
         except Exception as exc:
             errors.append(f"Script creation: {exc}")
 
         self._set_status("Attaching PlayerMovement to GameObject")
-        try:
-            self.bridge.client.call_route(
-                "component/add",
-                {"gameObjectName": name, "componentType": "PlayerMovement"},
-            )
-            steps_done.append("Attached `PlayerMovement` to GameObject")
-        except Exception as exc:
-            errors.append(f"Script attach: {exc}")
+        if script_created:
+            # Unity must recompile after script/create before component/add can find the type.
+            # Wait briefly then retry a few times.
+            attached = False
+            for attempt in range(4):
+                if attempt > 0:
+                    time.sleep(2.0)
+                try:
+                    self.bridge.client.call_route(
+                        "component/add",
+                        {"gameObjectPath": name, "componentType": "PlayerMovement"},
+                    )
+                    steps_done.append("Attached `PlayerMovement` to GameObject")
+                    attached = True
+                    break
+                except Exception:
+                    pass
+            if not attached:
+                errors.append(
+                    "Script attach: Unity may still be recompiling — "
+                    "open the project in Unity and it should auto-attach on next domain reload, "
+                    "or drag `PlayerMovement` onto the Player in the Inspector."
+                )
 
         self._set_status("Capturing scene")
         capture = self._capture_after_action()
