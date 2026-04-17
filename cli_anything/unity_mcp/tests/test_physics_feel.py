@@ -329,6 +329,8 @@ class _RouteClientStub:
 
     def call_route(self, route: str, params: dict) -> dict:
         self.calls.append((route, dict(params)))
+        if route == "physics/set-gravity":
+            return {"success": True, "gravity": {"y": params.get("y", -9.81)}}
         if route == "physics/set-rigidbody":
             return {
                 "success": True,
@@ -389,6 +391,7 @@ def test_apply_physics_feel_updates_values_and_writes_before_after_capture(tmp_p
         assert path.suffix == ".png"
     assert [route for route, _ in bridge.client.calls] == [
         "graphics/game-capture",
+        "physics/set-gravity",
         "physics/set-rigidbody",
         "graphics/game-capture",
     ]

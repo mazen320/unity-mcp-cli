@@ -574,6 +574,8 @@ def apply_physics_feel(action: ProposedAction, bridge: Any) -> ActionOutcome:
             "gameObject": player_path,
             "drag": float(action.preview.get("drag", before["drag"])),
         }
+        target_gravity = float(action.preview.get("gravity_y", before["gravity_y"]))
+        _bridge_call_route(bridge, "physics/set-gravity", {"y": target_gravity})
         if "useGravity" in action.preview:
             payload["useGravity"] = bool(action.preview["useGravity"])
         if "mass" in action.preview:

@@ -10,6 +10,7 @@ Tests for Track 2A tasks:
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import unittest
@@ -200,6 +201,101 @@ class ChatE2ETests(unittest.TestCase):
 
         result = assistant._dispatch("polish the combat feel")
         assistant._autonomous_goal_reply.assert_called_once_with("polish the combat feel")
+
+    # ── Physics-feel specialist flow ────────────────────────────────────────
+
+    def test_dispatch_floaty_player_returns_three_tuning_paths(self):
+        """Physics-feel intent should return diagnosis + three proposals and stash follow-up state."""
+        from unittest.mock import MagicMock
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            bridge = MagicMock()
+            bridge.project_path = Path(tmp)
+            bridge._context = MagicMock()
+            bridge._context.get.return_value = {
+                "physics": {"gravity": {"y": -9.81}},
+                "hierarchy": {
+                    "nodes": [
+                        {
+                            "name": "Player",
+                            "path": "Player",
+                            "components": ["Rigidbody", "CapsuleCollider"],
+                            "tuning": {"drag": 0.0, "jumpPower": 10.0},
+                        }
+                    ]
+                },
+            }
+            assistant = _OfflineUnityAssistant(bridge)
+
+            result = assistant._dispatch("my player feels floaty")
+
+            assert "Physics feel check" in result
+            assert "Three tuning paths" in result
+            assert "apply 1" in result
+            pending = getattr(bridge, "_pending_physics_feel_proposals", None)
+            assert isinstance(pending, dict)
+            assert "physics_feel/snappy" in pending
+
+    def test_dispatch_apply_physics_feel_uses_pending_proposal_and_returns_outcome(self):
+        """Physics-feel follow-up apply should execute the stored proposal and report before/after."""
+        from unittest.mock import MagicMock
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            bridge = MagicMock()
+            bridge.project_path = Path(tmp)
+            bridge._context = MagicMock()
+            bridge._context.get.return_value = {
+                "physics": {"gravity": {"y": -9.81}},
+                "hierarchy": {
+                    "nodes": [
+                        {
+                            "name": "Player",
+                            "path": "Player",
+                            "components": ["Rigidbody", "CapsuleCollider"],
+                            "tuning": {"drag": 0.0, "jumpPower": 10.0},
+                        }
+                    ]
+                },
+            }
+
+            def call_route(route: str, params: dict[str, object]) -> dict[str, object]:
+                if route == "physics/set-gravity":
+                    return {"success": True, "gravity": {"y": params.get("y", -9.81)}}
+                if route == "physics/set-rigidbody":
+                    return {"success": True}
+                if route == "graphics/game-capture":
+                    encoded = base64.b64encode(b"png").decode("ascii")
+                    return {"success": True, "base64": encoded, "width": 960, "height": 540}
+                raise AssertionError(f"unexpected route {route}")
+
+            bridge.client.call_route.side_effect = call_route
+            assistant = _OfflineUnityAssistant(bridge)
+
+            proposal_reply = assistant._dispatch("my player feels floaty")
+            assert "Three tuning paths" in proposal_reply
+
+            result = assistant._dispatch("apply 1")
+
+            assert "Applied:" in result
+            assert "Before:" in result
+            assert "After:" in result
+            assert "Capture:" in result
+            assert "Physics-feel score:" in result
+
+    def test_dispatch_apply_physics_feel_without_pending_proposal_fails_cleanly(self):
+        """Physics-feel apply follow-up should explain when there is nothing pending."""
+        from unittest.mock import MagicMock
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        result = assistant._dispatch("apply 1")
+
+        assert "pending" in result.lower()
+        assert "physics" in result.lower()
 
     # ── LLM-first chat behavior ──────────────────────────────────────────────
 

@@ -80,6 +80,16 @@ class _OfflineUnityAssistant:
     )
     _DISPOSABLE_OBJECT_TOKENS: tuple[str, ...] = ("probe", "fixture", "temp", "debug", "standalone")
     _PLAYER_TOKENS: tuple[str, ...] = ("player", "hero", "avatar", "character", "pawn")
+    _PHYSICS_FEEL_RE = re.compile(
+        r"\b(floaty|floats?|weighty|heavy|slippery|snappy|stiff|sluggish|"
+        r"sloppy|jumps?\s+feel|movement\s+feel|feels?\s+off|feels?\s+wrong|"
+        r"doesn't\s+feel\s+right)\b",
+        re.IGNORECASE,
+    )
+    _PHYSICS_APPLY_RE = re.compile(
+        r"^apply\s+(?:option\s+)?(1|2|3|snappy|controlled|arcade)\b",
+        re.IGNORECASE,
+    )
     _AUTONOMOUS_TRIGGERS: tuple[str, ...] = (
         "fix all", "fix everything", "fix the issues",
         "polish", "improve the", "clean up",
@@ -182,6 +192,11 @@ public class PlayerMovement : MonoBehaviour
             return self._guidance_reply()
         if ("test scaffold" in lowered or "scaffold test" in lowered or "create tests" in lowered or "add tests" in lowered):
             return self._test_scaffold_reply()
+        physics_apply_match = self._PHYSICS_APPLY_RE.match(lowered)
+        if physics_apply_match:
+            return self._apply_physics_feel_reply(physics_apply_match.group(1))
+        if self._PHYSICS_FEEL_RE.search(normalized):
+            return self._build_physics_feel_reply(normalized)
         # Player prototype
         if any(phrase in lowered for phrase in (
             "build a player", "create a player", "add a player",
@@ -229,6 +244,20 @@ public class PlayerMovement : MonoBehaviour
     def _context_payload(self) -> dict[str, Any]:
         self._set_status("Reading Unity project context")
         return dict(self.bridge._context.get(force=True) or {})
+
+    def _skill_project_context(self) -> "ProjectContext":
+        from .skills import ProjectContext
+
+        try:
+            context_payload = dict(self.bridge._context.get(force=True, full=True) or {})
+        except Exception:
+            context_payload = {}
+        return ProjectContext(
+            project_path=str(getattr(self.bridge, "project_path", "") or ""),
+            selected_port=None,
+            inspect_payload=context_payload,
+            systems_summary=context_payload,
+        )
 
     def _compact_findings(self, findings: list[dict[str, Any]], *, limit: int = 3) -> list[str]:
         lines: list[str] = []
@@ -1093,6 +1122,97 @@ public class PlayerMovement : MonoBehaviour
         if scene_path:
             lines.append(f"Scene view: `{scene_path}`")
         return lines
+
+    def _build_physics_feel_reply(self, text: str) -> str:
+        from .skills.physics_feel import audit_physics_feel, propose_physics_feel_tuning
+
+        self._set_status("Auditing physics feel")
+        context = self._skill_project_context()
+        audit = audit_physics_feel(context)
+        proposals = propose_physics_feel_tuning(audit, text)
+
+        self.bridge._pending_physics_feel_audit = audit
+        self.bridge._pending_physics_feel_proposals = {
+            proposal.action_id: proposal for proposal in proposals
+        }
+
+        lines = [f"Physics feel check: score {audit.score}/100", ""]
+        if audit.findings:
+            lines.append("Diagnosis:")
+            for finding in audit.findings[:3]:
+                lines.append(f"- {finding.detail}")
+            lines.append("")
+
+        lines.append("Three tuning paths:")
+        for index, proposal in enumerate(proposals, 1):
+            lines.append(f"{index}. {proposal.title}")
+            lines.append(f"   {proposal.tradeoff}")
+        lines.append("")
+        lines.append("Reply `apply 1`, `apply 2`, or `apply 3` to try one.")
+        return "\n".join(lines)
+
+    def _resolve_physics_action_id(self, selector: str) -> str | None:
+        normalized = str(selector or "").strip().lower()
+        mapping = {
+            "1": "physics_feel/snappy",
+            "snappy": "physics_feel/snappy",
+            "2": "physics_feel/controlled",
+            "controlled": "physics_feel/controlled",
+            "3": "physics_feel/arcade",
+            "arcade": "physics_feel/arcade",
+        }
+        return mapping.get(normalized)
+
+    def _apply_physics_feel_reply(self, selector: str) -> str:
+        from .skills.physics_feel import apply_physics_feel, airtime_estimate, floatiness_score
+
+        raw_proposals = getattr(self.bridge, "_pending_physics_feel_proposals", None)
+        proposals = raw_proposals if isinstance(raw_proposals, dict) else {}
+        audit = getattr(self.bridge, "_pending_physics_feel_audit", None)
+        if not proposals:
+            return "No pending physics-feel proposal. Ask me to check why the player feels floaty first."
+
+        action_id = self._resolve_physics_action_id(selector)
+        if not action_id or action_id not in proposals:
+            return "I could not match that physics-feel option. Reply with `apply 1`, `apply 2`, or `apply 3`."
+
+        self._set_status("Applying physics feel tuning")
+        action = proposals[action_id]
+        outcome = apply_physics_feel(action, self.bridge)
+        self.bridge._pending_physics_feel_proposals = None
+        self.bridge._pending_physics_feel_audit = None
+
+        if not outcome.applied:
+            return f"Physics-feel apply failed: {outcome.error or 'unknown error'}"
+
+        before_score = int(getattr(audit, "score", 0) or 0)
+        jump_power = 8.0
+        if audit is not None:
+            tuning = dict(getattr(audit, "summary", {}).get("tuning") or {})
+            try:
+                jump_power = float(tuning.get("jumpPower") or 8.0)
+            except (TypeError, ValueError):
+                jump_power = 8.0
+        after_airtime = airtime_estimate(jump_power, float(outcome.after.get("gravity_y") or -9.81))
+        after_floatiness = floatiness_score(
+            airtime_s=after_airtime,
+            drag=float(outcome.after.get("drag") or 0.0),
+            gravity_y=float(outcome.after.get("gravity_y") or -9.81),
+        )
+        after_score = max(0, 100 - after_floatiness)
+
+        lines = [
+            f"Applied: {action.title}",
+            f"Before: gravity {float(outcome.before.get('gravity_y') or -9.81):.2f}, drag {float(outcome.before.get('drag') or 0.0):.2f}",
+            f"After: gravity {float(outcome.after.get('gravity_y') or -9.81):.2f}, drag {float(outcome.after.get('drag') or 0.0):.2f}",
+        ]
+        if outcome.captures:
+            lines.append("Capture: " + ", ".join(f"`{path}`" for path in outcome.captures))
+        lines.append(f"Physics-feel score: {before_score} -> {after_score}")
+        for note in outcome.notes:
+            if note:
+                lines.append(f"Note: {note}")
+        return "\n".join(lines)
 
     def _format_improve_project_payload(self, payload: dict[str, Any]) -> str:
         applied_items = list(payload.get("applied") or [])

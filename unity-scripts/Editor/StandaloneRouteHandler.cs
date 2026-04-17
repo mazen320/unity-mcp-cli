@@ -120,6 +120,7 @@ public static class StandaloneRouteHandler
             case "renderer/set-material":   return HandleMaterialAssign(p);
             case "graphics/material-info":  return HandleGraphicsMaterialInfo(p);
             case "graphics/renderer-info":  return HandleGraphicsRendererInfo(p);
+            case "physics/set-gravity":     return HandlePhysicsSetGravity(p);
             case "physics/set-rigidbody":   return HandlePhysicsSetRigidbody(p);
             case "physics/set-collider":    return HandlePhysicsSetCollider(p);
             case "lighting/set-ambient":    return HandleLightingSetAmbient(p);
@@ -3592,6 +3593,23 @@ public static class MiniJson
     }
 
     // ── Physics routes ───────────────────────────────────────────────────
+
+    private static object HandlePhysicsSetGravity(Dictionary<string, object> p)
+    {
+        float y = GetFloat(p, "y", Physics.gravity.y);
+        Physics.gravity = new Vector3(Physics.gravity.x, y, Physics.gravity.z);
+        return new Dictionary<string, object>
+        {
+            {"success", true},
+            {"gravity", new Dictionary<string, object>
+                {
+                    {"x", Physics.gravity.x},
+                    {"y", Physics.gravity.y},
+                    {"z", Physics.gravity.z},
+                }
+            }
+        };
+    }
 
     private static object HandlePhysicsSetRigidbody(Dictionary<string, object> p)
     {
