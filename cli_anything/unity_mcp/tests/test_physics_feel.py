@@ -359,6 +359,20 @@ class _ErrorBridgeStub:
         raise RuntimeError(f"route failed: {route}")
 
 
+class _ErrorPayloadBridgeStub:
+    def __init__(self, project_path: Path) -> None:
+        self.project_path = project_path
+        self.client = self
+
+    def call_route(self, route: str, params: dict) -> dict:
+        if route == "graphics/game-capture":
+            payload = base64.b64encode(b"fake-png").decode("ascii")
+            return {"success": True, "base64": payload, "width": 960, "height": 540}
+        if route == "physics/set-gravity":
+            return {"error": "Unknown route: physics/set-gravity", "unknownRoute": True}
+        raise AssertionError(f"Unexpected route: {route}")
+
+
 def test_apply_physics_feel_updates_values_and_writes_before_after_capture(tmp_path: Path) -> None:
     inspect = _inspect_with_nodes(
         [
@@ -432,3 +446,30 @@ def test_apply_physics_feel_returns_error_without_partial_capture_on_route_failu
     assert outcome.applied is False
     assert outcome.captures == []
     assert "route failed" in str(outcome.error)
+
+
+def test_apply_physics_feel_returns_error_when_route_reports_unknown_route(
+    tmp_path: Path,
+) -> None:
+    inspect = _inspect_with_nodes(
+        [
+            {
+                "name": "Player",
+                "path": "Player",
+                "components": ["Rigidbody", "CapsuleCollider"],
+                "tuning": {
+                    "drag": 0.0,
+                    "jumpPower": 10.0,
+                },
+            }
+        ]
+    )
+    audit = audit_physics_feel(_ctx(inspect=inspect))
+    action = propose_physics_feel_tuning(audit, "my player feels floaty")[0]
+    bridge = _ErrorPayloadBridgeStub(tmp_path)
+
+    outcome = apply_physics_feel(action, bridge)
+
+    assert outcome.applied is False
+    assert outcome.captures == []
+    assert "not available" in str(outcome.error)

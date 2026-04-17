@@ -272,12 +272,44 @@ class ContextInjector:
         self._context: Optional[dict] = None
         self._context_is_full = False
 
+    def _safe_route(self, route: str, params: Optional[dict[str, Any]] = None) -> Optional[dict[str, Any]]:
+        try:
+            payload = self._client.call_route(route, params or {})
+        except FileIPCError:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _enrich_full_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(context.get("editorState"), dict):
+            editor_state = self._safe_route("editor/state")
+            if editor_state:
+                context["editorState"] = editor_state
+
+        if "hierarchy" not in context or context.get("hierarchy") is None:
+            hierarchy = self._safe_route("scene/hierarchy")
+            if hierarchy:
+                context["hierarchy"] = hierarchy
+
+        scene = context.get("scene")
+        editor_state = context.get("editorState")
+        if isinstance(scene, dict) and isinstance(editor_state, dict):
+            if not editor_state.get("activeScene") and scene.get("name"):
+                editor_state["activeScene"] = scene.get("name")
+            if not editor_state.get("activeScenePath") and scene.get("path"):
+                editor_state["activeScenePath"] = scene.get("path")
+            if "sceneDirty" not in editor_state and "isDirty" in scene:
+                editor_state["sceneDirty"] = scene.get("isDirty")
+
+        return context
+
     def get(self, *, force: bool = False, full: bool = False) -> Dict[str, Any]:
         """Return cached project context, fetching from Unity if needed."""
         needs_refresh = self._context is None or force or (full and not self._context_is_full)
         if needs_refresh:
             try:
                 self._context = self._client.call_route("context", {"full": full})
+                if full and isinstance(self._context, dict):
+                    self._context = self._enrich_full_context(self._context)
                 self._context_is_full = bool(full)
             except FileIPCError:
                 self._context = {}

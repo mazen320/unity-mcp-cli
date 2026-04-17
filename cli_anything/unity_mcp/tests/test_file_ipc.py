@@ -697,5 +697,70 @@ class FileIPCTests(unittest.TestCase):
             [
                 ("context", {"full": False}),
                 ("context", {"full": True}),
+                ("editor/state", {}),
+                ("scene/hierarchy", {}),
+            ],
+        )
+
+    def test_context_injector_enriches_shallow_full_context(self) -> None:
+        class ClientStub:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, dict[str, Any]]] = []
+
+            def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                self.calls.append((route, params))
+                if route == "context":
+                    return {
+                        "projectName": "OutsideTheBox",
+                        "scene": {"name": "CodexFpsShowcase"},
+                    }
+                if route == "editor/state":
+                    return {"activeScene": "CodexFpsShowcase", "isPlaying": False}
+                if route == "scene/hierarchy":
+                    return {"sceneName": "CodexFpsShowcase", "nodes": [{"name": "Player"}]}
+                raise AssertionError(f"unexpected route: {route}")
+
+        client = ClientStub()
+        injector = ContextInjector(client)  # type: ignore[arg-type]
+
+        full = injector.get(full=True)
+
+        self.assertEqual(full["editorState"]["activeScene"], "CodexFpsShowcase")
+        self.assertEqual(full["hierarchy"]["sceneName"], "CodexFpsShowcase")
+        self.assertEqual(full["hierarchy"]["nodes"][0]["name"], "Player")
+        self.assertEqual(
+            client.calls,
+            [
+                ("context", {"full": True}),
+                ("editor/state", {}),
+                ("scene/hierarchy", {}),
+            ],
+        )
+
+    def test_context_injector_ignores_enrichment_route_failures(self) -> None:
+        class ClientStub:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, dict[str, Any]]] = []
+
+            def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                self.calls.append((route, params))
+                if route == "context":
+                    return {"projectName": "OutsideTheBox"}
+                raise FileIPCError(f"missing route: {route}")
+
+        client = ClientStub()
+        injector = ContextInjector(client)  # type: ignore[arg-type]
+
+        full = injector.get(full=True)
+
+        self.assertEqual(full["projectName"], "OutsideTheBox")
+        self.assertNotIn("editorState", full)
+        self.assertNotIn("hierarchy", full)
+        self.assertEqual(
+            client.calls,
+            [
+                ("context", {"full": True}),
+                ("editor/state", {}),
+                ("scene/hierarchy", {}),
             ],
         )

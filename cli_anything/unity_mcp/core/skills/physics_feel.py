@@ -505,7 +505,13 @@ def _bridge_client(bridge: Any) -> Any:
 def _bridge_call_route(bridge: Any, route: str, params: dict[str, Any]) -> dict[str, Any]:
     client = _bridge_client(bridge)
     result = client.call_route(route, params)
-    return dict(result or {})
+    payload = dict(result or {})
+    if payload.get("unknownRoute"):
+        raise RuntimeError(f"{route} is not available on the connected Unity bridge.")
+    if payload.get("success") is False or payload.get("error"):
+        detail = str(payload.get("error") or f"{route} failed")
+        raise RuntimeError(detail)
+    return payload
 
 
 def _project_root_from_bridge(bridge: Any, action: ProposedAction) -> Path:
