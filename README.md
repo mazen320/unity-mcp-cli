@@ -272,6 +272,8 @@ The Unity `Agent` tab is not just a transport log anymore. The current direction
 
 The bridge now reports whether an LLM provider is available and which model is selected. Model selection is project-local through `.umcp/agent-config.json`, and the Unity Agent settings can write that file for you.
 
+Secrets stay separate from preferences. If you want the bridge to boot with provider credentials without relying on shell state, put them in `.umcp/agent.env`. Process environment variables still win if both exist.
+
 Current project-local bridge config shape:
 
 ```json
@@ -282,6 +284,15 @@ Current project-local bridge config shape:
 ```
 
 Use `auto` for provider when you just want the bridge to choose whichever supported provider is configured in the process environment.
+
+Optional local bridge secrets file:
+
+```dotenv
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+```
+
+The bridge loads `.umcp/agent.env` automatically on startup, but it will not override keys that are already present in the process environment.
 
 ## Using This With Codex
 

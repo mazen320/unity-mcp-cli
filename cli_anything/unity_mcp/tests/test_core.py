@@ -2222,6 +2222,60 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_chat_bridge_loads_openai_key_from_project_env_file(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / ".umcp").mkdir(parents=True, exist_ok=True)
+            (project / ".umcp" / "agent.env").write_text(
+                "# local bridge secrets\nOPENAI_API_KEY=project-secret\n",
+                encoding="utf-8",
+            )
+
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            with patch.dict(os.environ, {}, clear=True):
+                bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+                bridge.write_status("idle", 0, 0, "")
+                self.assertEqual(os.environ.get("OPENAI_API_KEY"), "project-secret")
+
+            status_path = project / ".umcp" / "agent-status.json"
+            payload = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["llmAvailable"])
+            self.assertEqual(payload["llmProvider"], "OpenAI")
+            self.assertEqual(payload["llmConfigSource"], ".umcp/agent.env")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_bridge_does_not_override_process_env_with_project_env_file(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "MyProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            (project / ".umcp").mkdir(parents=True, exist_ok=True)
+            (project / ".umcp" / "agent.env").write_text(
+                "OPENAI_API_KEY=project-secret\n",
+                encoding="utf-8",
+            )
+
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "process-secret"}, clear=True):
+                bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+                bridge.write_status("idle", 0, 0, "")
+                self.assertEqual(os.environ.get("OPENAI_API_KEY"), "process-secret")
+
+            status_path = project / ".umcp" / "agent-status.json"
+            payload = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["llmConfigSource"], "environment")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_chat_bridge_idle_poll_refreshes_status_heartbeat(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "MyProject"

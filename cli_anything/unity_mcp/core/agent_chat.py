@@ -29,6 +29,38 @@ if TYPE_CHECKING:
     from .embedded_cli import EmbeddedCLIOptions
 
 
+_PROJECT_ENV_KEYS: tuple[str, ...] = (
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_ORG_ID",
+)
+
+
+def _parse_project_env_file(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except Exception:
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"\"", "'"}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
 class _OfflineUnityAssistant:
     """Project-aware offline assistant for the Unity Agent tab.
 
@@ -1739,6 +1771,7 @@ class ChatBridge:
         self._legacy_inbox = self._chat_dir / "user-inbox.json"
         self._history_path = self._chat_dir / "history.json"
         self._status_path = self._umcp / "agent-status.json"
+        self._project_env_path = self._umcp / "agent.env"
 
         self._history: List[Dict[str, Any]] = []
         self._context = ContextInjector(file_client)
@@ -1755,6 +1788,7 @@ class ChatBridge:
         self._watchdog_thread: threading.Thread | None = None
         self._watchdog_running = False
         self._watchdog_surfaced: set[str] = set()  # finding titles already shown this session
+        self._project_env_loaded_keys = self._load_project_env()
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -2032,11 +2066,36 @@ class ChatBridge:
         except Exception:
             pass
 
+    def _load_project_env(self) -> set[str]:
+        loaded: set[str] = set()
+        parsed = _parse_project_env_file(self._project_env_path)
+        for key in _PROJECT_ENV_KEYS:
+            value = parsed.get(key)
+            if not value or os.environ.get(key):
+                continue
+            os.environ[key] = value
+            loaded.add(key)
+        return loaded
+
+    def _llm_config_source(self, llm_provider: str | None) -> str | None:
+        if llm_provider == "OpenAI":
+            if "OPENAI_API_KEY" in self._project_env_loaded_keys:
+                return ".umcp/agent.env"
+            if os.environ.get("OPENAI_API_KEY"):
+                return "environment"
+        if llm_provider == "Anthropic":
+            if "ANTHROPIC_API_KEY" in self._project_env_loaded_keys:
+                return ".umcp/agent.env"
+            if os.environ.get("ANTHROPIC_API_KEY"):
+                return "environment"
+        return None
+
     def _write_status(self, state: str, current: int, total: int, action: str) -> None:
         try:
             self._status_path.parent.mkdir(parents=True, exist_ok=True)
             llm_provider = self._assistant._configured_model_provider()
             llm_model = self._assistant._selected_model() if llm_provider else None
+            llm_config_source = self._llm_config_source(llm_provider)
             payload = {
                 "state": state,
                 "currentStep": current,
@@ -2047,6 +2106,7 @@ class ChatBridge:
                 "llmAvailable": bool(llm_provider),
                 "llmProvider": llm_provider,
                 "llmModel": llm_model,
+                "llmConfigSource": llm_config_source,
                 "lastUpdated": datetime.now(timezone.utc).isoformat(),
             }
             tmp = self._status_path.with_suffix(".tmp")
