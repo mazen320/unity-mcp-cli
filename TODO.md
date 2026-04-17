@@ -39,7 +39,8 @@ As of 2026-04-14:
 - Physics-feel applies now write before/after Game-view captures under `.umcp/captures/physics-feel/`.
 - Added a minimal append-only local run ledger in `.umcp/ledger/runs.jsonl`, and physics-feel applies now log chosen action, before/after values, capture paths, and failure state there.
 - Added `docs/skills/WRITING_A_SKILL.md` so the next specialist skill can clone the same audit → propose → apply → capture → ledger → docs pattern without reverse-engineering the physics-feel commits.
-- Immediate next specialist-skill task: live-verify the anchor demo in Unity, then use `docs/skills/WRITING_A_SKILL.md` to choose one next Stage 2/3 skill template: `animation` or `ui`.
+- Immediate next specialist-skill task: live-verify the physics-feel anchor demo in Unity.
+- Next queued specialist-skill template after that: `animation`, using `docs/superpowers/plans/2026-04-18-animation-locomotion-skill.md` as the execution plan. `ui` stays behind it until the live visual loop is stronger.
 
 ## Latest CLI Layer Pass
 
