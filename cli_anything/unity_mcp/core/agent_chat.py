@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 _PROJECT_ENV_KEYS: tuple[str, ...] = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY",
     "OPENAI_BASE_URL",
     "OPENAI_ORG_ID",
 )
@@ -312,6 +313,10 @@ public class PlayerMovement : MonoBehaviour
             return "OpenAI"
         if preferred == "anthropic" and os.environ.get("ANTHROPIC_API_KEY"):
             return "Anthropic"
+        if preferred == "openrouter" and os.environ.get("OPENROUTER_API_KEY"):
+            return "OpenRouter"
+        if os.environ.get("OPENROUTER_API_KEY"):
+            return "OpenRouter"
         if os.environ.get("OPENAI_API_KEY"):
             return "OpenAI"
         if os.environ.get("ANTHROPIC_API_KEY"):
@@ -327,12 +332,14 @@ public class PlayerMovement : MonoBehaviour
             return "gpt-5-codex"
         if provider == "Anthropic":
             return "claude-haiku-4-5-20251001"
+        if provider == "OpenRouter":
+            return "anthropic/claude-3-haiku"
         return None
 
     def _preferred_provider(self) -> str | None:
         provider = self._load_agent_config().get("preferredProvider")
         normalized = str(provider or "").strip().lower()
-        if normalized in {"openai", "anthropic"}:
+        if normalized in {"openai", "anthropic", "openrouter"}:
             return normalized
         return None
 
@@ -1820,8 +1827,8 @@ public class PlayerMovement : MonoBehaviour
             return (
                 "This request needs a configured model provider. The Unity Agent tab can still run bounded commands "
                 "like `improve project`, `inspect project`, `benchmark`, `compile errors`, and basic scene actions, "
-                "but open-ended chat is disabled until `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is available in the "
-                "bridge process."
+                "but open-ended chat is disabled until `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` "
+                "is available in the bridge process. OpenRouter is recommended — one key, any model."
             )
         planned = self._try_model_backed_plan(content)
         if planned:
@@ -2207,6 +2214,11 @@ class ChatBridge:
             if "ANTHROPIC_API_KEY" in self._project_env_loaded_keys:
                 return ".umcp/agent.env"
             if os.environ.get("ANTHROPIC_API_KEY"):
+                return "environment"
+        if llm_provider == "OpenRouter":
+            if "OPENROUTER_API_KEY" in self._project_env_loaded_keys:
+                return ".umcp/agent.env"
+            if os.environ.get("OPENROUTER_API_KEY"):
                 return "environment"
         return None
 

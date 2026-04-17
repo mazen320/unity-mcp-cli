@@ -303,4 +303,41 @@ def _generate_plan_from_intent(
         except Exception:
             pass
 
+    # Try OpenRouter (OpenAI-compatible format, any model the user configured)
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if api_key:
+        try:
+            payload = _json.dumps({
+                "model": model or "anthropic/claude-3-haiku",
+                "messages": [
+                    {"role": "system", "content": _PLAN_SYSTEM_PROMPT},
+                    *messages,
+                ],
+                "max_tokens": 2048,
+            }).encode()
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                    "HTTP-Referer": "https://github.com/unity-mcp-agent",
+                    "X-Title": "Unity AI Agent",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read())
+            text = data["choices"][0]["message"]["content"].strip()
+            if text.startswith("```"):
+                text = text.split("```", 2)[1]
+                if text.startswith("json"):
+                    text = text[4:]
+                text = text.rsplit("```", 1)[0].strip()
+            parsed = _json.loads(text)
+            if isinstance(parsed, dict) and "steps" in parsed:
+                return parsed["steps"]
+            return parsed
+        except Exception:
+            pass
+
     return None

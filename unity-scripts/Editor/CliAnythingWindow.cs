@@ -82,7 +82,8 @@ public class CliAnythingWindow : EditorWindow
     private string  _agentLastLaunchCommand = "";
     private int     _agentBridgePid;
     private double  _agentLaunchPendingUntil;
-    private static readonly string[] AgentProviderOptions = { "auto", "openai", "anthropic" };
+    private static readonly string[] AgentProviderOptions = { "auto", "openrouter", "openai", "anthropic" };
+    private string  _agentApiKey = "";
 
     private const string AgentHarnessRootPrefKey   = "CliAnything.AgentBridge.HarnessRoot";
     private const string AgentPythonPrefKey        = "CliAnything.AgentBridge.PythonLauncher";
@@ -1010,9 +1011,20 @@ public class CliAnythingWindow : EditorWindow
         _agentPreferredModel = EditorGUILayout.TextField(_agentPreferredModel);
         EditorGUILayout.EndHorizontal();
 
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("API Key", GUILayout.Width(88));
+        _agentApiKey = EditorGUILayout.PasswordField(_agentApiKey);
+        EditorGUILayout.EndHorizontal();
+        string _apiKeyEnvHint = _agentPreferredProvider == "openrouter" ? "OPENROUTER_API_KEY"
+            : _agentPreferredProvider == "openai" ? "OPENAI_API_KEY"
+            : _agentPreferredProvider == "anthropic" ? "ANTHROPIC_API_KEY"
+            : "OPENROUTER_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY";
+        EditorGUILayout.LabelField($"Saved to .umcp/agent.env as {_apiKeyEnvHint}. Leave blank to keep existing key.", EditorStyles.miniLabel);
+
         _agentAutoStartOnSend = EditorGUILayout.ToggleLeft("Auto-start bridge when sending while offline", _agentAutoStartOnSend);
         EditorGUILayout.LabelField("Launcher examples: py -3.12, py -3.11, python, or a full python.exe path.", EditorStyles.miniLabel);
-        EditorGUILayout.LabelField("Model examples: gpt-5-codex, gpt-5.4, gpt-5.4-mini, claude-haiku-4-5-20251001.", EditorStyles.miniLabel);
+        EditorGUILayout.LabelField("Model examples (OpenRouter): anthropic/claude-3-haiku, openai/gpt-4o-mini, google/gemini-flash-1.5.", EditorStyles.miniLabel);
+        EditorGUILayout.LabelField("Model examples (direct): gpt-5-codex, claude-haiku-4-5-20251001.", EditorStyles.miniLabel);
 
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("Save Settings", EditorStyles.miniButton, GUILayout.Width(92)))
@@ -1059,6 +1071,76 @@ public class CliAnythingWindow : EditorWindow
         return Path.Combine(projectRoot, ".umcp", "agent-config.json");
     }
 
+    private string GetAgentEnvPath()
+    {
+        string projectRoot = Path.GetDirectoryName(Application.dataPath);
+        return Path.Combine(projectRoot, ".umcp", "agent.env");
+    }
+
+    private void LoadAgentEnv()
+    {
+        _agentApiKey = "";
+        string envPath = GetAgentEnvPath();
+        if (!File.Exists(envPath)) return;
+        try
+        {
+            foreach (string line in File.ReadAllLines(envPath))
+            {
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("#") || !trimmed.Contains("=")) continue;
+                int eq = trimmed.IndexOf('=');
+                string key = trimmed.Substring(0, eq).Trim();
+                string val = trimmed.Substring(eq + 1).Trim();
+                string providerKey = _agentPreferredProvider == "openrouter" ? "OPENROUTER_API_KEY"
+                    : _agentPreferredProvider == "openai" ? "OPENAI_API_KEY"
+                    : _agentPreferredProvider == "anthropic" ? "ANTHROPIC_API_KEY"
+                    : "OPENROUTER_API_KEY";
+                if (key == providerKey && !string.IsNullOrEmpty(val))
+                    _agentApiKey = val;
+            }
+        }
+        catch { }
+    }
+
+    private void SaveAgentEnv()
+    {
+        if (string.IsNullOrWhiteSpace(_agentApiKey)) return;
+        string envPath = GetAgentEnvPath();
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(envPath) ?? "");
+            string envKey = _agentPreferredProvider == "openrouter" ? "OPENROUTER_API_KEY"
+                : _agentPreferredProvider == "openai" ? "OPENAI_API_KEY"
+                : _agentPreferredProvider == "anthropic" ? "ANTHROPIC_API_KEY"
+                : "OPENROUTER_API_KEY";
+
+            // Read existing lines, update or append the key.
+            var lines = File.Exists(envPath)
+                ? new System.Collections.Generic.List<string>(File.ReadAllLines(envPath))
+                : new System.Collections.Generic.List<string>();
+
+            bool found = false;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string t = lines[i].Trim();
+                if (!t.StartsWith("#") && t.StartsWith(envKey + "="))
+                {
+                    lines[i] = envKey + "=" + _agentApiKey.Trim();
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                lines.Add(envKey + "=" + _agentApiKey.Trim());
+
+            File.WriteAllLines(envPath, lines.ToArray());
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[Agent] Failed to save agent.env: " + ex.Message);
+        }
+    }
+
     private void LoadAgentModelConfig()
     {
         _agentPreferredProvider = "auto";
@@ -1080,6 +1162,7 @@ public class CliAnythingWindow : EditorWindow
                 _agentPreferredProvider = "auto";
         }
         catch { }
+        LoadAgentEnv();
     }
 
     private void SaveAgentModelConfig()
@@ -1099,6 +1182,7 @@ public class CliAnythingWindow : EditorWindow
         {
             Debug.LogWarning("[Agent] Failed to save agent-config.json: " + ex.Message);
         }
+        SaveAgentEnv();
     }
 
     private bool TryLaunchAgentBridge(bool userInitiated)
