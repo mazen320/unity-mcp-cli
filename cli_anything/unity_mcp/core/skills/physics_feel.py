@@ -403,6 +403,65 @@ def audit_physics_feel(context: ProjectContext) -> AuditResult:
 
 
 # --------------------------------------------------------------------------- #
+# Proposal paths                                                              #
+# --------------------------------------------------------------------------- #
+
+
+def propose_physics_feel_tuning(
+    audit: AuditResult,
+    request: str,
+) -> list[ProposedAction]:
+    """Return three bounded tuning paths with explicit tradeoffs.
+
+    The request text is accepted so future versions can bias the path order
+    from phrases like "I want it heavier" or "make it more arcade." The MVP
+    keeps the order stable so chat follow-ups can refer to 1/2/3 safely.
+    """
+    summary = audit.summary or {}
+    gravity_y = float(summary.get("gravityY", _DEFAULT_GRAVITY_Y))
+    tuning = summary.get("tuning") if isinstance(summary.get("tuning"), dict) else {}
+    drag = float(tuning.get("drag") if tuning.get("drag") is not None else 0.0)
+
+    return [
+        ProposedAction(
+            action_id="physics_feel/snappy",
+            title="Snappier jump (Celeste-style)",
+            tradeoff=(
+                f"Gravity jumps from {gravity_y:.1f} to -25.0 while drag stays at {drag:.2f}. "
+                "The player reaches the apex sooner and falls harder, which reads as responsive "
+                "and precise. Tradeoff: less hangtime for corrective air movement."
+            ),
+            preview={"gravity_y": -25.0, "drag": drag},
+            reversible=True,
+        ),
+        ProposedAction(
+            action_id="physics_feel/controlled",
+            title="More air control (Hollow Knight-style)",
+            tradeoff=(
+                f"Drag rises from {drag:.2f} to 2.0 while gravity stays at {gravity_y:.1f}. "
+                "The player keeps roughly the same jump arc but stops gliding through the air, "
+                "so movement reads heavier and more intentional. Tradeoff: horizontal air moves "
+                "feel lower-energy."
+            ),
+            preview={"gravity_y": gravity_y, "drag": 2.0},
+            reversible=True,
+        ),
+        ProposedAction(
+            action_id="physics_feel/arcade",
+            title="Arcade bounce (Mario 64-style)",
+            tradeoff=(
+                "Gravity shifts to -30.0 and jump power is expected to scale by 1.4x to keep a "
+                "similar peak height. The result is punchier takeoff and weightier landings with "
+                "arcade bounce. Tradeoff: if you rely on global Physics.gravity, every other "
+                "Rigidbody in the scene falls faster too."
+            ),
+            preview={"gravity_y": -30.0, "drag": drag, "jump_power_mult": 1.4},
+            reversible=True,
+        ),
+    ]
+
+
+# --------------------------------------------------------------------------- #
 # Re-exports for consumers that only want the audit half today.               #
 # --------------------------------------------------------------------------- #
 
@@ -411,4 +470,5 @@ __all__ = [
     "airtime_estimate",
     "audit_physics_feel",
     "floatiness_score",
+    "propose_physics_feel_tuning",
 ]

@@ -6,6 +6,7 @@ from cli_anything.unity_mcp.core.skills.physics_feel import (
     airtime_estimate,
     audit_physics_feel,
     floatiness_score,
+    propose_physics_feel_tuning,
 )
 
 
@@ -253,3 +254,66 @@ def test_audit_notes_structural_only_when_no_tuning_values() -> None:
     assert any("Working from structural signal" in f.title for f in result.findings)
     # Confidence capped because values weren't surfaced.
     assert result.confidence < 0.7
+
+
+# --------------------------------------------------------------------------- #
+# Propose                                                                     #
+# --------------------------------------------------------------------------- #
+
+
+def test_propose_returns_three_stable_paths_with_tradeoffs() -> None:
+    inspect = _inspect_with_nodes(
+        [
+            {
+                "name": "Player",
+                "path": "Player",
+                "components": ["Rigidbody", "CapsuleCollider"],
+                "tuning": {
+                    "drag": 0.0,
+                    "jumpPower": 10.0,
+                },
+            }
+        ]
+    )
+    audit = audit_physics_feel(_ctx(inspect=inspect))
+
+    proposals = propose_physics_feel_tuning(audit, "my player feels floaty")
+
+    assert [p.action_id for p in proposals] == [
+        "physics_feel/snappy",
+        "physics_feel/controlled",
+        "physics_feel/arcade",
+    ]
+    assert all(p.reversible for p in proposals)
+    assert all(p.tradeoff.strip() for p in proposals)
+    assert "Celeste" in proposals[0].title or "Celeste" in proposals[0].tradeoff
+    assert "Hollow Knight" in proposals[1].title or "Hollow Knight" in proposals[1].tradeoff
+    assert "Mario 64" in proposals[2].title or "Mario 64" in proposals[2].tradeoff
+
+
+def test_propose_uses_current_audit_values_in_preview() -> None:
+    inspect = _inspect_with_nodes(
+        [
+            {
+                "name": "Player",
+                "path": "Player",
+                "components": ["Rigidbody", "CapsuleCollider"],
+                "tuning": {
+                    "drag": 1.25,
+                    "jumpPower": 8.0,
+                },
+            }
+        ]
+    )
+    systems = {"physics": {"gravity": {"y": -14.0}}}
+    audit = audit_physics_feel(_ctx(inspect=inspect, systems=systems))
+
+    proposals = propose_physics_feel_tuning(audit, "movement feels off")
+
+    assert proposals[0].preview["gravity_y"] == -25.0
+    assert proposals[0].preview["drag"] == 1.25
+    assert proposals[1].preview["gravity_y"] == -14.0
+    assert proposals[1].preview["drag"] == 2.0
+    assert proposals[2].preview["gravity_y"] == -30.0
+    assert proposals[2].preview["drag"] == 1.25
+    assert proposals[2].preview["jump_power_mult"] == 1.4
