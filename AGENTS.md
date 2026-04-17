@@ -13,6 +13,10 @@ If you are a coding agent working in this repository, treat the CLI layer as the
 - Keep implementation aligned to the phase order in `PLAN.md` unless the user explicitly asks to override it.
 - When a protocol detail changes in code, update `PLAN.md` in the same pass so future agents do not drift.
 - For Agent-tab chat work, do not assume a correctly prepared external shell. The Unity panel should own bridge startup or surface an explicit in-editor connect flow.
+- For Agent-tab model setup, use the supported local bridge files:
+  - `.umcp/agent-config.json` for `preferredProvider` / `preferredModel`
+  - `.umcp/agent.env` for local bridge secrets like `OPENAI_API_KEY`
+- Process environment variables still override `.umcp/agent.env`. Do not build flows that depend on fake OAuth/session reuse as the primary auth path.
 
 ## Default Unity Workflow
 
@@ -85,6 +89,8 @@ cli-anything-unity-mcp --json debug capture --kind both --port <port>
 - Use `workflow benchmark-report` when the user wants a stable scorecard or evidence artifact for GitHub, release notes, or regression tracking. Prefer writing the report to a file instead of copy-pasting huge CLI output blobs. The saved JSON now also carries `queueDiagnostics` for recurring queue pressure and `queueTrend` for longer-horizon queue history.
 - The Unity Agent tab now has a real offline assistant layer. For quick in-editor support, it can already handle project inspection, quality scoring, benchmarks, guidance scaffolding, test scaffolding, sandbox scenes, compilation checks, basic primitive creation, and a small set of bounded live-scene hygiene fixes without external API keys.
 - The Unity Agent tab also now surfaces the latest `improve-project` run as a dedicated report card above chat history. When you extend reusable workflow outputs, prefer carrying structured metadata through `.umcp/chat/history.json` so the panel can render score deltas, applied/skipped summaries, and export actions without inventing a second logic path.
+- Freeform Agent-tab chat is now expected to be honest: if no supported provider is configured, it should clearly say that open-ended chat is unavailable instead of acting like a full LLM assistant.
+- When changing provider/model behavior, keep the bridge status payload aligned. The Agent tab now depends on `.umcp/agent-status.json` carrying `llmAvailable`, `llmProvider`, `llmModel`, and `llmConfigSource`.
 - Treat the planned learning system the same way: prefer structured local run data, replayable eval artifacts, and explicit redaction boundaries over vague telemetry or hidden cloud dependence. The target is a local-first learning loop, not silent raw-project collection.
 - The current source of truth for that learning direction is `docs/superpowers/specs/2026-04-14-learning-system-design.md`. Use that spec when planning run-ledger, memory, replay, and optional-sync work.
 - The bounded live-scene cleanup set currently includes: repairing, completing, or normalizing `EventSystem` setup, adding missing `CanvasScaler` and `GraphicRaycaster` components, adding or deduplicating `AudioListener` components, adding a `CharacterController` to one clear likely player object, and deleting obvious disposable probe/demo objects during `improve project`. Keep new assistant-side scene edits in that same low-risk category.

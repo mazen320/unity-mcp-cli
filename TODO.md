@@ -21,6 +21,16 @@ As of 2026-04-14:
 - upstream coverage matrix exists in code and JSON form
 - live debug reports via `scripts/run_live_mcp_pass.py --debug --report-file ...`
 
+## Latest Agent Runtime Pass
+
+- Freeform Agent-tab chat is now LLM-first when a provider is configured, and explicitly says so when no provider is configured instead of pretending to be a full assistant.
+- The model-planning path now receives fresh full Unity context, project guidance, and recent chat history before building an agent loop plan.
+- The Agent bridge now reports `llmAvailable`, `llmProvider`, `llmModel`, and `llmConfigSource` in `.umcp/agent-status.json`.
+- Project-local bridge preferences now live in `.umcp/agent-config.json` via `preferredProvider` and `preferredModel`.
+- Project-local bridge secrets can now live in `.umcp/agent.env`, with process environment variables still taking precedence.
+- The Unity Agent settings now expose provider/model selection and write the project-local bridge config directly.
+- Immediate next live-validation task: reopen a real Unity project and verify the full in-editor provider/model flow end to end, including `.umcp/agent.env` pickup and selected-model reporting.
+
 ## Latest CLI Layer Pass
 
 - Added a first-class developer-profile layer to the CLI itself, not just the Unity panel.
