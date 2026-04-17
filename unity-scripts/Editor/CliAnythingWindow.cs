@@ -233,6 +233,7 @@ public class CliAnythingWindow : EditorWindow
     private GUIStyle _agentSystemBubbleStyle;
     private GUIStyle _agentRoleStyle;
     private GUIStyle _agentTimestampStyle;
+    private GUIStyle _agentSelectableContentStyle;  // selectable text inside bubbles
     private bool _stylesReady;
 
     // ── Unity callbacks ──────────────────────────────────────────────────
@@ -667,9 +668,18 @@ public class CliAnythingWindow : EditorWindow
         GUILayout.FlexibleSpace();
         if (!string.IsNullOrEmpty(msg.timestamp))
             GUILayout.Label(FormatAgentTimestamp(msg.timestamp), _agentTimestampStyle);
+        // ⎘ copy button — small, right-aligned in the header row
+        if (GUILayout.Button("⎘", EditorStyles.miniLabel, GUILayout.Width(16), GUILayout.Height(14)))
+        {
+            GUIUtility.systemCopyBuffer = msg.content;
+        }
         EditorGUILayout.EndHorizontal();
 
-        GUILayout.Label(msg.content, bubbleStyle);
+        // Selectable text — allows drag-select + Ctrl+C
+        _agentSelectableContentStyle.normal.textColor = bubbleStyle.normal.textColor;
+        float innerW = Mathf.Max(60f, maxWidth - bubbleStyle.padding.horizontal - bubbleStyle.margin.horizontal);
+        float textH  = _agentSelectableContentStyle.CalcHeight(new GUIContent(msg.content), innerW);
+        EditorGUILayout.SelectableLabel(msg.content, _agentSelectableContentStyle, GUILayout.Height(textH));
 
         // Steps
         if (msg.steps != null && msg.steps.Count > 0)
@@ -3203,6 +3213,15 @@ public class CliAnythingWindow : EditorWindow
         {
             alignment = TextAnchor.MiddleRight,
             normal = { textColor = new Color(0.6f, 0.6f, 0.6f) }
+        };
+
+        // Selectable content style — no background, same font as bubbles, text color set per-call.
+        _agentSelectableContentStyle = new GUIStyle(EditorStyles.label)
+        {
+            wordWrap  = true,
+            fontSize  = 11,
+            richText  = false,
+            stretchWidth = true,
         };
     }
 
