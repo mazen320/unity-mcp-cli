@@ -31,6 +31,15 @@ As of 2026-04-14:
 - The Unity Agent settings now expose provider/model selection and write the project-local bridge config directly.
 - Immediate next live-validation task: reopen a real Unity project and verify the full in-editor provider/model flow end to end, including `.umcp/agent.env` pickup and selected-model reporting.
 
+## Latest Specialist Skills Pass
+
+- Added `core/skills/physics_feel.py` as the first Phase 4 specialist-skill anchor path instead of leaving physics taste work inside generic audit wording.
+- `my player feels floaty` in the offline Unity Agent path now runs a bounded physics-feel diagnosis, proposes three tuning paths with tradeoffs, and supports `apply 1/2/3` follow-ups.
+- Added a bounded File IPC `physics/set-gravity` route in `StandaloneRouteHandler.cs` so the specialist flow can apply gravity changes honestly instead of faking the result.
+- Physics-feel applies now write before/after Game-view captures under `.umcp/captures/physics-feel/`.
+- Added a minimal append-only local run ledger in `.umcp/ledger/runs.jsonl`, and physics-feel applies now log chosen action, before/after values, capture paths, and failure state there.
+- Immediate next specialist-skill task: live-verify the anchor demo in Unity, then decide whether `animation` or `ui` should be the next Stage 2/3 skill template.
+
 ## Latest CLI Layer Pass
 
 - Added a first-class developer-profile layer to the CLI itself, not just the Unity panel.

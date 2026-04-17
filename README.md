@@ -59,6 +59,7 @@ The public surface should stay tighter than the internal tool catalog. These are
 - `inspect project` — collect live Unity state plus disk-side project guidance and asset signals
 - `improve project` — run the bounded hygiene pass and report score delta, applied fixes, and skipped fixes
 - `quality score` / `expert audit` — score the project through specialist lenses like `systems`, `physics`, `animation`, `tech-art`, and `ui`
+- `physics feel` — tell the Agent tab `my player feels floaty` and get a diagnosis, three tuning paths with tradeoffs, bounded apply, before/after captures, and a local ledger entry
 - `debug doctor` — turn Unity failures into actionable likely causes and next steps
 - `benchmark report` / `benchmark compare` — generate before/after evidence for GitHub, demos, and regression tracking
 
@@ -269,6 +270,7 @@ The Unity `Agent` tab is not just a transport log anymore. The current direction
 - **LLM-first for open-ended requests**
 - **workflow-first for execution**
 - **evidence-first for results**
+- **specialist-skill flows for bounded taste work** like physics feel, where the assistant should diagnose, propose real tradeoffs, apply safely, and prove what changed
 
 The bridge now reports whether an LLM provider is available and which model is selected. Model selection is project-local through `.umcp/agent-config.json`, and the Unity Agent settings can write that file for you.
 
