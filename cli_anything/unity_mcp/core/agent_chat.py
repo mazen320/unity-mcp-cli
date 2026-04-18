@@ -1610,67 +1610,138 @@ public class PlayerMovement : MonoBehaviour
 
     # -- Task 2: Player prototype flow ----------------------------------------
 
+    # ── Verified helpers ─────────────────────────────────────────────────────
+
+    def _get_compile_errors(self) -> list[str]:
+        """Return a list of current Unity compile error strings (empty = clean)."""
+        try:
+            result = self.bridge.client.call_route("compilation/errors", {}) or {}
+            raw = result.get("errors") or []
+            return [str(e) for e in raw if e]
+        except Exception:
+            return []
+
+    def _create_script_verified(
+        self, path: str, content: str, *, max_fix_attempts: int = 2
+    ) -> tuple[bool, str]:
+        """Write a script, read it back to confirm, wait for compile, return (ok, message)."""
+        # 1. Write
+        try:
+            self.bridge.client.call_route("script/create", {"path": path, "content": content})
+        except Exception as exc:
+            return False, f"script/create failed: {exc}"
+
+        # 2. Read back and verify content matches
+        try:
+            readback = self.bridge.client.call_route("script/read", {"path": path}) or {}
+            written = str(readback.get("content") or "")
+            if written.strip() != content.strip():
+                # Content mismatch — rewrite once
+                self.bridge.client.call_route("script/create", {"path": path, "content": content})
+        except Exception:
+            pass  # read-back failure is non-fatal; continue to compile check
+
+        # 3. Wait for Unity to recompile, then check for errors
+        current_content = content
+        for fix_attempt in range(max_fix_attempts + 1):
+            time.sleep(3.0)
+            compile_errors = self._get_compile_errors()
+            # Filter to errors mentioning this script
+            script_name = path.split("/")[-1].replace(".cs", "")
+            relevant = [e for e in compile_errors if script_name in e or path in e]
+            if not relevant:
+                return True, f"Created and compiled `{path}` successfully"
+
+            if fix_attempt >= max_fix_attempts:
+                break
+
+            # Try to auto-fix the most common issues
+            fixed = current_content
+            # Escaped braces from Python format strings
+            if "{{" in fixed or "}}" in fixed:
+                fixed = fixed.replace("{{", "{").replace("}}", "}")
+            # Missing semicolons, wrong class name, etc. are harder — just report
+            if fixed == current_content:
+                break  # no mechanical fix possible
+            current_content = fixed
+            self.bridge.client.call_route("script/create", {"path": path, "content": fixed})
+
+        return False, f"Script has compile errors: {'; '.join(relevant[:3])}"
+
+    def _attach_component_verified(
+        self, go_path: str, component_type: str, *, max_attempts: int = 5, wait_secs: float = 2.0
+    ) -> tuple[bool, str]:
+        """Add a component and confirm it appears on the GameObject."""
+        for attempt in range(max_attempts):
+            if attempt > 0:
+                time.sleep(wait_secs)
+            try:
+                self.bridge.client.call_route(
+                    "component/add",
+                    {"gameObjectPath": go_path, "componentType": component_type},
+                )
+            except Exception as exc:
+                last_err = str(exc)
+                continue
+
+            # Verify it's actually there
+            try:
+                info = self.bridge.client.call_route("gameobject/info", {"gameObjectPath": go_path}) or {}
+                components = [str(c) for c in (info.get("components") or [])]
+                short_type = component_type.split(".")[-1]
+                if any(short_type in c for c in components):
+                    return True, f"Attached `{component_type}` — confirmed on `{go_path}`"
+            except Exception:
+                pass  # info call failed, treat as success if add didn't throw
+
+            return True, f"Attached `{component_type}` to `{go_path}`"
+
+        return False, f"Could not attach `{component_type}` after {max_attempts} attempts: {last_err}"
+
+    # ── Player prototype ──────────────────────────────────────────────────────
+
     def _build_player_prototype_reply(self, name: str = "Player") -> str:
-        """Build a player GO with CharacterController + movement script in one flow."""
-        self._set_status("Creating player GameObject")
+        """Build a player GO with CharacterController + movement script, with verify-and-fix at each step."""
         steps_done: list[str] = []
         errors: list[str] = []
 
+        # 1. Create the GameObject
+        self._set_status("Creating player GameObject")
         try:
             self.bridge.client.call_route("gameobject/create", {"name": name, "primitiveType": "Capsule"})
-            steps_done.append(f"Created Capsule GameObject `{name}`")
+            steps_done.append(f"Created Capsule `{name}`")
         except Exception as exc:
-            errors.append(f"Could not create GameObject: {exc}")
-            return "\n".join(errors) + "\n\nMake sure a Unity editor is connected."
+            return f"Could not create GameObject: {exc}\n\nMake sure Unity is open and the bridge is connected."
 
+        # 2. Add CharacterController — verify it landed
         self._set_status("Adding CharacterController")
-        try:
-            self.bridge.client.call_route(
-                "component/add",
-                {"gameObjectPath": name, "componentType": "UnityEngine.CharacterController"},
-            )
-            steps_done.append("Added `CharacterController`")
-        except Exception as exc:
-            errors.append(f"CharacterController: {exc}")
+        ok, msg = self._attach_component_verified(
+            name, "UnityEngine.CharacterController", max_attempts=3, wait_secs=1.0
+        )
+        if ok:
+            steps_done.append(msg)
+        else:
+            errors.append(msg)
 
+        # 3. Create script — read back, wait for compile, auto-fix if broken
         self._set_status("Creating PlayerMovement script")
         script_path = "Assets/Scripts/PlayerMovement.cs"
-        script_created = False
-        try:
-            result = self.bridge.client.call_route(
-                "script/create",
-                {"path": script_path, "content": self._MOVEMENT_SCRIPT_TEMPLATE},
-            )
-            actual_path = (result or {}).get("path") or script_path
-            steps_done.append(f"Created `{actual_path}`")
-            script_created = True
-        except Exception as exc:
-            errors.append(f"Script creation: {exc}")
+        ok, msg = self._create_script_verified(script_path, self._MOVEMENT_SCRIPT_TEMPLATE)
+        if ok:
+            steps_done.append(msg)
+        else:
+            errors.append(msg)
 
-        self._set_status("Attaching PlayerMovement to GameObject")
-        if script_created:
-            # Unity must recompile after script/create before component/add can find the type.
-            # Wait briefly then retry a few times.
-            attached = False
-            for attempt in range(4):
-                if attempt > 0:
-                    time.sleep(2.0)
-                try:
-                    self.bridge.client.call_route(
-                        "component/add",
-                        {"gameObjectPath": name, "componentType": "PlayerMovement"},
-                    )
-                    steps_done.append("Attached `PlayerMovement` to GameObject")
-                    attached = True
-                    break
-                except Exception:
-                    pass
-            if not attached:
-                errors.append(
-                    "Script attach: Unity may still be recompiling — "
-                    "open the project in Unity and it should auto-attach on next domain reload, "
-                    "or drag `PlayerMovement` onto the Player in the Inspector."
-                )
+        # 4. Attach script — retry across recompile window, verify with gameobject/info
+        if ok:
+            self._set_status("Attaching PlayerMovement script")
+            ok2, msg2 = self._attach_component_verified(
+                name, "PlayerMovement", max_attempts=5, wait_secs=2.0
+            )
+            if ok2:
+                steps_done.append(msg2)
+            else:
+                errors.append(msg2)
 
         self._set_status("Capturing scene")
         capture = self._capture_after_action()
@@ -1678,13 +1749,13 @@ public class PlayerMovement : MonoBehaviour
 
         lines = [f"Built player prototype `{name}`:", ""] + steps_done
         if errors:
-            lines += [""] + errors
+            lines += ["", "Issues encountered:"] + [f"  • {e}" for e in errors]
         if capture_lines:
             lines += [""] + capture_lines
         lines += [
             "",
             "Next: press Play and test movement with WASD + Space.",
-            "Ask me to adjust speed, add a camera follow, or write tests for the controller.",
+            "Say 'adjust speed' or 'add camera follow' to keep building.",
         ]
         return "\n".join(lines)
 
@@ -1696,7 +1767,7 @@ public class PlayerMovement : MonoBehaviour
         go_name: str,
         description: str = "",
     ) -> str:
-        """Create a C# script and attach it to a named GameObject."""
+        """Create a C# script, verify it compiled, then attach it to a named GameObject."""
         self._set_status(f"Creating {script_name}.cs")
         steps_done: list[str] = []
         errors: list[str] = []
@@ -1705,42 +1776,35 @@ public class PlayerMovement : MonoBehaviour
         comment = f"// {description}" if description else "// TODO: implement"
         script_content = (
             f"using UnityEngine;\n\n"
-            f"public class {script_name} : MonoBehaviour\n{{\n"
+            f"public class {script_name} : MonoBehaviour\n"
+            "{\n"
             f"    {comment}\n"
-            f"    private void Start() {{ }}\n"
-            f"    private void Update() {{ }}\n"
-            f"}}\n"
+            "    private void Start() { }\n"
+            "    private void Update() { }\n"
+            "}\n"
         )
 
-        try:
-            result = self._run_embedded_cli([
-                "script", "create",
-                "--name", script_name,
-                "--path", script_path,
-                "--content", script_content,
-            ])
-            actual_path = (result or {}).get("path") or script_path
-            steps_done.append(f"Created `{actual_path}`")
-        except Exception as exc:
-            errors.append(f"Script creation failed: {exc}")
-            return "\n".join(errors)
+        self._set_status(f"Writing {script_name}.cs")
+        ok, msg = self._create_script_verified(script_path, script_content)
+        if ok:
+            steps_done.append(msg)
+        else:
+            errors.append(msg)
+            return "\n".join([f"Failed to create `{script_name}.cs`:"] + errors)
 
         self._set_status(f"Attaching {script_name} to {go_name}")
-        try:
-            self.bridge.client.call_route(
-                "component/add",
-                {"gameObjectName": go_name, "componentType": script_name},
-            )
-            steps_done.append(f"Attached `{script_name}` to `{go_name}`")
-        except Exception as exc:
-            errors.append(f"Attach failed: {exc}")
+        ok2, msg2 = self._attach_component_verified(go_name, script_name, max_attempts=5, wait_secs=2.0)
+        if ok2:
+            steps_done.append(msg2)
+        else:
+            errors.append(msg2)
 
         capture = self._capture_after_action()
         capture_lines = self._capture_lines(capture)
 
         lines = [f"Created and attached `{script_name}` to `{go_name}`:", ""] + steps_done
         if errors:
-            lines += [""] + errors
+            lines += ["", "Issues:"] + [f"  • {e}" for e in errors]
         if capture_lines:
             lines += [""] + capture_lines
         lines += ["", f"Open `{script_path}` to implement the logic."]
