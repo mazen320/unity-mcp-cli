@@ -41,6 +41,17 @@ public class CliAnythingWindow : EditorWindow
         window.Show();
     }
 
+    [MenuItem("Window/CLI Copilot", priority = 9001)]
+    public static void OpenChatWorkspace()
+    {
+        var window = CreateInstance<CliAnythingWindow>();
+        window._agentWorkspaceMode = true;
+        window._tab = 1;
+        window.titleContent = new GUIContent("CLI Copilot");
+        window.minSize = new Vector2(840, 540);
+        window.Show();
+    }
+
     // ── State ────────────────────────────────────────────────────────────
 
     private int _tab = 0;
@@ -83,6 +94,9 @@ public class CliAnythingWindow : EditorWindow
     private string  _agentLastLaunchCommand = "";
     private int     _agentBridgePid;
     private double  _agentLaunchPendingUntil;
+    private bool    _agentWorkspaceMode;
+    private Vector2 _agentSidebarScroll;
+    private bool    _agentForceScrollToBottom;
     private static readonly string[] AgentProviderOptions = { "auto", "openrouter", "openai", "anthropic" };
     private string  _agentApiKey = "";
 
@@ -243,7 +257,10 @@ public class CliAnythingWindow : EditorWindow
         EditorApplication.hierarchyChanged += MarkDirty;
         Selection.selectionChanged += OnSelectionChanged;
         Application.logMessageReceivedThreaded += CaptureConsoleLog;
-        titleContent = new GUIContent("CLI Anything", EditorGUIUtility.IconContent("d_UnityEditor.ConsoleWindow").image);
+        titleContent = new GUIContent(
+            _agentWorkspaceMode ? "CLI Copilot" : "CLI Anything",
+            EditorGUIUtility.IconContent("d_UnityEditor.ConsoleWindow").image
+        );
         LoadAgentBridgeSettings();
     }
 
@@ -267,7 +284,7 @@ public class CliAnythingWindow : EditorWindow
         if (Selection.activeGameObject != null)
         {
             _selected = Selection.activeGameObject;
-            if (_tab == 1) _tab = 2;  // auto-switch to inspector from scene tab
+            if (!_agentWorkspaceMode && _tab == 1) _tab = 2;  // auto-switch to inspector from scene tab
         }
         Repaint();
     }
@@ -275,6 +292,11 @@ public class CliAnythingWindow : EditorWindow
     private void OnGUI()
     {
         EnsureStyles();
+        if (_agentWorkspaceMode)
+        {
+            DrawAgentWorkspace();
+            return;
+        }
         DrawHeader();
         DrawTabs();
 
@@ -343,6 +365,7 @@ public class CliAnythingWindow : EditorWindow
         double now = EditorApplication.timeSinceStartup;
         if (now - _agentLastRefresh < AgentRefreshInterval) return;
         _agentLastRefresh = now;
+        int previousMessageCount = _agentMessages.Count;
 
         // Find .umcp root from project root
         if (string.IsNullOrEmpty(_agentUmcpRoot))
@@ -481,6 +504,9 @@ public class CliAnythingWindow : EditorWindow
             _agentMessages.AddRange(_agentPendingMessages);
         }
 
+        if (_agentMessages.Count != previousMessageCount)
+            _agentForceScrollToBottom = true;
+
         Repaint();
     }
 
@@ -488,8 +514,48 @@ public class CliAnythingWindow : EditorWindow
     {
         UpdateAgentTab();
         EnsureStyles();
+        DrawAgentStatusToolbar(true);
+        if (_showAgentBridgeSettings)
+            DrawAgentBridgeSettings();
+        float inputHeight = 128f;
+        float settingsHeight = _showAgentBridgeSettings ? 176f : 0f;
+        float chatHeight = Mathf.Max(120f, position.height - 80f - inputHeight - settingsHeight);
+        DrawAgentConversationPane(chatHeight);
+    }
 
-        // ── Connection bar ────────────────────────────────────────────────
+    private void DrawAgentWorkspace()
+    {
+        UpdateAgentTab();
+        EnsureStyles();
+
+        DrawAgentStatusToolbar(false);
+
+        float sidebarWidth = Mathf.Clamp(position.width * 0.32f, 280f, 380f);
+        EditorGUILayout.BeginHorizontal();
+
+        EditorGUILayout.BeginVertical(GUILayout.Width(position.width - sidebarWidth - 12f));
+        float workspaceChatHeight = Mathf.Max(220f, position.height - 140f);
+        DrawAgentConversationPane(workspaceChatHeight);
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Width(sidebarWidth), GUILayout.ExpandHeight(true));
+        _agentSidebarScroll = EditorGUILayout.BeginScrollView(_agentSidebarScroll);
+        DrawAgentStatusCard();
+        DrawAgentLatestPlanCard();
+        DrawAgentEvidenceCard();
+        if (_showAgentBridgeSettings)
+        {
+            EditorGUILayout.Space(6);
+            DrawAgentBridgeSettings();
+        }
+        EditorGUILayout.EndScrollView();
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.EndHorizontal();
+    }
+
+    private void DrawAgentStatusToolbar(bool showWorkspaceButton)
+    {
         EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
         var connColor = _agentConnected ? new Color(0.3f, 0.9f, 0.4f) : new Color(0.9f, 0.3f, 0.3f);
         var prevColor = GUI.color;
@@ -514,12 +580,15 @@ public class CliAnythingWindow : EditorWindow
 
         if (_agentStatus.state == "executing" && _agentStatus.totalSteps > 0)
         {
-            string progress = $"Step {_agentStatus.currentStep}/{_agentStatus.totalSteps}: {_agentStatus.currentAction}";
-            GUILayout.Label(progress, EditorStyles.miniLabel);
+            GUILayout.Label($"Step {_agentStatus.currentStep}/{_agentStatus.totalSteps}: {_agentStatus.currentAction}", EditorStyles.miniLabel);
         }
         else if (_agentStatus.state == "planning")
         {
             GUILayout.Label("Planning...", EditorStyles.miniLabel);
+        }
+        else if (_agentStatus.state == "awaiting_approval")
+        {
+            GUILayout.Label("Awaiting approval", EditorStyles.miniLabel);
         }
         else if (!string.IsNullOrEmpty(_agentStatusSummary))
         {
@@ -548,6 +617,10 @@ public class CliAnythingWindow : EditorWindow
                 GUILayout.Label(_agentBridgePid > 0 ? $"PID {_agentBridgePid}" : "Bridge running", EditorStyles.miniLabel, GUILayout.Width(78));
             }
         }
+        if (showWorkspaceButton && GUILayout.Button("Open Copilot", EditorStyles.toolbarButton, GUILayout.Width(92)))
+            OpenChatWorkspace();
+        if (_agentWorkspaceMode && GUILayout.Button("Main Panel", EditorStyles.toolbarButton, GUILayout.Width(82)))
+            Open();
         if (GUILayout.Button(_showAgentBridgeSettings ? "Hide" : "Settings", EditorStyles.toolbarButton, GUILayout.Width(58)))
             _showAgentBridgeSettings = !_showAgentBridgeSettings;
         if (GUILayout.Button("Clear", EditorStyles.toolbarButton, GUILayout.Width(45)))
@@ -555,60 +628,33 @@ public class CliAnythingWindow : EditorWindow
         if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.Width(55)))
             _agentLastRefresh = 0;
         EditorGUILayout.EndHorizontal();
+    }
 
-        if (_showAgentBridgeSettings)
-            DrawAgentBridgeSettings();
-
-        // ── Chat history ──────────────────────────────────────────────────
-        float inputHeight = 128f;
-        float settingsHeight = _showAgentBridgeSettings ? 176f : 0f;
-        float chatHeight = Mathf.Max(120f, position.height - 80f - inputHeight - settingsHeight);
-
-        _agentChatScroll = EditorGUILayout.BeginScrollView(_agentChatScroll,
-            GUILayout.Height(chatHeight));
+    private void DrawAgentConversationPane(float chatHeight)
+    {
+        _agentChatScroll = EditorGUILayout.BeginScrollView(_agentChatScroll, GUILayout.Height(chatHeight));
 
         if (_agentMessages.Count == 0)
-        {
-            EditorGUILayout.Space(16);
-            var centered = new GUIStyle(EditorStyles.label)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap  = true,
-                normal    = { textColor = new Color(0.5f, 0.5f, 0.5f) }
-            };
-            GUILayout.Label(
-                !_agentConnected
-                    ? "No IPC connection. Open Unity with FileIPCBridge.cs in Assets/Editor/."
-                    : !_agentBridgeLive
-                        ? "IPC is connected, but the chat bridge is offline. Click Connect, or send a message and let the panel auto-start it."
-                        : "Chat bridge is live. Send a message below.",
-                centered);
-        }
+            DrawAgentEmptyState();
 
         foreach (var msg in _agentMessages)
-        {
             DrawAgentMessage(msg);
-        }
 
-        // Show live executing step if agent is running
         if (_agentStatus.state == "executing" && !string.IsNullOrEmpty(_agentStatus.currentAction))
-        {
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Space(8);
-            var runStyle = new GUIStyle(EditorStyles.helpBox)
-            {
-                normal = { textColor = new Color(0.4f, 0.8f, 1f) }
-            };
-            GUILayout.Label($"⟳  [{_agentStatus.currentStep}/{_agentStatus.totalSteps}] {_agentStatus.currentAction}", runStyle);
-            EditorGUILayout.EndHorizontal();
-            EditorGUILayout.Space(2);
-        }
+            DrawAgentExecutionBanner();
+        else if (_agentStatus.state == "awaiting_approval")
+            DrawAgentApprovalBanner();
 
         EditorGUILayout.EndScrollView();
+        if (_agentForceScrollToBottom)
+        {
+            _agentChatScroll = new Vector2(0f, float.MaxValue);
+            _agentForceScrollToBottom = false;
+            Repaint();
+        }
 
-        // ── Input area ────────────────────────────────────────────────────
         EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinHeight(96f));
-        GUILayout.Label("Message", EditorStyles.miniLabel);
+        GUILayout.Label(_agentWorkspaceMode ? "Ask the copilot" : "Message", EditorStyles.miniLabel);
         EditorGUILayout.BeginHorizontal();
         GUI.SetNextControlName("AgentInput");
         _agentInput = EditorGUILayout.TextField(_agentInput, GUILayout.Height(24f), GUILayout.ExpandWidth(true));
@@ -627,18 +673,210 @@ public class CliAnythingWindow : EditorWindow
         }
         EditorGUILayout.EndHorizontal();
 
-        // Quick-action buttons
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("improve project", EditorStyles.miniButton)) SendAgentMessage("improve project");
-        if (GUILayout.Button("context", EditorStyles.miniButton)) SendAgentMessage("context");
-        if (GUILayout.Button("scene info", EditorStyles.miniButton)) SendAgentMessage("scene info");
-        if (GUILayout.Button("list scripts", EditorStyles.miniButton)) SendAgentMessage("list scripts");
+        if (GUILayout.Button("show me the target first", EditorStyles.miniButton))
+            SendAgentMessage("Show me which object you're targeting and why before changing anything.");
+        if (GUILayout.Button("explain the plan", EditorStyles.miniButton))
+            SendAgentMessage("Explain the plan a little more before you do anything.");
+        if (GUILayout.Button("yes", EditorStyles.miniButton))
+            SendAgentMessage("yes");
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("context", EditorStyles.miniButton)) SendAgentMessage("context");
+        if (GUILayout.Button("scene info", EditorStyles.miniButton)) SendAgentMessage("scene info");
         if (GUILayout.Button("compile errors", EditorStyles.miniButton)) SendAgentMessage("compile errors");
         if (GUILayout.Button("save scene", EditorStyles.miniButton)) SendAgentMessage("save scene");
         EditorGUILayout.EndHorizontal();
         EditorGUILayout.EndVertical();
+    }
+
+    private void DrawAgentEmptyState()
+    {
+        EditorGUILayout.Space(16);
+        var centered = new GUIStyle(EditorStyles.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            wordWrap  = true,
+            normal    = { textColor = new Color(0.5f, 0.5f, 0.5f) }
+        };
+        GUILayout.Label(
+            !_agentConnected
+                ? "No IPC connection. Open Unity with FileIPCBridge.cs in Assets/Editor/."
+                : !_agentBridgeLive
+                    ? "IPC is connected, but the chat bridge is offline. Click Connect, or send a message and let the panel auto-start it."
+                    : "Chat bridge is live. Send a message below.",
+            centered);
+    }
+
+    private void DrawAgentExecutionBanner()
+    {
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Space(8);
+        var runStyle = new GUIStyle(EditorStyles.helpBox)
+        {
+            normal = { textColor = new Color(0.4f, 0.8f, 1f) }
+        };
+        GUILayout.Label($"⟳  [{_agentStatus.currentStep}/{_agentStatus.totalSteps}] {_agentStatus.currentAction}", runStyle);
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.Space(2);
+    }
+
+    private void DrawAgentApprovalBanner()
+    {
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Space(8);
+        var approvalStyle = new GUIStyle(EditorStyles.helpBox)
+        {
+            normal = { textColor = new Color(1f, 0.82f, 0.42f) }
+        };
+        GUILayout.Label("Waiting for approval. Reply `yes` to apply, or ask it to revise the plan.", approvalStyle);
+        EditorGUILayout.EndHorizontal();
+        EditorGUILayout.Space(2);
+    }
+
+    private void DrawAgentStatusCard()
+    {
+        EditorGUILayout.LabelField("Current Work", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        string stateLabel = string.IsNullOrEmpty(_agentStatus.state) ? "idle" : _agentStatus.state;
+        EditorGUILayout.LabelField("State", stateLabel);
+        if (_agentStatus.totalSteps > 0)
+            EditorGUILayout.LabelField("Progress", $"{_agentStatus.currentStep}/{_agentStatus.totalSteps}");
+        if (!string.IsNullOrEmpty(_agentStatus.currentAction))
+            EditorGUILayout.LabelField("Action", _agentStatus.currentAction, EditorStyles.wordWrappedLabel);
+        if (!string.IsNullOrEmpty(_agentStatusSummary))
+            EditorGUILayout.LabelField("Bridge", _agentStatusSummary, EditorStyles.wordWrappedLabel);
+        EditorGUILayout.EndVertical();
+    }
+
+    private void DrawAgentLatestPlanCard()
+    {
+        AgentChatMessage latestPlanMsg;
+        if (!TryGetLatestAgentMessageWithSteps(out latestPlanMsg))
+            return;
+
+        EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Latest Plan", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        GUILayout.Label(latestPlanMsg.content, EditorStyles.wordWrappedLabel);
+        EditorGUILayout.Space(2);
+        foreach (var step in latestPlanMsg.steps)
+        {
+            string statusLabel = string.IsNullOrEmpty(step.status) ? "pending" : step.status;
+            GUILayout.Label($"[{step.stepNum}/{Mathf.Max(step.totalSteps, latestPlanMsg.steps.Count)}] {step.description} — {statusLabel}", EditorStyles.miniLabel);
+        }
+        if (latestPlanMsg.metadata != null
+            && latestPlanMsg.metadata.ContainsKey("approvalRequired")
+            && Convert.ToBoolean(latestPlanMsg.metadata["approvalRequired"]))
+        {
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Approve", EditorStyles.miniButton))
+                SendAgentMessage("yes");
+            if (GUILayout.Button("Ask for Target", EditorStyles.miniButton))
+                SendAgentMessage("Show me which object you're targeting and why before changing anything.");
+            if (GUILayout.Button("Revise", EditorStyles.miniButton))
+                SendAgentMessage("Revise that plan and explain it a little more before doing anything.");
+            EditorGUILayout.EndHorizontal();
+        }
+        EditorGUILayout.EndVertical();
+    }
+
+    private void DrawAgentEvidenceCard()
+    {
+        AgentChatMessage evidenceMsg;
+        if (!TryGetLatestAgentMessageWithMetadata(out evidenceMsg))
+            return;
+
+        var lines = BuildAgentMetadataLines(evidenceMsg.metadata);
+        if (lines.Count == 0)
+            return;
+
+        EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Evidence", EditorStyles.boldLabel);
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        foreach (string line in lines)
+            GUILayout.Label(line, EditorStyles.wordWrappedMiniLabel);
+        EditorGUILayout.EndVertical();
+    }
+
+    private bool TryGetLatestAgentMessageWithSteps(out AgentChatMessage message)
+    {
+        for (int i = _agentMessages.Count - 1; i >= 0; i--)
+        {
+            var candidate = _agentMessages[i];
+            if ((candidate.role == "ai" || candidate.role == "assistant") && candidate.steps != null && candidate.steps.Count > 0)
+            {
+                message = candidate;
+                return true;
+            }
+        }
+        message = default(AgentChatMessage);
+        return false;
+    }
+
+    private bool TryGetLatestAgentMessageWithMetadata(out AgentChatMessage message)
+    {
+        for (int i = _agentMessages.Count - 1; i >= 0; i--)
+        {
+            var candidate = _agentMessages[i];
+            if ((candidate.role == "ai" || candidate.role == "assistant") && candidate.metadata != null && candidate.metadata.Count > 0)
+            {
+                message = candidate;
+                return true;
+            }
+        }
+        message = default(AgentChatMessage);
+        return false;
+    }
+
+    private List<string> BuildAgentMetadataLines(Dictionary<string, object> metadata)
+    {
+        var lines = new List<string>();
+        if (metadata == null)
+            return lines;
+
+        string[] preferredKeys =
+        {
+            "targetPath",
+            "gameObjectPath",
+            "keptPath",
+            "moduleType",
+            "candidatePaths",
+            "removedPaths",
+            "updatedPaths",
+        };
+
+        foreach (string key in preferredKeys)
+        {
+            if (!metadata.ContainsKey(key) || metadata[key] == null)
+                continue;
+            string formatted = FormatAgentMetadataValue(metadata[key]);
+            if (!string.IsNullOrEmpty(formatted))
+                lines.Add($"{key}: {formatted}");
+        }
+
+        return lines;
+    }
+
+    private string FormatAgentMetadataValue(object value)
+    {
+        if (value == null)
+            return "";
+        if (value is string)
+            return value.ToString();
+        if (value is List<object> list)
+        {
+            var parts = new List<string>();
+            foreach (object item in list)
+            {
+                if (item == null) continue;
+                parts.Add(item.ToString());
+                if (parts.Count >= 4) break;
+            }
+            return string.Join(", ", parts.ToArray());
+        }
+        return value.ToString();
     }
 
     private void DrawAgentMessage(AgentChatMessage msg)

@@ -151,18 +151,26 @@ public class PlayerMovement : MonoBehaviour
                 bridge.append_message(
                     "ai",
                     str(reply.get("content") or ""),
+                    steps=list(reply.get("steps") or []),
                     metadata=dict(reply.get("metadata") or {}),
                 )
             else:
                 bridge.append_message("ai", reply)
         finally:
-            bridge.write_status("idle", 0, 0, "")
+            if getattr(bridge, "_status_state", "") != "awaiting_approval":
+                bridge.write_status("idle", 0, 0, "")
 
     def _dispatch(self, content: str) -> str | dict[str, Any]:
         normalized = " ".join((content or "").strip().split())
         lowered = normalized.lower()
         if not normalized:
             return self._help_reply()
+        pending_model_plan = getattr(self.bridge, "_pending_model_plan", None)
+        if pending_model_plan and lowered in {"yes", "go", "proceed", "do it", "execute", "run it", "confirm", "apply"}:
+            return self._execute_pending_model_plan()
+        if pending_model_plan and lowered in {"no", "cancel", "stop", "hold", "not now", "never mind"}:
+            self.bridge._pending_model_plan = None
+            return "Cancelled the pending plan. Tell me what to change and I’ll revise it before doing anything."
         if self._GREETING_RE.match(normalized) or lowered in {"help", "what can you do", "what do you do"}:
             return self._greeting_reply()
         if lowered in {"context", "project context", "project info", "what do you know about the project"}:
@@ -1922,7 +1930,7 @@ public class PlayerMovement : MonoBehaviour
         results_lines += ["", "Done. Ask me to audit again to see the score delta."]
         return "\n".join(results_lines)
 
-    def _best_effort_agent_reply(self, content: str) -> str:
+    def _best_effort_agent_reply(self, content: str) -> str | dict[str, Any]:
         provider = self._configured_model_provider()
         if not provider:
             return (
@@ -1933,6 +1941,9 @@ public class PlayerMovement : MonoBehaviour
         planned = self._try_model_backed_plan(content)
         if planned:
             return planned
+        chatted = self._try_model_backed_chat(content)
+        if chatted:
+            return chatted
         return (
             f"I couldn't quite turn that into a concrete plan. Can you rephrase it as something more concrete, like:\n\n"
             f"\"Create a player controller\"\n"
@@ -1941,7 +1952,55 @@ public class PlayerMovement : MonoBehaviour
             f"Or just tell me what you're trying to build and I'll figure out the steps."
         )
 
-    def _try_model_backed_plan(self, content: str) -> str | None:
+    def _plan_preview_steps(self, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        total = len(steps)
+        preview: list[dict[str, Any]] = []
+        for index, step in enumerate(steps, 1):
+            preview.append(
+                {
+                    "step": int(step.get("step", index)),
+                    "totalSteps": total,
+                    "description": str(step.get("description") or step.get("route") or f"Step {index}"),
+                    "status": "pending",
+                }
+            )
+        return preview
+
+    def _execute_pending_model_plan(self) -> dict[str, Any] | str:
+        plan = getattr(self.bridge, "_pending_model_plan", None)
+        if not isinstance(plan, list) or not plan:
+            return "No pending plan to execute. Tell me what you want to change and I’ll propose it first."
+
+        self.bridge._pending_model_plan = None
+        loop = AgentLoop(self.bridge.client, max_retries=1, status_path=self.bridge._status_path)
+        results = loop.execute(plan)
+        self._invalidate_context_cache()
+
+        result_steps: list[dict[str, Any]] = []
+        total = len(results)
+        for result in results:
+            result_steps.append(
+                {
+                    "step": int(result.step),
+                    "totalSteps": total,
+                    "description": str(result.description),
+                    "status": str(result.status),
+                }
+            )
+
+        return {
+            "content": (
+                f"Applied the approved plan.\n\n"
+                f"{format_results(results, color=False)}"
+            ),
+            "steps": result_steps,
+            "metadata": {
+                "kind": "model-plan-result",
+                "executed": True,
+            },
+        }
+
+    def _try_model_backed_plan(self, content: str) -> dict[str, Any] | None:
         try:
             from ..commands.agent_loop_cmd import _generate_plan_from_intent
         except Exception:
@@ -1957,13 +2016,41 @@ public class PlayerMovement : MonoBehaviour
         )
         if not isinstance(steps, list) or not steps:
             return None
-        loop = AgentLoop(self.bridge.client, max_retries=1, status_path=self.bridge._status_path)
-        results = loop.execute(steps)
-        self._invalidate_context_cache()
-        return (
-            f"I planned {len(steps)} step(s) and executed them.\n\n"
-            f"{format_results(results, color=False)}"
+        self.bridge._pending_model_plan = steps
+        self.bridge.write_status("awaiting_approval", 0, len(steps), "Waiting for approval")
+        preview_steps = self._plan_preview_steps(steps)
+        plan_lines = [
+            f"I found a concrete {len(steps)}-step plan.",
+            "",
+            "I have not changed anything yet.",
+            "Reply `yes` to apply it, or tell me what to change first.",
+        ]
+        return {
+            "content": "\n".join(plan_lines),
+            "steps": preview_steps,
+            "metadata": {
+                "approvalRequired": True,
+                "kind": "model-plan-proposal",
+                "stepCount": len(steps),
+            },
+        }
+
+    def _try_model_backed_chat(self, content: str) -> str | None:
+        try:
+            from ..commands.agent_loop_cmd import _generate_chat_reply_from_intent
+        except Exception:
+            return None
+        if not self._configured_model_provider():
+            return None
+        self._set_status("Thinking with model")
+        reply = _generate_chat_reply_from_intent(
+            content,
+            model=self._selected_model(),
+            context_prompt=self._model_context_prompt(),
+            history=self._recent_history(),
         )
+        text = str(reply or "").strip()
+        return text or None
 
 
 # ── ChatBridge ────────────────────────────────────────────────────────────────

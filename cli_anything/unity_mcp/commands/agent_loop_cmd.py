@@ -205,15 +205,21 @@ Available routes (use EXACT param names shown):
 
 Return ONLY a valid JSON array, no prose, no markdown code fences."""
 
+_CHAT_SYSTEM_PROMPT = """You are a Unity AI copilot running inside the Unity editor.
 
-def _generate_plan_from_intent(
+Be conversational, grounded, and concise. Use the provided Unity project context and recent chat history.
+Help the user think through what to build or fix in their existing project. Do not force every reply into an executable plan.
+If the user is exploratory or vague, answer naturally and ask at most one clarifying question only when needed.
+If the user asks for something concrete, you can suggest the next Unity-specific steps, but do not pretend you already executed anything.
+Do not invent project facts beyond the provided context. Return plain text only."""
+
+
+def _build_model_messages(
     intent: str,
     *,
-    model: str | None,
     context_prompt: str | None = None,
     history: list[dict[str, Any]] | None = None,
-) -> list | None:
-    """Call an AI API to convert intent to a plan. Returns None if unavailable."""
+) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
     if context_prompt:
         messages.append(
@@ -236,6 +242,22 @@ def _generate_plan_from_intent(
             mapped_role = "user"
         messages.append({"role": mapped_role, "content": content})
     messages.append({"role": "user", "content": f"Intent: {intent}"})
+    return messages
+
+
+def _generate_plan_from_intent(
+    intent: str,
+    *,
+    model: str | None,
+    context_prompt: str | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> list | None:
+    """Call an AI API to convert intent to a plan. Returns None if unavailable."""
+    messages = _build_model_messages(
+        intent,
+        context_prompt=context_prompt,
+        history=history,
+    )
 
     # Try Anthropic
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -337,6 +359,102 @@ def _generate_plan_from_intent(
             if isinstance(parsed, dict) and "steps" in parsed:
                 return parsed["steps"]
             return parsed
+        except Exception:
+            pass
+
+    return None
+
+
+def _generate_chat_reply_from_intent(
+    intent: str,
+    *,
+    model: str | None,
+    context_prompt: str | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Call an AI API to turn intent into a grounded conversational reply."""
+    messages = _build_model_messages(
+        intent,
+        context_prompt=context_prompt,
+        history=history,
+    )
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        try:
+            payload = _json.dumps({
+                "model": model or "claude-haiku-4-5-20251001",
+                "max_tokens": 1024,
+                "system": _CHAT_SYSTEM_PROMPT,
+                "messages": messages,
+            }).encode()
+            req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=payload,
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read())
+            text = str(data["content"][0]["text"]).strip()
+            return text or None
+        except Exception:
+            pass
+
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if api_key:
+        try:
+            payload = _json.dumps({
+                "model": model or "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": _CHAT_SYSTEM_PROMPT},
+                    *messages,
+                ],
+                "max_tokens": 1024,
+            }).encode()
+            req = urllib.request.Request(
+                "https://api.openai.com/v1/chat/completions",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read())
+            text = str(data["choices"][0]["message"]["content"]).strip()
+            return text or None
+        except Exception:
+            pass
+
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if api_key:
+        try:
+            payload = _json.dumps({
+                "model": model or "anthropic/claude-3-haiku",
+                "messages": [
+                    {"role": "system", "content": _CHAT_SYSTEM_PROMPT},
+                    *messages,
+                ],
+                "max_tokens": 1024,
+            }).encode()
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                    "HTTP-Referer": "https://github.com/unity-mcp-agent",
+                    "X-Title": "Unity AI Agent",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read())
+            text = str(data["choices"][0]["message"]["content"]).strip()
+            return text or None
         except Exception:
             pass
 

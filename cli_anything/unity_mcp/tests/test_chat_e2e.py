@@ -17,6 +17,7 @@ import unittest
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 
 @contextmanager
@@ -314,7 +315,7 @@ class ChatE2ETests(unittest.TestCase):
         assert "openai_api_key" in reply.lower() or "anthropic_api_key" in reply.lower()
 
     def test_try_model_backed_plan_passes_full_context_and_recent_history(self):
-        """Model-backed planning should receive fresh full context and recent chat history."""
+        """Model-backed planning should receive fresh full context and return a proposal first."""
         from unittest.mock import MagicMock, patch
         from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
 
@@ -342,9 +343,7 @@ class ChatE2ETests(unittest.TestCase):
                     return_value=[{"step": 1, "description": "Create player", "route": "gameobject/create", "params": {}}],
                 ) as generate_plan:
                     with patch("cli_anything.unity_mcp.core.agent_chat.AgentLoop") as loop_cls:
-                        loop_cls.return_value.execute.return_value = []
-
-                        assistant._try_model_backed_plan("create a player controller for the active scene")
+                        reply = assistant._try_model_backed_plan("create a player controller for the active scene")
 
             bridge._context.as_system_prompt.assert_called_once_with(full=True)
             kwargs = generate_plan.call_args.kwargs
@@ -355,6 +354,11 @@ class ChatE2ETests(unittest.TestCase):
             ]
             assert "Unity Project Context" in kwargs["context_prompt"]
             assert "Keep URP and avoid demo residue." in kwargs["context_prompt"]
+            assert isinstance(reply, dict)
+            assert reply["metadata"]["approvalRequired"] is True
+            assert len(reply["steps"]) == 1
+            assert getattr(bridge, "_pending_model_plan", None)
+            loop_cls.return_value.execute.assert_not_called()
 
     def test_try_model_backed_plan_uses_project_selected_model(self):
         """Model-backed planning should respect the project agent-config model selection."""
@@ -385,13 +389,124 @@ class ChatE2ETests(unittest.TestCase):
                     "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
                     return_value=[{"step": 1, "description": "Create player", "route": "gameobject/create", "params": {}}],
                 ) as generate_plan:
-                    with patch("cli_anything.unity_mcp.core.agent_chat.AgentLoop") as loop_cls:
-                        loop_cls.return_value.execute.return_value = []
-
-                        assistant._try_model_backed_plan("create a player controller for the active scene")
+                    assistant._try_model_backed_plan("create a player controller for the active scene")
 
             kwargs = generate_plan.call_args.kwargs
             assert kwargs["model"] == "gpt-5-codex"
+
+    def test_dispatch_yes_executes_pending_model_plan(self):
+        """Explicit approval should execute the stored model plan and return structured results."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        bridge.client = MagicMock()
+        bridge._status_path = Path("agent-status.json")
+        bridge._pending_model_plan = [
+            {"step": 1, "description": "Create player", "route": "gameobject/create", "params": {}},
+            {"step": 2, "description": "Attach controller", "route": "component/add", "params": {}},
+        ]
+        assistant = _OfflineUnityAssistant(bridge)
+
+        fake_results = [
+            SimpleNamespace(step=1, description="Create player", status="ok"),
+            SimpleNamespace(step=2, description="Attach controller", status="error"),
+        ]
+        with patch("cli_anything.unity_mcp.core.agent_chat.AgentLoop") as loop_cls:
+            loop_cls.return_value.execute.return_value = fake_results
+            with patch("cli_anything.unity_mcp.core.agent_chat.format_results", return_value="formatted results"):
+                result = assistant._dispatch("yes")
+
+        assert isinstance(result, dict)
+        assert result["metadata"]["executed"] is True
+        assert result["steps"][0]["status"] == "ok"
+        assert result["steps"][1]["status"] == "error"
+        assert getattr(bridge, "_pending_model_plan", None) is None
+
+    def test_handle_message_preserves_structured_steps(self):
+        """Structured assistant replies should persist step previews into chat history."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        bridge._status_state = "awaiting_approval"
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.object(
+            assistant,
+            "_dispatch",
+            return_value={
+                "content": "I found a plan.",
+                "steps": [{"step": 1, "totalSteps": 1, "description": "Create player", "status": "pending"}],
+                "metadata": {"approvalRequired": True},
+            },
+        ):
+            assistant.handle_message("create a player", bridge)
+
+        bridge.append_message.assert_called_once()
+        kwargs = bridge.append_message.call_args.kwargs
+        assert kwargs["steps"][0]["description"] == "Create player"
+        assert kwargs["metadata"]["approvalRequired"] is True
+
+    def test_best_effort_reply_falls_back_to_model_chat_when_plan_is_unavailable(self):
+        """Freeform chat should use model-backed conversation when planning is not a fit."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+            with patch.object(assistant, "_try_model_backed_plan", return_value=None):
+                with patch.object(
+                    assistant,
+                    "_try_model_backed_chat",
+                    return_value="You’re building a multiplayer prototype. I’d start by tightening the player loop first.",
+                ) as chat_reply:
+                    reply = assistant._best_effort_agent_reply("I want this to feel more like a real multiplayer game")
+
+        chat_reply.assert_called_once_with("I want this to feel more like a real multiplayer game")
+        assert "multiplayer prototype" in reply.lower()
+
+    def test_try_model_backed_chat_passes_full_context_and_recent_history(self):
+        """Model-backed chat should receive fresh full context and recent chat history."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            (project / "AGENTS.md").write_text("Stay grounded in the real scene.\n", encoding="utf-8")
+
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = [
+                {"role": "user", "content": "hello"},
+                {"role": "ai", "content": "What are you trying to build?"},
+            ]
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: CodexFpsShowcase"
+
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_chat_reply_from_intent",
+                    return_value="Let’s scope the player loop first.",
+                ) as generate_chat:
+                    reply = assistant._try_model_backed_chat("I want this to feel better")
+
+            assert "scope the player loop" in reply.lower()
+            bridge._context.as_system_prompt.assert_called_once_with(full=True)
+            kwargs = generate_chat.call_args.kwargs
+            assert kwargs["history"] == [
+                {"role": "user", "content": "hello"},
+                {"role": "assistant", "content": "What are you trying to build?"},
+            ]
+            assert kwargs["model"] == "anthropic/claude-3-haiku"
+            assert "Unity Project Context" in kwargs["context_prompt"]
+            assert "Stay grounded in the real scene." in kwargs["context_prompt"]
 
     def test_capture_after_action_does_not_invalidate_cached_context(self):
         """Disabled capture path should return empty and avoid touching cached context."""
