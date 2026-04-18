@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **direction reset docs** — rewrote `README.md`, `TODO.md`, `AGENTS.md`, and workspace `PLAN.md` around the Unity AI Copilot direction: collaborator-not-generator, in-editor-first, consent and Undo, specialist skills, and CLI as the debugging/power-user layer instead of the product headline. Added tracked `TASKS.md` to hold the full backlog imported from the reset task list.
 - **specialist-skill contributor guide** — added `docs/skills/WRITING_A_SKILL.md`, which turns the physics-feel anchor into a reusable contributor template: standard files, commit order, required tests, CI expectations, live-verification checklist, and the common failure modes to avoid when cloning the next skill.
 - **physics-feel specialist skill anchor** — added `core/skills/physics_feel.py` as the first Phase 4 specialist-skill path. It audits floatiness from live project context, proposes three tuning paths with real tradeoffs, applies bounded Rigidbody/gravity changes, captures before/after proof, and logs the run to the new local learning ledger.
 - **physics-feel chat routing** — the offline Unity Agent path now recognizes requests like `my player feels floaty`, returns diagnosis plus three numbered tuning paths, and supports follow-up `apply 1`, `apply 2`, or `apply 3` replies instead of dropping that request into generic freeform fallback.
