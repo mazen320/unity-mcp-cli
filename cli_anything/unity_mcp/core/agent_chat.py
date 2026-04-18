@@ -409,23 +409,25 @@ public class PlayerMovement : MonoBehaviour
         project_name = self._project_name()
         active_scene = self._active_scene_name()
         return (
-            f"I’m connected to `{project_name}` and the current scene looks like `{active_scene}`.\n\n"
-            "I can inspect the project, score quality, run benchmarks, check compile errors, "
-            "show scene info or hierarchy, save the scene, create sandbox scenes, scaffold guidance/tests, "
-            "and create basic primitives directly in Unity.\n\n"
-            "Try asking:\n"
-            "- improve project\n"
-            "- inspect project\n"
-            "- quality score\n"
-            "- benchmark\n"
-            "- compile errors\n"
-            "- create sandbox scene\n"
-            "- create guidance\n"
-            "- create cube at 0 1 0"
+            f"Hey, I’m connected to **{project_name}** working on the **{active_scene}** scene right now.\n\n"
+            "I can help you create and script things directly in the editor—components, animators, "
+            "scene setup, all the tedious stuff. I can also audit your project, check compile errors, "
+            "or improve code quality if you ask.\n\n"
+            "What do you want to build or fix?"
         )
 
     def _help_reply(self) -> str:
-        return self._greeting_reply()
+        return (
+            "I can handle a lot of scene and script work. Some examples:\n\n"
+            "**Building stuff:** Create a player controller, add an animator, scaffold a camera follow script, "
+            "attach physics or UI elements to GameObjects.\n\n"
+            "**Scripting:** Write C# that talks to components, set up state machines, auto-wire references, "
+            "generate boilerplate.\n\n"
+            "**Project health:** Check for compile errors, audit code quality, benchmark performance, "
+            "suggest improvements.\n\n"
+            "**Scene tools:** Show hierarchy, save, create sandbox scenes for testing.\n\n"
+            "Just describe what you want to build or fix and I'll handle the Unity tedium."
+        )
 
     def _context_reply(self) -> str:
         context = self._context_payload()
@@ -1914,21 +1916,19 @@ public class PlayerMovement : MonoBehaviour
         provider = self._configured_model_provider()
         if not provider:
             return (
-                "This request needs a configured model provider. The Unity Agent tab can still run bounded commands "
-                "like `improve project`, `inspect project`, `benchmark`, `compile errors`, and basic scene actions, "
-                "but open-ended chat is disabled until `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` "
-                "is available in the bridge process. OpenRouter is recommended — one key, any model."
+                "I need an API key to chat freely. Set `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` "
+                "in the `.umcp/agent.env` file in your project (or in your system environment). "
+                "OpenRouter is simplest—one key, any model. Then I can help you think through design and execute it in the editor."
             )
         planned = self._try_model_backed_plan(content)
         if planned:
             return planned
         return (
-            f"{provider} is configured, but I could not turn that request into a safe executable Unity plan.\n\n"
-            "Try asking for a concrete outcome such as:\n"
-            "- create a player controller for the active scene\n"
-            "- add a reticle canvas and event system\n"
-            "- create a sandbox scene and save it\n\n"
-            "If this should have been understood, the next thing to inspect is the live project context being fed to the planner."
+            f"I couldn't quite turn that into a concrete plan. Can you rephrase it as something more concrete, like:\n\n"
+            f"\"Create a player controller\"\n"
+            f"\"Add an inventory UI to the HUD\"\n"
+            f"\"Set up a state machine for enemy AI\"\n\n"
+            f"Or just tell me what you're trying to build and I'll figure out the steps."
         )
 
     def _try_model_backed_plan(self, content: str) -> str | None:
