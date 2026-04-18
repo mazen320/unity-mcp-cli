@@ -13,8 +13,8 @@ Columns:
 | ID | Title | Priority | Estimate | Status | Description |
 | --- | --- | --- | --- | --- | --- |
 | E1-T1 | Delete CLI workflow * user-facing commands | P0 | M | Active | Remove improve-project, benchmark-report, benchmark-compare, quality-score, expert-audit, scene-critique, quality-fix, bootstrap-guidance, asset-audit, create-sandbox-scene from commands/workflow.py. Keep underlying helpers. |
-| E1-T2 | Delete CLI developer-profile layer | P0 | S | Active | Remove developer list/current/use/clear, --developer-profile flag, --developer-profiles-path flag. |
-| E1-T3 | Delete Agent tab improve-project report card | P0 | M | Active | Strip score delta display, applied/skipped summary, rerun button, markdown export from CliAnythingWindow.cs. |
+| E1-T2 | Delete CLI developer-profile layer | P0 | S | Done | Remove developer list/current/use/clear, --developer-profile flag, --developer-profiles-path flag. |
+| E1-T3 | Delete Agent tab improve-project report card | P0 | M | Done | Strip score delta display, applied/skipped summary, rerun button, markdown export from CliAnythingWindow.cs. |
 | E1-T4 | Replace PLAN.md with new vision | P0 | S | Done | Drop in the new PLAN.md reflecting collaborator-not-generator, conversation, consent, Undo, tedium. |
 | E1-T5 | Rewrite README.md around Agent tab | P0 | M | Done | Agent tab leads. CLI demoted to Debugging / Power Users section. Kill tool-coverage % and score marketing. |
 | E1-T6 | Rewrite TODO.md as skill-first backlog | P0 | S | Done | Replace execution tracks with skill backlog. Reference TASKS.md. |

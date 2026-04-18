@@ -20,13 +20,13 @@ The job right now is to remove drift from the old CLI-first product story and al
 - **E1-T5** Rewrite `README.md` around the Agent tab and Unity-copilot framing
 - **E1-T6** Rewrite this file into the short current-focus view
 - **E1-T7** Rewrite `AGENTS.md` around consent, Undo, and chat
+- **E1-T2** Delete the public CLI developer-profile layer
+- **E1-T3** Delete the Agent-tab improve-project report card
 - **TASKS sync** Import the CSV backlog into tracked `TASKS.md`
 
 ## Active now
 
 - **E1-T1** Delete CLI `workflow *` user-facing commands
-- **E1-T2** Delete CLI developer-profile layer
-- **E1-T3** Delete Agent-tab `improve-project` report card
 - **E1-T8** Internalize expert lenses instead of emitting them as the public product surface
 - **E11-T1** Cut failing tests per deletion commit
 - **E11-T10** Documentation accuracy sweep after the reset

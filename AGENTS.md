@@ -38,8 +38,6 @@ Milestone 1 is a reset away from the old CLI-first public story.
 That means:
 
 - remove user-facing `workflow *` product chrome
-- remove CLI developer-profile product chrome
-- remove `improve-project` report-card UX from the Agent tab
 - internalize expert lenses instead of marketing them directly
 - keep the suite green while the surface is simplified
 

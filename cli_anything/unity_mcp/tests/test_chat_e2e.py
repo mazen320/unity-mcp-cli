@@ -35,25 +35,20 @@ class ChatE2ETests(unittest.TestCase):
 
     # ── Task 1: Visual capture helper ─────────────────────────────────────────
 
-    def test_capture_after_action_returns_paths_when_live(self):
-        """_capture_after_action returns a non-empty dict when file client responds."""
+    def test_capture_after_action_is_a_noop(self):
+        """_capture_after_action is intentionally disabled to avoid automatic capture churn."""
         from unittest.mock import MagicMock
         from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
         from cli_anything.unity_mcp.core.file_ipc import FileIPCClient
 
         with _workspace_temp_dir() as tmp:
             client = MagicMock(spec=FileIPCClient)
-            client.call_route.return_value = {
-                "gamePath": "/tmp/game.png",
-                "scenePath": "/tmp/scene.png",
-            }
             bridge = MagicMock()
             bridge.client = client
             bridge.project_path = tmp
             assistant = _OfflineUnityAssistant(bridge)
             result = assistant._capture_after_action()
-            assert result.get("gamePath") == "/tmp/game.png"
-            assert result.get("scenePath") == "/tmp/scene.png"
+            assert result == {}
 
     def test_capture_after_action_returns_empty_on_error(self):
         """_capture_after_action returns empty dict when capture fails."""
@@ -84,10 +79,6 @@ class ChatE2ETests(unittest.TestCase):
             bridge.project_path = tmp
             assistant = _OfflineUnityAssistant(bridge)
 
-            # Mock _run_embedded_cli to avoid needing full CLI
-            assistant._run_embedded_cli = MagicMock(return_value={"success": True, "path": "/Assets/Scripts/PlayerMovement.cs"})
-            assistant._capture_after_action = MagicMock(return_value={"gamePath": "/tmp/game.png"})
-
             result = assistant._build_player_prototype_reply()
 
             # Should have called gameobject/create
@@ -97,10 +88,9 @@ class ChatE2ETests(unittest.TestCase):
             cc_calls = [c for c in client.call_route.call_args_list
                         if c[0][0] == "component/add" and "CharacterController" in str(c)]
             assert len(cc_calls) >= 1
-            # Should have tried to capture
-            assistant._capture_after_action.assert_called_once()
             # Reply should mention Player
             assert "Player" in result or "player" in result.lower()
+            assert "WASD + Space" in result
 
     # ── Task 3: Script create+attach flow ─────────────────────────────────────
 
@@ -114,14 +104,10 @@ class ChatE2ETests(unittest.TestCase):
         bridge = MagicMock()
         bridge.client = client
         assistant = _OfflineUnityAssistant(bridge)
-        assistant._run_embedded_cli = MagicMock(return_value={"path": "Assets/Scripts/Rotate.cs"})
-        assistant._capture_after_action = MagicMock(return_value={})
-
         result = assistant._build_script_attach_reply("Rotate", "Cube", "rotates the object on Y axis")
 
         assert "Rotate" in result
         assert "Cube" in result
-        assistant._run_embedded_cli.assert_called_once()
         cc_calls = [c for c in client.call_route.call_args_list if "component/add" in str(c)]
         assert len(cc_calls) >= 1
 
@@ -179,7 +165,7 @@ class ChatE2ETests(unittest.TestCase):
         assistant = _OfflineUnityAssistant(bridge)
 
         # Mock quality score to return some findings
-        assistant._run_embedded_cli = MagicMock(return_value={
+        assistant._run_internal_workflow = MagicMock(return_value={
             "lensScores": [{"name": "systems", "score": 40, "findings": [
                 {"title": "No EventSystem in scene", "severity": "error"},
                 {"title": "No AudioListener in scene", "severity": "warning"},
@@ -310,7 +296,7 @@ class ChatE2ETests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             reply = assistant._best_effort_agent_reply("build a full inventory system for this scene")
 
-        assert "model provider" in reply.lower()
+        assert "api key" in reply.lower()
         assert "openai_api_key" in reply.lower() or "anthropic_api_key" in reply.lower()
 
     def test_try_model_backed_plan_passes_full_context_and_recent_history(self):
@@ -393,23 +379,19 @@ class ChatE2ETests(unittest.TestCase):
             kwargs = generate_plan.call_args.kwargs
             assert kwargs["model"] == "gpt-5-codex"
 
-    def test_capture_after_action_invalidates_cached_context(self):
-        """Scene captures should invalidate cached context before reading proof artifacts."""
+    def test_capture_after_action_does_not_invalidate_cached_context(self):
+        """Disabled capture path should return empty and avoid touching cached context."""
         from unittest.mock import MagicMock
         from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
 
         bridge = MagicMock()
-        bridge.client.call_route.return_value = {
-            "gamePath": "/tmp/game.png",
-            "scenePath": "/tmp/scene.png",
-        }
         bridge._context = MagicMock()
 
         assistant = _OfflineUnityAssistant(bridge)
         result = assistant._capture_after_action()
 
-        assert result.get("gamePath") == "/tmp/game.png"
-        bridge._context.invalidate.assert_called_once()
+        assert result == {}
+        bridge._context.invalidate.assert_not_called()
 
 
 if __name__ == "__main__":

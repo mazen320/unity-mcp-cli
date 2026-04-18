@@ -12,12 +12,15 @@ from typing import Any
 from unittest.mock import patch
 from urllib.request import Request, urlopen
 
+from click.testing import CliRunner
+
 from cli_anything.unity_mcp.core.agent_profiles import AgentProfileStore, derive_agent_profiles_path
 from cli_anything.unity_mcp.core.agent_chat import ChatBridge, _OfflineUnityAssistant
 from cli_anything.unity_mcp.core.developer_profiles import DeveloperProfileStore, derive_developer_profiles_path
 from cli_anything.unity_mcp.core.debug_dashboard import DashboardConfig, serve_debug_dashboard
 from cli_anything.unity_mcp.core.debug_doctor import build_debug_doctor_report
 from cli_anything.unity_mcp.core.embedded_cli import EmbeddedCLIOptions, run_cli_json
+from cli_anything.unity_mcp.core.internal_workflows import run_internal_workflow_json
 from cli_anything.unity_mcp.core.mcp_tools import get_mcp_tool, iter_mcp_tools
 from cli_anything.unity_mcp.core.project_guidance import build_guidance_bundle, write_guidance_bundle
 from cli_anything.unity_mcp.core.project_insights import build_asset_audit_report, build_project_insights
@@ -28,7 +31,8 @@ from cli_anything.unity_mcp.core.session import SessionState, SessionStore
 from cli_anything.unity_mcp.core.tool_coverage import build_tool_coverage_matrix
 from cli_anything.unity_mcp.core.workflows import build_behaviour_script
 from cli_anything.unity_mcp.commands._shared import _format_cli_exception_message, _format_failed_route_hint
-from cli_anything.unity_mcp.unity_mcp_cli import _humanize_history_entry, _summarize_trace_entries
+from cli_anything.unity_mcp.commands.workflow import workflow_group
+from cli_anything.unity_mcp.unity_mcp_cli import _humanize_history_entry, _summarize_trace_entries, cli
 from scripts.run_live_mcp_pass import (
     _build_profile_plan,
     _default_report_file,
@@ -1130,9 +1134,9 @@ class CoreTests(unittest.TestCase):
 
             self.assertEqual(bridge._history[-1]["role"], "ai")
             self.assertIn("I", bridge._history[-1]["content"])
-            self.assertIn("inspect project", bridge._history[-1]["content"])
-            self.assertIn("improve project", bridge._history[-1]["content"])
-            self.assertIn("create sandbox scene", bridge._history[-1]["content"])
+            self.assertIn("create and script things directly in the editor", bridge._history[-1]["content"])
+            self.assertIn("compile errors", bridge._history[-1]["content"])
+            self.assertIn("What do you want to build or fix?", bridge._history[-1]["content"])
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -1248,7 +1252,7 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-    def test_chat_assistant_improve_project_uses_embedded_workflow_when_available(self) -> None:
+    def test_chat_assistant_improve_project_uses_internal_workflow_when_available(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"
         project.mkdir(parents=True, exist_ok=True)
@@ -1258,10 +1262,10 @@ class CoreTests(unittest.TestCase):
                     return {}
 
             bridge = ChatBridge(project, ClientStub(), embedded_options=object())  # type: ignore[arg-type]
-            captured_argv: list[list[str]] = []
+            captured_calls: list[tuple[str, list[str]]] = []
 
-            def fake_run_embedded_cli(argv: list[str]) -> dict[str, Any]:
-                captured_argv.append(list(argv))
+            def fake_run_internal_workflow(command_name: str, argv: list[str]) -> dict[str, Any]:
+                captured_calls.append((command_name, list(argv)))
                 return {
                     "available": True,
                     "baselineScore": 70.0,
@@ -1274,15 +1278,15 @@ class CoreTests(unittest.TestCase):
                     "skipped": [
                         {"fix": "sandbox-scene", "reason": "Sandbox scene already exists."},
                     ],
-            }
+                }
 
-            bridge._assistant._run_embedded_cli = fake_run_embedded_cli  # type: ignore[method-assign]
+            bridge._assistant._run_internal_workflow = fake_run_internal_workflow  # type: ignore[method-assign]
             bridge._process_message({"id": "msg-1", "role": "user", "content": "improve project"})
 
             reply = bridge._history[-1]["content"]
             self.assertEqual(
-                captured_argv,
-                [["workflow", "improve-project", str(project)]],
+                captured_calls,
+                [("improve-project", [str(project)])],
             )
             self.assertIn("Safe project improvement pass finished.", reply)
             self.assertIn("Applied:", reply)
@@ -2175,6 +2179,43 @@ class CoreTests(unittest.TestCase):
             self.assertIn("llmProvider", payload)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_workflow_group_hides_retired_product_commands_after_reset(self) -> None:
+        hidden_commands = {
+            "asset-audit",
+            "benchmark-compare",
+            "benchmark-report",
+            "bootstrap-guidance",
+            "create-sandbox-scene",
+            "expert-audit",
+            "improve-project",
+            "quality-fix",
+            "quality-score",
+            "scene-critique",
+        }
+        for command_name in hidden_commands:
+            self.assertIn(command_name, workflow_group.commands)
+            self.assertTrue(workflow_group.commands[command_name].hidden)
+        self.assertFalse(workflow_group.commands["agent-chat"].hidden)
+        self.assertFalse(workflow_group.commands["agent-loop"].hidden)
+
+    def test_cli_no_longer_exposes_developer_profile_surface_after_reset(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--help"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertNotIn("developer", cli.commands)
+        self.assertNotIn("--developer-profile", result.output)
+        self.assertNotIn("--developer-profiles-path", result.output)
+
+    def test_agent_window_no_longer_contains_improve_project_report_card_methods(self) -> None:
+        window_path = Path(__file__).resolve().parents[3] / "unity-scripts" / "Editor" / "CliAnythingWindow.cs"
+        source = window_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("TryGetLatestImproveProjectMessage", source)
+        self.assertNotIn("DrawImproveProjectSummary", source)
+        self.assertNotIn("ExportImproveProjectMarkdown", source)
+        self.assertNotIn("Latest Improve Project", source)
 
     def test_chat_bridge_status_reports_llm_provider(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
@@ -3202,73 +3243,7 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(physics_plan["requiresLiveUnity"])
         self.assertEqual(physics_plan["targetGameObjectPath"], "/Hero")
 
-    def test_workflow_expert_audit_returns_lens_result(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-            (project / "Assets" / "Scenes" / "Main.unity").write_text(
-                "scene",
-                encoding="utf-8",
-            )
-
-            payload = run_cli_json(
-                ["workflow", "expert-audit", "--lens", "director", str(project)],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
-            )
-
-            self.assertTrue(payload["available"])
-            self.assertEqual(payload["lens"]["name"], "director")
-            self.assertIn("score", payload)
-            self.assertIn("findings", payload)
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_workflow_expert_audit_returns_systems_findings_for_project_path(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-            (project / "Assets" / "Scenes" / "Main.unity").write_text(
-                "scene",
-                encoding="utf-8",
-            )
-
-            payload = run_cli_json(
-                ["workflow", "expert-audit", "--lens", "systems", str(project)],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
-            )
-
-            self.assertTrue(payload["available"])
-            self.assertEqual(payload["lens"]["name"], "systems")
-            self.assertIn(
-                "No sandbox scene detected",
-                {item["title"] for item in payload["findings"]},
-            )
-            self.assertIn(
-                "Scene-first content with no prefab coverage",
-                {item["title"] for item in payload["findings"]},
-            )
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_workflow_quality_fix_returns_plan_for_guidance(self) -> None:
+    def test_internal_workflow_runner_can_apply_quality_fix_for_guidance(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"
         try:
@@ -3278,42 +3253,9 @@ class CoreTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            payload = run_cli_json(
+            payload = run_internal_workflow_json(
+                "quality-fix",
                 [
-                    "workflow",
-                    "quality-fix",
-                    "--lens",
-                    "director",
-                    "--fix",
-                    "guidance",
-                    str(project),
-                ],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
-            )
-
-            self.assertTrue(payload["available"])
-            self.assertEqual(payload["fix"]["name"], "guidance")
-            self.assertEqual(payload["plan"]["mode"], "workflow")
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_workflow_quality_fix_apply_writes_guidance_for_project_path(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-
-            payload = run_cli_json(
-                [
-                    "workflow",
-                    "quality-fix",
                     "--lens",
                     "director",
                     "--fix",
@@ -3325,6 +3267,7 @@ class CoreTests(unittest.TestCase):
                     session_path=tmpdir / "session.json",
                     registry_path=tmpdir / "instances.json",
                 ),
+                project_path=project,
             )
 
             self.assertTrue(payload["available"])
@@ -3336,9 +3279,10 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-    def test_workflow_quality_fix_apply_writes_test_scaffold_for_project_path(self) -> None:
+    def test_internal_workflow_runner_can_run_improve_project_offline_safe_pass(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "DemoProject"
+        report_path = tmpdir / "improve-project.md"
         try:
             (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
             (project / "Packages").mkdir(parents=True, exist_ok=True)
@@ -3351,62 +3295,18 @@ class CoreTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            payload = run_cli_json(
+            payload = run_internal_workflow_json(
+                "improve-project",
                 [
-                    "workflow",
-                    "quality-fix",
-                    "--lens",
-                    "director",
-                    "--fix",
-                    "test-scaffold",
-                    "--apply",
+                    "--markdown-file",
+                    str(report_path),
                     str(project),
                 ],
                 EmbeddedCLIOptions(
                     session_path=tmpdir / "session.json",
                     registry_path=tmpdir / "instances.json",
                 ),
-            )
-
-            self.assertTrue(payload["available"])
-            self.assertTrue(payload["applyResult"]["applied"])
-            self.assertEqual(payload["applyResult"]["result"]["writeCount"], 2)
-            script_path = project / "Assets" / "Tests" / "EditMode" / "DemoProjectSmokeTests.cs"
-            asmdef_path = project / "Assets" / "Tests" / "EditMode" / "DemoProject.EditMode.Tests.asmdef"
-            self.assertTrue(script_path.exists())
-            self.assertTrue(asmdef_path.exists())
-            self.assertIn("NUnit.Framework", script_path.read_text(encoding="utf-8"))
-            asmdef_payload = json.loads(asmdef_path.read_text(encoding="utf-8"))
-            self.assertEqual(asmdef_payload["name"], "DemoProject.EditMode.Tests")
-            self.assertIn("TestAssemblies", asmdef_payload["optionalUnityReferences"])
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_workflow_improve_project_runs_offline_safe_pass(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Packages").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-            (project / "Packages" / "manifest.json").write_text(
-                json.dumps({"dependencies": {"com.unity.test-framework": "1.6.0"}}),
-                encoding="utf-8",
-            )
-
-            payload = run_cli_json(
-                [
-                    "workflow",
-                    "improve-project",
-                    str(project),
-                ],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
+                project_path=project,
             )
 
             self.assertTrue(payload["available"])
@@ -3424,39 +3324,6 @@ class CoreTests(unittest.TestCase):
             self.assertIn("event-system", skipped_fixes)
             self.assertTrue((project / "AGENTS.md").exists())
             self.assertTrue((project / "Assets" / "Tests" / "EditMode" / "DemoProjectSmokeTests.cs").exists())
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_workflow_improve_project_writes_markdown_report(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        report_path = tmpdir / "improve-project.md"
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Packages").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-            (project / "Packages" / "manifest.json").write_text(
-                json.dumps({"dependencies": {"com.unity.test-framework": "1.6.0"}}),
-                encoding="utf-8",
-            )
-
-            payload = run_cli_json(
-                [
-                    "workflow",
-                    "improve-project",
-                    "--markdown-file",
-                    str(report_path),
-                    str(project),
-                ],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
-            )
-
             self.assertEqual(payload["markdownFile"], str(report_path))
             self.assertTrue(report_path.exists())
             markdown = report_path.read_text(encoding="utf-8")
@@ -3464,7 +3331,6 @@ class CoreTests(unittest.TestCase):
             self.assertIn("Quality score", markdown)
             self.assertIn("### Applied fixes", markdown)
             self.assertIn("### Skipped fixes", markdown)
-            self.assertIn("Wrote 2 guidance file(s).", markdown)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -3585,163 +3451,6 @@ class CoreTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-    def test_workflow_scene_critique_returns_multiple_lenses(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-
-            payload = run_cli_json(
-                ["workflow", "scene-critique", str(project)],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
-            )
-
-            self.assertTrue(payload["available"])
-            self.assertGreaterEqual(len(payload["lenses"]), 3)
-            self.assertIn("findingCount", payload)
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_workflow_quality_score_returns_overall_score(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-
-            payload = run_cli_json(
-                ["workflow", "quality-score", str(project)],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
-            )
-
-            self.assertTrue(payload["available"])
-            self.assertIsNotNone(payload["overallScore"])
-            self.assertGreaterEqual(len(payload["lensScores"]), 6)
-            self.assertIn("systems", {item["name"] for item in payload["lensScores"]})
-        finally:
-            shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_workflow_benchmark_report_writes_stable_json_summary(self) -> None:
-        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
-        project = tmpdir / "DemoProject"
-        report_file = tmpdir / "benchmark.json"
-        original_memory_dir = os.environ.get("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR")
-        try:
-            (project / "Assets" / "Scripts").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scenes").mkdir(parents=True, exist_ok=True)
-            (project / "Assets" / "Scripts" / "Player.cs").write_text(
-                "public class Player {}",
-                encoding="utf-8",
-            )
-            (project / "Assets" / "Scenes" / "Main.unity").write_text(
-                "scene",
-                encoding="utf-8",
-            )
-            memory_root = tmpdir / "memory"
-            memory = ProjectMemory(str(project), store_root=memory_root, allow_fallback=False)
-            compilation_entry = {
-                "message": (
-                    "Assets/Scripts/Player.cs(12,8): error CS0246: "
-                    "The type or namespace name 'Foo' could not be found"
-                )
-            }
-            queue_signal = {
-                "kind": "queue",
-                "key": "queue-contention",
-                "title": "Queue contention",
-                "detail": "Queue still had active work pending.",
-            }
-            memory.record_compilation_errors([compilation_entry], "MainScene")
-            memory.record_compilation_errors([compilation_entry], "MainScene")
-            memory.record_operational_signals([queue_signal], "MainScene")
-            memory.record_operational_signals([queue_signal], "MainScene")
-            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
-            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
-            memory.record_queue_snapshot({"totalQueued": 2, "activeAgents": 1}, "MainScene")
-            os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = str(memory_root)
-
-            payload = run_cli_json(
-                [
-                    "workflow",
-                    "benchmark-report",
-                    "--report-file",
-                    str(report_file),
-                    str(project),
-                ],
-                EmbeddedCLIOptions(
-                    session_path=tmpdir / "session.json",
-                    registry_path=tmpdir / "instances.json",
-                ),
-            )
-
-            self.assertTrue(payload["available"])
-            self.assertEqual(payload["benchmarkVersion"], "unity-mastery-v1")
-            self.assertIsNotNone(payload["overallScore"])
-            self.assertTrue(report_file.exists())
-            written = json.loads(report_file.read_text(encoding="utf-8"))
-            self.assertEqual(written["overallScore"], payload["overallScore"])
-            self.assertIn("systems", {item["name"] for item in payload["lensScores"]})
-            self.assertEqual(
-                payload["diagnosticsMemory"]["recurringCompilationErrorCount"],
-                1,
-            )
-            self.assertEqual(
-                payload["diagnosticsMemory"]["recurringOperationalSignalCount"],
-                1,
-            )
-            self.assertEqual(
-                written["diagnosticsMemory"]["recurringCompilationErrors"][0]["code"],
-                "CS0246",
-            )
-            self.assertEqual(
-                written["diagnosticsMemory"]["recurringOperationalSignals"][0]["key"],
-                "queue-contention",
-            )
-            self.assertEqual(
-                payload["queueDiagnostics"]["status"],
-                "contention-observed",
-            )
-            self.assertEqual(
-                payload["queueDiagnostics"]["recurringSignalCount"],
-                1,
-            )
-            self.assertEqual(
-                payload["queueDiagnostics"]["keys"],
-                ["queue-contention"],
-            )
-            self.assertIn(
-                "Queue pressure",
-                payload["queueDiagnostics"]["summary"],
-            )
-            self.assertEqual(
-                payload["queueTrend"]["status"],
-                "stalled-backlog-suspected",
-            )
-            self.assertEqual(
-                payload["queueTrend"]["sampleCount"],
-                3,
-            )
-        finally:
-            if original_memory_dir is None:
-                os.environ.pop("CLI_ANYTHING_UNITY_MCP_MEMORY_DIR", None)
-            else:
-                os.environ["CLI_ANYTHING_UNITY_MCP_MEMORY_DIR"] = original_memory_dir
-            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_workflow_benchmark_compare_summarizes_deltas_and_recurring_diagnostics(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex

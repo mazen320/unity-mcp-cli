@@ -239,6 +239,21 @@ public class PlayerMovement : MonoBehaviour
 
         return dict(run_cli_json(argv, self.embedded_options) or {})
 
+    def _run_internal_workflow(self, command_name: str, argv: list[str]) -> dict[str, Any]:
+        if self.embedded_options is None:
+            raise RuntimeError("Embedded workflow options are unavailable for this chat session.")
+        from .internal_workflows import run_internal_workflow_json
+
+        return dict(
+            run_internal_workflow_json(
+                command_name,
+                argv,
+                self.embedded_options,
+                project_path=self.bridge.project_path,
+            )
+            or {}
+        )
+
     def _set_status(self, action: str, *, current: int = 0, total: int = 1) -> None:
         self.bridge.write_status("executing", current, total, action)
 
@@ -459,9 +474,10 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is None:
             return self._context_reply()
         self._set_status("Running project audit")
-        quality = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
-        systems = self._run_embedded_cli(
-            ["workflow", "expert-audit", "--lens", "systems", str(self.bridge.project_path)]
+        quality = self._run_internal_workflow("quality-score", [str(self.bridge.project_path)])
+        systems = self._run_internal_workflow(
+            "expert-audit",
+            ["--lens", "systems", str(self.bridge.project_path)],
         )
         lines = [
             f"Overall quality: {quality.get('overallScore')}."
@@ -486,7 +502,7 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is None:
             return "Quality scoring needs the embedded CLI path, which is unavailable in this chat session."
         self._set_status("Scoring project quality")
-        payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
+        payload = self._run_internal_workflow("quality-score", [str(self.bridge.project_path)])
         lines = [f"Overall quality score: {payload.get('overallScore')}."]
         lens_scores = list(payload.get("lensScores") or [])
         if lens_scores:
@@ -498,7 +514,7 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is None:
             return "Benchmark reporting needs the embedded CLI path, which is unavailable in this chat session."
         self._set_status("Building benchmark report")
-        payload = self._run_embedded_cli(["workflow", "benchmark-report", str(self.bridge.project_path)])
+        payload = self._run_internal_workflow("benchmark-report", [str(self.bridge.project_path)])
         lines = [
             f"Benchmark score: {payload.get('overallScore')} ({payload.get('overallGrade')}).",
         ]
@@ -528,7 +544,7 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is None:
             return "Scene critique needs the embedded CLI path, which is unavailable in this chat session."
         self._set_status("Running scene critique")
-        payload = self._run_embedded_cli(["workflow", "scene-critique", str(self.bridge.project_path)])
+        payload = self._run_internal_workflow("scene-critique", [str(self.bridge.project_path)])
         lines = [
             f"Scene critique average score: {payload.get('averageScore')}.",
             f"Finding count: {payload.get('findingCount')}.",
@@ -608,10 +624,9 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is None:
             return "Guidance scaffolding needs the embedded CLI path, which is unavailable in this chat session."
         self._set_status("Writing project guidance")
-        payload = self._run_embedded_cli(
+        payload = self._run_internal_workflow(
+            "quality-fix",
             [
-                "workflow",
-                "quality-fix",
                 "--lens",
                 "director",
                 "--fix",
@@ -633,10 +648,9 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is None:
             return "Test scaffolding needs the embedded CLI path, which is unavailable in this chat session."
         self._set_status("Scaffolding tests")
-        payload = self._run_embedded_cli(
+        payload = self._run_internal_workflow(
+            "quality-fix",
             [
-                "workflow",
-                "quality-fix",
                 "--lens",
                 "director",
                 "--fix",
@@ -1309,7 +1323,7 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is not None:
             try:
                 self._set_status("Running safe project improvement pass", current=0, total=1)
-                payload = self._run_embedded_cli(["workflow", "improve-project", str(self.bridge.project_path)])
+                payload = self._run_internal_workflow("improve-project", [str(self.bridge.project_path)])
                 return self._build_improve_project_reply(payload)
             except Exception:
                 pass
@@ -1323,7 +1337,7 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is not None:
             try:
                 self._set_status("Scoring project before safe improvements", current=0, total=total_steps)
-                baseline_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
+                baseline_payload = self._run_internal_workflow("quality-score", [str(self.bridge.project_path)])
                 baseline_raw = baseline_payload.get("overallScore")
                 baseline_score = float(baseline_raw) if baseline_raw is not None else None
             except Exception:
@@ -1336,10 +1350,9 @@ public class PlayerMovement : MonoBehaviour
         elif self.embedded_options is None:
             skipped.append("Guidance skipped because embedded CLI workflows are unavailable.")
         else:
-            payload = self._run_embedded_cli(
+            payload = self._run_internal_workflow(
+                "quality-fix",
                 [
-                    "workflow",
-                    "quality-fix",
                     "--lens",
                     "director",
                     "--fix",
@@ -1510,10 +1523,9 @@ public class PlayerMovement : MonoBehaviour
         elif self.embedded_options is None:
             skipped.append("Test scaffold skipped because embedded CLI workflows are unavailable.")
         else:
-            payload = self._run_embedded_cli(
+            payload = self._run_internal_workflow(
+                "quality-fix",
                 [
-                    "workflow",
-                    "quality-fix",
                     "--lens",
                     "director",
                     "--fix",
@@ -1540,7 +1552,7 @@ public class PlayerMovement : MonoBehaviour
         if self.embedded_options is not None:
             try:
                 self._set_status("Scoring project after safe improvements", current=9, total=total_steps)
-                score_payload = self._run_embedded_cli(["workflow", "quality-score", str(self.bridge.project_path)])
+                score_payload = self._run_internal_workflow("quality-score", [str(self.bridge.project_path)])
                 score_raw = score_payload.get("overallScore")
                 final_score = float(score_raw) if score_raw is not None else None
                 lines.append("")
@@ -1833,7 +1845,7 @@ public class PlayerMovement : MonoBehaviour
         self._set_status("Auditing project for goal planning")
 
         try:
-            score_result = self._run_embedded_cli(["--json", "workflow", "quality-score"])
+            score_result = self._run_internal_workflow("quality-score", [])
         except Exception as exc:
             return (
                 f"I couldn't audit the project to build a plan: {exc}\n\n"
@@ -1894,8 +1906,7 @@ public class PlayerMovement : MonoBehaviour
             lens = str(finding.get("_lens") or "systems")
             self._set_status(f"Step {i}: {title}")
             try:
-                fix_result = self._run_embedded_cli([
-                    "--json", "workflow", "quality-fix",
+                fix_result = self._run_internal_workflow("quality-fix", [
                     "--lens", lens,
                     "--fix", title.lower().replace(" ", "-"),
                     "--apply",
@@ -2155,7 +2166,7 @@ class ChatBridge:
             except Exception:
                 pass
             try:
-                result = self._assistant._run_embedded_cli(["--json", "workflow", "quality-score"])
+                result = self._assistant._run_internal_workflow("quality-score", [])
                 findings = (result or {}).get("findings") or []
                 new_findings = self._watchdog_filter_new(findings)
                 self._watchdog_surface_findings(new_findings)

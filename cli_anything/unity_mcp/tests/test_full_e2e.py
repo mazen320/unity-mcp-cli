@@ -2998,56 +2998,19 @@ class FullE2ETests(unittest.TestCase):
         self.assertEqual(status_payload["agent"]["agentId"], "cli-anything-unity-mcp-reviewer")
         self.assertEqual(status_payload["agent"]["profile"]["name"], "reviewer")
 
-    def test_developer_profile_commands_persist_and_expose_current_resolution(self) -> None:
-        current_result = self.run_cli("--json", "developer", "current")
-        current_payload = json.loads(current_result.stdout.strip())
-        self.assertEqual(current_payload["resolved"]["profile"]["name"], "normal")
-        self.assertEqual(current_payload["resolved"]["source"], "default")
+    def test_developer_profile_surface_is_removed_but_status_reports_default_context(self) -> None:
+        from cli_anything.unity_mcp.unity_mcp_cli import cli as unity_cli
 
-        list_result = self.run_cli("--json", "developer", "list")
-        list_payload = json.loads(list_result.stdout.strip())
-        self.assertEqual(list_payload["count"], 11)
-        self.assertEqual(
-            [profile["name"] for profile in list_payload["profiles"]],
-            [
-                "animator",
-                "builder",
-                "caveman",
-                "director",
-                "level-designer",
-                "normal",
-                "physics",
-                "review",
-                "systems",
-                "tech-artist",
-                "ui-designer",
-            ],
-        )
-        normal_profile = next(profile for profile in list_payload["profiles"] if profile["name"] == "normal")
-        self.assertTrue(normal_profile["isResolved"])
-        self.assertFalse(normal_profile["isSelected"])
+        runner = CliRunner()
+        result = runner.invoke(unity_cli, ["--json", "developer", "current"])
 
-        use_result = self.run_cli("--json", "developer", "use", "caveman")
-        use_payload = json.loads(use_result.stdout.strip())
-        self.assertTrue(use_payload["success"])
-        self.assertEqual(use_payload["selectedProfile"], "caveman")
-        self.assertEqual(use_payload["profile"]["verbosity"], "terse")
-
-        selected_current_result = self.run_cli("--json", "developer", "current")
-        selected_current_payload = json.loads(selected_current_result.stdout.strip())
-        self.assertEqual(selected_current_payload["resolved"]["profile"]["name"], "caveman")
-        self.assertEqual(selected_current_payload["resolved"]["source"], "saved")
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("No such command 'developer'", result.output)
 
         status_result = self.run_cli("--json", "status")
         status_payload = json.loads(status_result.stdout.strip())
-        self.assertEqual(status_payload["developer"]["profile"]["name"], "caveman")
-        self.assertEqual(status_payload["developer"]["source"], "saved")
-
-        clear_result = self.run_cli("--json", "developer", "clear")
-        clear_payload = json.loads(clear_result.stdout.strip())
-        self.assertTrue(clear_payload["success"])
-        self.assertEqual(clear_payload["selectedProfile"], None)
-        self.assertEqual(clear_payload["resolvedProfile"]["name"], "normal")
+        self.assertEqual(status_payload["developer"]["profile"]["name"], "normal")
+        self.assertEqual(status_payload["developer"]["source"], "default")
 
     def test_agent_sessions_and_logs_proxy_live_agent_routes(self) -> None:
         sessions_result = self.run_cli("--json", "agent", "sessions")
