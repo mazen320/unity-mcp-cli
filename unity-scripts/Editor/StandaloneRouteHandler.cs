@@ -608,6 +608,7 @@ public static class StandaloneRouteHandler
             {"isPlayingOrWillChangePlaymode", EditorApplication.isPlayingOrWillChangePlaymode},
             {"isPaused", EditorApplication.isPaused},
             {"isCompiling", EditorApplication.isCompiling},
+            {"isUpdating", EditorApplication.isUpdating},
             {"unityVersion", Application.unityVersion},
             {"activeScene", scene.name},
             {"activeScenePath", scene.path},
@@ -2044,6 +2045,27 @@ public static class StandaloneRouteHandler
         };
     }
 
+    // Debounce AssetDatabase.Refresh so rapid script writes during verify-and-fix
+    // loops don't stack multiple domain reloads (which was contributing to
+    // runaway editor memory during agent flows).
+    private static DateTime _lastAssetRefreshUtc = DateTime.MinValue;
+    private const double _minRefreshSpacingSeconds = 1.5;
+
+    private static void RequestAssetRefresh()
+    {
+        // Skip the refresh entirely if Unity is already compiling or updating —
+        // it will pick up the new file on the current pass.
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            return;
+
+        double since = (DateTime.UtcNow - _lastAssetRefreshUtc).TotalSeconds;
+        if (since < _minRefreshSpacingSeconds)
+            return;
+
+        _lastAssetRefreshUtc = DateTime.UtcNow;
+        AssetDatabase.Refresh();
+    }
+
     private static object HandleScriptCreate(Dictionary<string, object> p)
     {
         string assetPath = GetString(p, "path", "");
@@ -2056,13 +2078,30 @@ public static class StandaloneRouteHandler
         string dir = Path.GetDirectoryName(fullPath);
         if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-        File.WriteAllText(fullPath, content);
-        AssetDatabase.Refresh();
+        // Skip identical-content rewrites entirely — otherwise a verify loop
+        // that reads back the same bytes would still trigger a Refresh pass.
+        bool existingMatches = false;
+        try
+        {
+            if (File.Exists(fullPath))
+            {
+                string existing = File.ReadAllText(fullPath);
+                existingMatches = string.Equals(existing, content, StringComparison.Ordinal);
+            }
+        }
+        catch { /* fall through and just write */ }
+
+        if (!existingMatches)
+        {
+            File.WriteAllText(fullPath, content);
+            RequestAssetRefresh();
+        }
 
         return new Dictionary<string, object>
         {
             {"success", true},
-            {"path", assetPath}
+            {"path", assetPath},
+            {"unchanged", existingMatches}
         };
     }
 
@@ -2590,7 +2629,40 @@ public static class StandaloneRouteHandler
         return Vector3.zero;
     }
 
+    // Cache resolved component types so attach-retry loops don't re-scan every
+    // loaded assembly on each attempt (which allocates hundreds of Type[] arrays
+    // per call and contributed to editor memory pressure during long sessions).
+    // Domain reloads wipe this dictionary automatically via static reinit.
+    private static readonly Dictionary<string, Type> _componentTypeCache = new Dictionary<string, Type>(StringComparer.Ordinal);
+    private static int _componentTypeCacheMisses;
+
     private static Type FindComponentType(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        if (_componentTypeCache.TryGetValue(name, out Type cached))
+            return cached;  // may be null — intentional negative cache
+
+        Type resolved = ResolveComponentType(name);
+        // Only negative-cache names we've looked up more than a few times to
+        // give newly-compiled user scripts a chance to show up after a reload.
+        if (resolved != null)
+        {
+            _componentTypeCache[name] = resolved;
+        }
+        else
+        {
+            _componentTypeCacheMisses++;
+            // Flush negative cache periodically so newly compiled types become visible.
+            if (_componentTypeCacheMisses >= 32)
+            {
+                _componentTypeCache.Clear();
+                _componentTypeCacheMisses = 0;
+            }
+        }
+        return resolved;
+    }
+
+    private static Type ResolveComponentType(string name)
     {
         // Try common Unity namespaces first
         foreach (string prefix in new[] { "UnityEngine.", "UnityEngine.UI.", "" })

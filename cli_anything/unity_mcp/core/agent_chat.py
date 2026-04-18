@@ -1104,31 +1104,17 @@ public class PlayerMovement : MonoBehaviour
         return False
 
     def _capture_after_action(self) -> dict[str, Any]:
-        """Take a Game View + Scene View screenshot after a scene-modifying action.
+        """Deprecated: disabled because it allocated large textures per action.
 
-        Returns a dict with ``gamePath`` and ``scenePath`` keys, or empty dict on failure.
-        Used to provide visual proof after any action that changes the scene.
+        Kept as a no-op so any stale callers don't break. Scene screenshots should
+        be opt-in (e.g. explicit "screenshot" command) so they don't pile up RAM
+        during multi-step agent flows.
         """
-        self._invalidate_context_cache()
-        try:
-            result = self.bridge.client.call_route(
-                "graphics/capture",
-                {"kind": "both"},
-            )
-            return dict(result or {})
-        except Exception:
-            return {}
+        return {}
 
     def _capture_lines(self, capture: dict[str, Any]) -> list[str]:
-        """Format capture paths as display lines for a reply message."""
-        lines: list[str] = []
-        game_path = capture.get("gamePath") or capture.get("game_path")
-        scene_path = capture.get("scenePath") or capture.get("scene_path")
-        if game_path:
-            lines.append(f"Game view: `{game_path}`")
-        if scene_path:
-            lines.append(f"Scene view: `{scene_path}`")
-        return lines
+        """Deprecated companion to ``_capture_after_action``; always empty now."""
+        return []
 
     def _build_physics_feel_reply(self, text: str) -> str:
         from .skills.physics_feel import audit_physics_feel, propose_physics_feel_tuning
@@ -1613,13 +1599,48 @@ public class PlayerMovement : MonoBehaviour
     # ── Verified helpers ─────────────────────────────────────────────────────
 
     def _get_compile_errors(self) -> list[str]:
-        """Return a list of current Unity compile error strings (empty = clean)."""
+        """Return a list of current Unity compile error strings (empty = clean).
+
+        Handles both the new ``entries`` shape and the legacy ``errors`` shape.
+        """
         try:
             result = self.bridge.client.call_route("compilation/errors", {}) or {}
-            raw = result.get("errors") or []
-            return [str(e) for e in raw if e]
+            entries = result.get("entries") or result.get("errors") or []
+            messages: list[str] = []
+            for entry in entries:
+                if isinstance(entry, dict):
+                    msg = str(entry.get("message") or "")
+                else:
+                    msg = str(entry or "")
+                if msg:
+                    messages.append(msg)
+            return messages
         except Exception:
             return []
+
+    def _is_editor_compiling(self) -> bool:
+        """Ask Unity whether the editor is compiling or updating assets."""
+        try:
+            result = self.bridge.client.call_route("editor/state", {}) or {}
+            return bool(result.get("isCompiling") or result.get("isUpdating"))
+        except Exception:
+            return False
+
+    def _wait_for_compile(self, max_wait_secs: float = 8.0, poll: float = 0.5) -> None:
+        """Block up to *max_wait_secs* while Unity reports isCompiling/isUpdating.
+
+        Cheaper than a blind ``sleep(3)`` — we exit as soon as the editor is idle
+        and we don't sleep at all if it's already idle. This dramatically reduces
+        the number of overlapping operations during agent retry loops.
+        """
+        deadline = time.monotonic() + max_wait_secs
+        # Small settle delay so we don't race ahead of the AssetDatabase.Refresh
+        # kickoff that typically happens a few hundred ms after script/create.
+        time.sleep(0.4)
+        while time.monotonic() < deadline:
+            if not self._is_editor_compiling():
+                return
+            time.sleep(poll)
 
     def _create_script_verified(
         self, path: str, content: str, *, max_fix_attempts: int = 2
@@ -1631,23 +1652,22 @@ public class PlayerMovement : MonoBehaviour
         except Exception as exc:
             return False, f"script/create failed: {exc}"
 
-        # 2. Read back and verify content matches
+        # 2. Read back and verify content matches (single rewrite at most)
         try:
             readback = self.bridge.client.call_route("script/read", {"path": path}) or {}
             written = str(readback.get("content") or "")
             if written.strip() != content.strip():
-                # Content mismatch — rewrite once
                 self.bridge.client.call_route("script/create", {"path": path, "content": content})
         except Exception:
             pass  # read-back failure is non-fatal; continue to compile check
 
-        # 3. Wait for Unity to recompile, then check for errors
+        # 3. Wait for Unity to recompile (compile-aware), then check for errors.
+        script_name = path.split("/")[-1].replace(".cs", "")
         current_content = content
+        relevant: list[str] = []
         for fix_attempt in range(max_fix_attempts + 1):
-            time.sleep(3.0)
+            self._wait_for_compile(max_wait_secs=8.0)
             compile_errors = self._get_compile_errors()
-            # Filter to errors mentioning this script
-            script_name = path.split("/")[-1].replace(".cs", "")
             relevant = [e for e in compile_errors if script_name in e or path in e]
             if not relevant:
                 return True, f"Created and compiled `{path}` successfully"
@@ -1655,14 +1675,13 @@ public class PlayerMovement : MonoBehaviour
             if fix_attempt >= max_fix_attempts:
                 break
 
-            # Try to auto-fix the most common issues
+            # Mechanical auto-fixes (keep narrow — avoid churn during compile).
             fixed = current_content
-            # Escaped braces from Python format strings
             if "{{" in fixed or "}}" in fixed:
                 fixed = fixed.replace("{{", "{").replace("}}", "}")
-            # Missing semicolons, wrong class name, etc. are harder — just report
             if fixed == current_content:
-                break  # no mechanical fix possible
+                break  # nothing we can mechanically fix
+
             current_content = fixed
             self.bridge.client.call_route("script/create", {"path": path, "content": fixed})
 
@@ -1671,10 +1690,16 @@ public class PlayerMovement : MonoBehaviour
     def _attach_component_verified(
         self, go_path: str, component_type: str, *, max_attempts: int = 5, wait_secs: float = 2.0
     ) -> tuple[bool, str]:
-        """Add a component and confirm it appears on the GameObject."""
+        """Add a component and confirm it appears on the GameObject.
+
+        Between attempts we prefer ``_wait_for_compile`` (which exits as soon as
+        Unity is idle) over a blind sleep — this avoids overlapping retries with
+        an in-progress script compilation.
+        """
+        last_err = ""
         for attempt in range(max_attempts):
             if attempt > 0:
-                time.sleep(wait_secs)
+                self._wait_for_compile(max_wait_secs=wait_secs * 2, poll=0.5)
             try:
                 self.bridge.client.call_route(
                     "component/add",
@@ -1743,15 +1768,9 @@ public class PlayerMovement : MonoBehaviour
             else:
                 errors.append(msg2)
 
-        self._set_status("Capturing scene")
-        capture = self._capture_after_action()
-        capture_lines = self._capture_lines(capture)
-
         lines = [f"Built player prototype `{name}`:", ""] + steps_done
         if errors:
             lines += ["", "Issues encountered:"] + [f"  • {e}" for e in errors]
-        if capture_lines:
-            lines += [""] + capture_lines
         lines += [
             "",
             "Next: press Play and test movement with WASD + Space.",
@@ -1799,14 +1818,9 @@ public class PlayerMovement : MonoBehaviour
         else:
             errors.append(msg2)
 
-        capture = self._capture_after_action()
-        capture_lines = self._capture_lines(capture)
-
         lines = [f"Created and attached `{script_name}` to `{go_name}`:", ""] + steps_done
         if errors:
             lines += ["", "Issues:"] + [f"  • {e}" for e in errors]
-        if capture_lines:
-            lines += [""] + capture_lines
         lines += ["", f"Open `{script_path}` to implement the logic."]
         return "\n".join(lines)
 
@@ -1893,10 +1907,6 @@ public class PlayerMovement : MonoBehaviour
             except Exception as exc:
                 results_lines.append(f"Step {i}: {title} -- {exc}")
 
-        capture = self._capture_after_action()
-        capture_lines = self._capture_lines(capture)
-        if capture_lines:
-            results_lines += [""] + capture_lines
         results_lines += ["", "Done. Ask me to audit again to see the score delta."]
         return "\n".join(results_lines)
 
@@ -2125,11 +2135,25 @@ class ChatBridge:
         self.append_message("ai", "\n".join(lines))
 
     def _watchdog_loop(self) -> None:
-        """Background thread: periodically run a lightweight project health check."""
+        """Background thread: periodically run a lightweight project health check.
+
+        Skips the pass while the agent is actively executing or Unity is
+        compiling — otherwise the watchdog issues a second stream of route
+        calls that compete with the main chat flow for the editor main thread
+        and multiply the memory pressure from overlapping AssetDatabase work.
+        """
         while self._watchdog_running:
             time.sleep(self._watchdog_interval)
             if not self._watchdog_running:
                 break
+            # Skip when we'd be stepping on the main flow.
+            if self._status_state and self._status_state != "idle":
+                continue
+            try:
+                if self._is_editor_busy():
+                    continue
+            except Exception:
+                pass
             try:
                 result = self._assistant._run_embedded_cli(["--json", "workflow", "quality-score"])
                 findings = (result or {}).get("findings") or []
@@ -2137,6 +2161,14 @@ class ChatBridge:
                 self._watchdog_surface_findings(new_findings)
             except Exception:
                 pass  # watchdog never crashes the bridge
+
+    def _is_editor_busy(self) -> bool:
+        """Best-effort check whether the Unity editor is mid-compile/update."""
+        try:
+            result = self.client.call_route("editor/state", {}) or {}
+            return bool(result.get("isCompiling") or result.get("isUpdating"))
+        except Exception:
+            return False
 
     def _start_watchdog(self) -> None:
         """Start the background watchdog thread."""
