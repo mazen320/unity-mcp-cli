@@ -134,6 +134,20 @@ class ChatE2ETests(unittest.TestCase):
             bridge._watchdog_thread.join(timeout=1.0)
             assert not bridge._watchdog_thread.is_alive()
 
+    def test_watchdog_is_disabled_by_default_after_reset(self):
+        """Default bridge sessions should not start the watchdog automatically."""
+        from unittest.mock import MagicMock
+        from cli_anything.unity_mcp.core.agent_chat import ChatBridge
+        from cli_anything.unity_mcp.core.file_ipc import FileIPCClient
+
+        with _workspace_temp_dir() as tmp:
+            client = MagicMock(spec=FileIPCClient)
+            bridge = ChatBridge(tmp, client)
+            bridge._ensure_ready()
+
+            assert bridge._watchdog_interval == 0.0
+            assert bridge._watchdog_thread is None
+
     def test_watchdog_does_not_post_duplicate_findings(self):
         """Watchdog suppresses findings already surfaced in this session."""
         from unittest.mock import MagicMock

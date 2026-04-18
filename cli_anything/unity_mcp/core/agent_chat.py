@@ -426,8 +426,8 @@ public class PlayerMovement : MonoBehaviour
         return (
             f"Hey, I’m connected to **{project_name}** working on the **{active_scene}** scene right now.\n\n"
             "I can help you create and script things directly in the editor—components, animators, "
-            "scene setup, all the tedious stuff. I can also audit your project, check compile errors, "
-            "or improve code quality if you ask.\n\n"
+            "scene setup, references, and the tedious stuff. I can also inspect the current scene, "
+            "show hierarchy, and surface compile errors.\n\n"
             "What do you want to build or fix?"
         )
 
@@ -438,9 +438,8 @@ public class PlayerMovement : MonoBehaviour
             "attach physics or UI elements to GameObjects.\n\n"
             "**Scripting:** Write C# that talks to components, set up state machines, auto-wire references, "
             "generate boilerplate.\n\n"
-            "**Project health:** Check for compile errors, audit code quality, benchmark performance, "
-            "suggest improvements.\n\n"
-            "**Scene tools:** Show hierarchy, save, create sandbox scenes for testing.\n\n"
+            "**Project context:** Inspect the current scene, show hierarchy, list scripts, and check compile errors.\n\n"
+            "**Scene tools:** Show hierarchy, save the scene, and create primitives directly in-editor.\n\n"
             "Just describe what you want to build or fix and I'll handle the Unity tedium."
         )
 
@@ -1984,7 +1983,7 @@ class ChatBridge:
         handler: Optional[Callable[[str, "ChatBridge"], None]] = None,
         embedded_options: "EmbeddedCLIOptions | None" = None,
         poll_interval: float = 0.25,
-        watchdog_interval: float = 60.0,  # check project health every 60 seconds
+        watchdog_interval: float = 0.0,  # disabled by default during the reset
     ) -> None:
         self.project_path = Path(project_path)
         self.client = file_client

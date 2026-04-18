@@ -1137,6 +1137,30 @@ class CoreTests(unittest.TestCase):
             self.assertIn("create and script things directly in the editor", bridge._history[-1]["content"])
             self.assertIn("compile errors", bridge._history[-1]["content"])
             self.assertIn("What do you want to build or fix?", bridge._history[-1]["content"])
+            self.assertNotIn("benchmark", bridge._history[-1]["content"].lower())
+            self.assertNotIn("quality score", bridge._history[-1]["content"].lower())
+            self.assertNotIn("audit your project", bridge._history[-1]["content"].lower())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_chat_bridge_help_reply_stays_on_copilot_surface(self) -> None:
+        tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
+        project = tmpdir / "DemoProject"
+        project.mkdir(parents=True, exist_ok=True)
+        try:
+            class ClientStub:
+                def call_route(self, route: str, params: dict[str, Any]) -> dict[str, Any]:
+                    return {}
+
+            bridge = ChatBridge(project, ClientStub())  # type: ignore[arg-type]
+            bridge._process_message({"id": "msg-1", "role": "user", "content": "help"})
+
+            reply = bridge._history[-1]["content"].lower()
+            self.assertIn("build", reply)
+            self.assertIn("compile errors", reply)
+            self.assertNotIn("benchmark", reply)
+            self.assertNotIn("quality score", reply)
+            self.assertNotIn("create sandbox scenes", reply)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
