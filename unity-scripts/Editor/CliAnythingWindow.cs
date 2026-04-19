@@ -653,25 +653,32 @@ public class CliAnythingWindow : EditorWindow
             Repaint();
         }
 
-        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinHeight(96f));
+        float composerHeight = _agentWorkspaceMode ? 72f : 52f;
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.MinHeight(_agentWorkspaceMode ? 124f : 104f));
         GUILayout.Label(_agentWorkspaceMode ? "Ask the copilot" : "Message", EditorStyles.miniLabel);
-        EditorGUILayout.BeginHorizontal();
         GUI.SetNextControlName("AgentInput");
-        _agentInput = EditorGUILayout.TextField(_agentInput, GUILayout.Height(24f), GUILayout.ExpandWidth(true));
+        _agentInput = EditorGUILayout.TextArea(_agentInput, GUILayout.MinHeight(composerHeight), GUILayout.ExpandWidth(true));
 
-        bool send = GUILayout.Button("Send", GUILayout.Width(60))
-                 || (Event.current.type == EventType.KeyDown
-                     && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter)
-                     && GUI.GetNameOfFocusedControl() == "AgentInput"
-                     && !Event.current.shift);
+        bool sendShortcut = Event.current.type == EventType.KeyDown
+                         && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter)
+                         && GUI.GetNameOfFocusedControl() == "AgentInput"
+                         && (Event.current.control || Event.current.command);
+        bool send = sendShortcut;
+        EditorGUILayout.BeginHorizontal();
+        GUILayout.Label("Ctrl+Enter to send", EditorStyles.miniLabel);
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Send", GUILayout.Width(60)))
+            send = true;
+        EditorGUILayout.EndHorizontal();
 
         if (send && !string.IsNullOrWhiteSpace(_agentInput))
         {
             SendAgentMessage(_agentInput.Trim());
             _agentInput = "";
             GUI.FocusControl("AgentInput");
+            if (sendShortcut)
+                Event.current.Use();
         }
-        EditorGUILayout.EndHorizontal();
 
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("show me the target first", EditorStyles.miniButton))
@@ -904,12 +911,13 @@ public class CliAnythingWindow : EditorWindow
             GUIUtility.systemCopyBuffer = msg.content;
         }
         EditorGUILayout.EndHorizontal();
+        EditorGUILayout.Space(2f);
 
         // Selectable text — allows drag-select + Ctrl+C
         _agentSelectableContentStyle.normal.textColor = bubbleStyle.normal.textColor;
         float innerW = Mathf.Max(60f, maxWidth - bubbleStyle.padding.horizontal - bubbleStyle.margin.horizontal);
-        float textH  = _agentSelectableContentStyle.CalcHeight(new GUIContent(msg.content), innerW);
-        EditorGUILayout.SelectableLabel(msg.content, _agentSelectableContentStyle, GUILayout.Height(textH));
+        float textH  = Mathf.Max(EditorGUIUtility.singleLineHeight, _agentSelectableContentStyle.CalcHeight(new GUIContent(msg.content), innerW));
+        EditorGUILayout.SelectableLabel(msg.content, _agentSelectableContentStyle, GUILayout.MinHeight(textH + 8f), GUILayout.ExpandWidth(true));
 
         // Steps
         if (msg.steps != null && msg.steps.Count > 0)
