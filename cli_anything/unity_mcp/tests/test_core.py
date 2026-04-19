@@ -2241,6 +2241,13 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("ExportImproveProjectMarkdown", source)
         self.assertNotIn("Latest Improve Project", source)
 
+    def test_agent_window_uses_manual_selectable_label_for_chat_messages(self) -> None:
+        window_path = Path(__file__).resolve().parents[3] / "unity-scripts" / "Editor" / "CliAnythingWindow.cs"
+        source = window_path.read_text(encoding="utf-8")
+
+        self.assertIn("EditorGUI.SelectableLabel(textRect, msg.content, _agentSelectableContentStyle);", source)
+        self.assertNotIn("EditorGUILayout.SelectableLabel(msg.content, _agentSelectableContentStyle", source)
+
     def test_chat_bridge_status_reports_llm_provider(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "MyProject"

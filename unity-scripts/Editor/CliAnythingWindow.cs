@@ -917,7 +917,12 @@ public class CliAnythingWindow : EditorWindow
         _agentSelectableContentStyle.normal.textColor = bubbleStyle.normal.textColor;
         float innerW = Mathf.Max(60f, maxWidth - bubbleStyle.padding.horizontal - bubbleStyle.margin.horizontal);
         float textH  = Mathf.Max(EditorGUIUtility.singleLineHeight, _agentSelectableContentStyle.CalcHeight(new GUIContent(msg.content), innerW));
-        EditorGUILayout.SelectableLabel(msg.content, _agentSelectableContentStyle, GUILayout.MinHeight(textH + 8f), GUILayout.ExpandWidth(true));
+        Rect textRect = GUILayoutUtility.GetRect(
+            new GUIContent(msg.content),
+            _agentSelectableContentStyle,
+            GUILayout.MinHeight(textH + 12f),
+            GUILayout.ExpandWidth(true));
+        EditorGUI.SelectableLabel(textRect, msg.content, _agentSelectableContentStyle);
 
         // Steps
         if (msg.steps != null && msg.steps.Count > 0)
