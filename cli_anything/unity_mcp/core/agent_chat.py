@@ -96,6 +96,11 @@ class _OfflineUnityAssistant:
         r"what\s+are\s+you\s+changing|what\s+will\s+you\s+change|plan)\b",
         re.IGNORECASE,
     )
+    _PENDING_PLAN_REVISION_RE = re.compile(
+        r"\b(revise|change|adjust|instead|new\s+scene|separate\s+scene|"
+        r"different\s+scene|sandbox|do\s+it\s+in|use\s+a\s+new|not\s+this\s+scene)\b",
+        re.IGNORECASE,
+    )
     _CHAT_FIRST_RE = re.compile(
         r"\b(capabilities?|what\s+can\s+you\s+do|what\s+are\s+many\s+things|"
         r"can\s+you|could\s+you|would\s+you|should\s+i|should\s+we|"
@@ -161,6 +166,8 @@ class _OfflineUnityAssistant:
             "asset/create-folder",
             "tag/add",
             "layer/add",
+            "scene/new",
+            "scene/open",
             "scene/save",
             "editor/play-mode",
         }
@@ -272,6 +279,8 @@ public class PlayerMovement : MonoBehaviour
         if pending_model_plan and lowered in {"no", "cancel", "stop", "hold", "not now", "never mind"}:
             self.bridge._pending_model_plan = None
             return "Cancelled the pending plan. Tell me what to change and I’ll revise it before doing anything."
+        if pending_model_plan and self._is_pending_plan_revision_request(normalized):
+            return self._revise_pending_model_plan(normalized, pending_model_plan)
         if pending_model_plan and self._is_pending_plan_review_request(normalized):
             return self._describe_pending_model_plan(pending_model_plan)
         if self._GREETING_RE.match(normalized):
@@ -2313,6 +2322,29 @@ public class PlayerMovement : MonoBehaviour
     def _is_pending_plan_review_request(self, content: str) -> bool:
         return bool(self._PENDING_PLAN_REVIEW_RE.search(str(content or "")))
 
+    def _is_pending_plan_revision_request(self, content: str) -> bool:
+        return bool(self._PENDING_PLAN_REVISION_RE.search(str(content or "")))
+
+    def _revise_pending_model_plan(self, revision: str, plan: list[dict[str, Any]]) -> dict[str, Any] | str:
+        intent = (
+            "Revise the pending Unity execution plan using the user's requested change. "
+            "Return a replacement executable route plan, not prose. Do not execute it yet.\n\n"
+            f"User requested change: {revision}\n\n"
+            f"Current pending plan JSON:\n{json.dumps(plan, ensure_ascii=False, indent=2)}"
+        )
+        revised = self._try_model_backed_plan(intent)
+        if isinstance(revised, dict):
+            revised["content"] = (
+                "I revised the pending plan and replaced the old one.\n\n"
+                f"{revised.get('content') or ''}"
+            ).strip()
+            revised.setdefault("metadata", {})["kind"] = "model-plan-revision"
+            return revised
+        return (
+            "I understood that as a revision to the pending plan, but the model did not return a safe executable replacement. "
+            "I kept the old plan paused. Reply `cancel` to discard it, or describe the revision more specifically."
+        )
+
     def _describe_pending_model_plan(self, plan: list[dict[str, Any]]) -> dict[str, Any]:
         preview_steps = self._plan_preview_steps(plan)
         lines = [
@@ -2471,6 +2503,7 @@ public class PlayerMovement : MonoBehaviour
             "Planner instruction: Return ONLY an executable Unity route JSON array. "
             "Do not return prose or a tutorial. Build a playable/testable vertical slice now by creating an Empty GameObject, "
             "creating one or more C# scripts with full content, attaching the script(s), creating simple materials/objects if useful, "
+            "using scene/new first when the user asks for a new or separate scene, "
             "and saving the scene. Do not include playtesting, feedback collection, analysis, research, or TODO steps. "
             "A single generated manager MonoBehaviour that creates runtime objects and UI is acceptable when it is the fastest reliable path."
         )

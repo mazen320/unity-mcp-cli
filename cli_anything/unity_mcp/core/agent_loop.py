@@ -197,6 +197,9 @@ class AgentLoop:
                 if isinstance(result, dict) and result.get("error"):
                     raise FileIPCError(str(result["error"]))
 
+                if step.route in {"script/create", "script/update"}:
+                    self._wait_for_unity_compilation()
+
                 return StepResult(
                     step=step.step,
                     description=step.description,
@@ -207,6 +210,8 @@ class AgentLoop:
             except (FileIPCError, AssertionError, Exception) as exc:
                 last_error = str(exc)
                 if attempt < self.max_retries:
+                    if step.route == "component/add" and self._looks_like_component_compile_race(last_error):
+                        self._wait_for_unity_compilation()
                     time.sleep(self.retry_delay)
 
         return StepResult(
@@ -233,6 +238,49 @@ class AgentLoop:
             tmp.replace(self.status_path)
         except Exception:
             pass
+
+    def _wait_for_unity_compilation(self, *, timeout: float = 25.0, interval: float = 0.25) -> None:
+        """Wait for Unity to finish script compilation/domain reload after script edits.
+
+        Script creation returns before Unity can always attach the new MonoBehaviour.
+        This keeps generated-script plans from racing into component/add.
+        """
+        deadline = time.monotonic() + timeout
+        saw_busy = False
+        stable_ready_polls = 0
+        time.sleep(min(interval, 0.25))
+        while time.monotonic() < deadline:
+            try:
+                state = self.client.call_route("editor/state", {})
+            except Exception:
+                return
+            if not isinstance(state, dict):
+                return
+            is_compiling = bool(state.get("isCompiling") or state.get("is_compiling"))
+            domain_reload = bool(
+                state.get("isDomainReloadPending")
+                or state.get("is_domain_reload_pending")
+                or state.get("domainReloadPending")
+            )
+            ready = state.get("readyForTools", state.get("ready_for_tools", True))
+            busy = is_compiling or domain_reload or ready is False
+            if busy:
+                saw_busy = True
+                stable_ready_polls = 0
+            else:
+                stable_ready_polls += 1
+                if saw_busy or stable_ready_polls >= 2:
+                    return
+            time.sleep(interval)
+
+    def _looks_like_component_compile_race(self, error: str) -> bool:
+        lowered = str(error or "").lower()
+        return (
+            "component not found" in lowered
+            or "script class" in lowered
+            or "monobehaviour" in lowered
+            or "cannot be found" in lowered
+        )
 
 
 # ── Formatting helpers ────────────────────────────────────────────────────────

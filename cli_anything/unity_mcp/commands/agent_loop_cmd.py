@@ -179,7 +179,7 @@ Do NOT include human/offline tasks such as playtesting with users, collecting fe
 Do NOT include placeholder steps. If the user asks you to build or generate something, build a playable/testable vertical slice by creating GameObjects, materials, and C# scripts with full script content. Do not output a tutorial or TODO plan.
 Prefer compact working implementations: one manager script that builds runtime objects is valid when it makes the game playable faster.
 Use editor/play-mode only when the user explicitly asks to enter/exit play mode; do not start play mode before scene/script/material edits.
-For broad build requests, end with scene/save after creating the assets and scene objects.
+If the user asks for a new/separate scene, use scene/new before creating scene objects. End broad build requests with scene/save after creating the assets and scene objects.
 
 Available routes (use EXACT param names shown):
   gameobject/create     (name, primitiveType[Cube|Sphere|Capsule|Cylinder|Plane|Quad|Empty], parent, position{x,y,z})
@@ -207,6 +207,8 @@ Available routes (use EXACT param names shown):
   asset/create-folder   (path)
   tag/add               (tag)
   layer/add             (layer)
+  scene/new             (name)
+  scene/open            (path, saveIfDirty, discardUnsaved, forceReload)
   scene/save            ()
   editor/play-mode      (action[play|stop|pause])
 

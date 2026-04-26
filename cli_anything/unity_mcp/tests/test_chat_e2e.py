@@ -423,6 +423,52 @@ class ChatE2ETests(unittest.TestCase):
         assert result["steps"][1]["status"] == "error"
         assert getattr(bridge, "_pending_model_plan", None) is None
 
+    def test_agent_loop_waits_for_compilation_after_script_create_before_attach(self):
+        """Generated script plans should not race component/add before Unity compilation settles."""
+        from cli_anything.unity_mcp.core.agent_loop import AgentLoop
+
+        class CompileAwareClient:
+            def __init__(self):
+                self.calls = []
+                self.state_polls = 0
+
+            def call_route(self, route, params):
+                self.calls.append(route)
+                if route == "script/create":
+                    return {"success": True}
+                if route == "editor/state":
+                    self.state_polls += 1
+                    return {
+                        "isCompiling": self.state_polls == 1,
+                        "readyForTools": self.state_polls > 1,
+                    }
+                if route == "component/add":
+                    return {"success": True}
+                return {"success": True}
+
+        client = CompileAwareClient()
+        loop = AgentLoop(client, max_retries=0, retry_delay=0.0)
+        results = loop.execute(
+            [
+                {
+                    "step": 1,
+                    "description": "Create script",
+                    "route": "script/create",
+                    "params": {"path": "Assets/Scripts/Generated.cs", "content": "public class Generated {}"},
+                },
+                {
+                    "step": 2,
+                    "description": "Attach script",
+                    "route": "component/add",
+                    "params": {"gameObjectPath": "Generated", "componentType": "Generated"},
+                },
+            ]
+        )
+
+        assert [result.status for result in results] == ["ok", "ok"]
+        assert client.calls.index("editor/state") < client.calls.index("component/add")
+        assert client.state_polls >= 2
+
     def test_pending_model_plan_target_question_describes_plan_without_replanning(self):
         """Plan review questions should explain the pending plan, not create a new plan."""
         from unittest.mock import MagicMock, patch
@@ -472,6 +518,67 @@ class ChatE2ETests(unittest.TestCase):
         assert "no concrete target" in result["content"].lower()
         assert "revise" in result["content"].lower()
         assert getattr(bridge, "_pending_model_plan", None)
+
+    def test_pending_model_plan_revision_replaces_plan_for_new_scene(self):
+        """Revision follow-ups like 'do it in a new scene' should replan, not chat or apply stale steps."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: ExistingScene"
+            bridge._pending_model_plan = [
+                {
+                    "step": 1,
+                    "description": "Create manager in current scene",
+                    "route": "gameobject/create",
+                    "params": {"name": "GeneratedPrototype", "primitiveType": "Empty"},
+                }
+            ]
+            assistant = _OfflineUnityAssistant(bridge)
+
+            replacement_plan = [
+                {
+                    "step": 1,
+                    "description": "Create a new scene for the generated prototype",
+                    "route": "scene/new",
+                    "params": {"name": "GeneratedPrototypeScene"},
+                    "onError": "abort",
+                },
+                {
+                    "step": 2,
+                    "description": "Create manager in the new scene",
+                    "route": "gameobject/create",
+                    "params": {"name": "GeneratedPrototype", "primitiveType": "Empty"},
+                },
+                {
+                    "step": 3,
+                    "description": "Save the generated scene",
+                    "route": "scene/save",
+                    "params": {},
+                },
+            ]
+
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=replacement_plan,
+                ) as generate_plan:
+                    result = assistant._dispatch("do it in a new scene")
+
+        assert isinstance(result, dict)
+        assert "revised the pending plan" in result["content"].lower()
+        assert bridge._pending_model_plan == replacement_plan
+        generated_intent = generate_plan.call_args.args[0]
+        assert "Revise the pending Unity execution plan" in generated_intent
+        assert "do it in a new scene" in generated_intent
+        assert "Create manager in current scene" in generated_intent
 
     def test_dispatch_capabilities_uses_builtin_help(self):
         """Capability questions should use the product answer instead of model improvisation."""
@@ -740,6 +847,45 @@ class ChatE2ETests(unittest.TestCase):
         assert "playable/testable vertical slice" in generated_intent
         assert "Do not return prose" in generated_intent
         assert "arcade block puzzle prototype" in generated_intent
+
+    def test_try_model_backed_plan_accepts_new_scene_route(self):
+        """The model planner should be allowed to create a fresh scene when requested."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: ExistingScene"
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[
+                        {
+                            "step": 1,
+                            "description": "Create a new scene for the generated prototype",
+                            "route": "scene/new",
+                            "params": {"name": "GeneratedPrototypeScene"},
+                        },
+                        {
+                            "step": 2,
+                            "description": "Save the new generated scene",
+                            "route": "scene/save",
+                            "params": {},
+                        },
+                    ],
+                ):
+                    reply = assistant._try_model_backed_plan("build the prototype in a new scene")
+
+        assert isinstance(reply, dict)
+        assert getattr(bridge, "_pending_model_plan", None)
 
     def test_best_effort_generation_request_does_not_fall_back_to_tutorial(self):
         """If a generation plan fails validation, explain instead of returning prose steps."""
