@@ -772,9 +772,11 @@ public class CliAnythingWindow : EditorWindow
             string statusLabel = string.IsNullOrEmpty(step.status) ? "pending" : step.status;
             GUILayout.Label($"[{step.stepNum}/{Mathf.Max(step.totalSteps, latestPlanMsg.steps.Count)}] {step.description} — {statusLabel}", EditorStyles.miniLabel);
         }
-        if (latestPlanMsg.metadata != null
+        bool approvalRequired = latestPlanMsg.metadata != null
             && latestPlanMsg.metadata.ContainsKey("approvalRequired")
-            && Convert.ToBoolean(latestPlanMsg.metadata["approvalRequired"]))
+            && Convert.ToBoolean(latestPlanMsg.metadata["approvalRequired"]);
+        bool isLiveApproval = _agentStatus.state == "awaiting_approval";
+        if (approvalRequired && isLiveApproval)
         {
             EditorGUILayout.Space(4);
             EditorGUILayout.BeginHorizontal();
@@ -785,6 +787,11 @@ public class CliAnythingWindow : EditorWindow
             if (GUILayout.Button("Revise", EditorStyles.miniButton))
                 SendAgentMessage("Revise that plan and explain it a little more before doing anything.");
             EditorGUILayout.EndHorizontal();
+        }
+        else if (approvalRequired)
+        {
+            EditorGUILayout.Space(4);
+            GUILayout.Label("Historical plan. No approval is pending.", EditorStyles.miniLabel);
         }
         EditorGUILayout.EndVertical();
     }

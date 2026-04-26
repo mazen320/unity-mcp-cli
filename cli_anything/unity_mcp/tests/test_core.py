@@ -2248,6 +2248,14 @@ class CoreTests(unittest.TestCase):
         self.assertIn("EditorGUI.SelectableLabel(textRect, msg.content, _agentSelectableContentStyle);", source)
         self.assertNotIn("EditorGUILayout.SelectableLabel(msg.content, _agentSelectableContentStyle", source)
 
+    def test_agent_window_only_shows_approval_controls_for_live_pending_plans(self) -> None:
+        window_path = Path(__file__).resolve().parents[3] / "unity-scripts" / "Editor" / "CliAnythingWindow.cs"
+        source = window_path.read_text(encoding="utf-8")
+
+        self.assertIn('bool isLiveApproval = _agentStatus.state == "awaiting_approval";', source)
+        self.assertIn("if (approvalRequired && isLiveApproval)", source)
+        self.assertIn("Historical plan. No approval is pending.", source)
+
     def test_chat_bridge_status_reports_llm_provider(self) -> None:
         tmpdir = Path.cwd() / ".tmp-tests" / uuid.uuid4().hex
         project = tmpdir / "MyProject"
