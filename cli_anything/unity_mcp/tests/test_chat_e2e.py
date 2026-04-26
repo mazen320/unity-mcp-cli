@@ -423,6 +423,149 @@ class ChatE2ETests(unittest.TestCase):
         assert result["steps"][1]["status"] == "error"
         assert getattr(bridge, "_pending_model_plan", None) is None
 
+    def test_pending_model_plan_target_question_describes_plan_without_replanning(self):
+        """Plan review questions should explain the pending plan, not create a new plan."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        bridge._pending_model_plan = [
+            {
+                "step": 1,
+                "description": "Assign a new material to the hero mesh",
+                "route": "material/assign",
+                "params": {"gameObject": "CodexFpsShowcase_Player", "material": "Assets/Materials/Hero.mat"},
+            },
+        ]
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.object(assistant, "_try_model_backed_plan") as plan_reply:
+            result = assistant._dispatch("Show me which object you're targeting and why before changing anything.")
+
+        plan_reply.assert_not_called()
+        assert isinstance(result, dict)
+        assert result["metadata"]["kind"] == "model-plan-review"
+        assert result["metadata"]["approvalRequired"] is True
+        assert getattr(bridge, "_pending_model_plan", None)
+        assert "not changed anything" in result["content"].lower()
+        assert "CodexFpsShowcase_Player" in result["content"]
+
+    def test_pending_model_plan_review_reports_missing_concrete_target(self):
+        """If the pending plan has no target params, review should block blind approval."""
+        from unittest.mock import MagicMock
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        bridge._pending_model_plan = [
+            {
+                "step": 1,
+                "description": "Identify the game object that will receive the new material.",
+                "route": "gameobject/info",
+                "params": {},
+            },
+        ]
+        assistant = _OfflineUnityAssistant(bridge)
+
+        result = assistant._dispatch("which object are you targeting?")
+
+        assert isinstance(result, dict)
+        assert "no concrete target" in result["content"].lower()
+        assert "revise" in result["content"].lower()
+        assert getattr(bridge, "_pending_model_plan", None)
+
+    def test_dispatch_capabilities_uses_builtin_help(self):
+        """Capability questions should use the product answer instead of model improvisation."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.object(assistant, "_try_model_backed_chat") as chat_reply:
+            with patch.object(assistant, "_try_model_backed_plan") as plan_reply:
+                reply = assistant._dispatch("what are your capabilities?")
+
+        chat_reply.assert_not_called()
+        plan_reply.assert_not_called()
+        assert "propose a plan first" in reply.lower()
+        assert "approval" in reply.lower()
+
+    def test_best_effort_reply_routes_meta_questions_to_chat_before_planning(self):
+        """Review/explanation questions should be answered conversationally first."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+            with patch.object(assistant, "_try_model_backed_chat", return_value="I can inspect scenes and propose safe changes.") as chat_reply:
+                with patch.object(assistant, "_try_model_backed_plan", return_value={"content": "bad plan"}) as plan_reply:
+                    reply = assistant._best_effort_agent_reply("show me what you would change first")
+
+        chat_reply.assert_called_once_with("show me what you would change first")
+        plan_reply.assert_not_called()
+        assert "inspect scenes" in reply
+
+    def test_try_model_backed_plan_rejects_invalid_routes(self):
+        """Model plans with hallucinated routes should fall back instead of awaiting approval."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context"
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[{"step": 1, "description": "Answer the user", "route": "continue", "params": {}}],
+                ):
+                    reply = assistant._try_model_backed_plan("what are your capabilities?")
+
+        assert reply is None
+        assert not getattr(bridge, "_pending_model_plan", None)
+
+    def test_try_model_backed_plan_rejects_placeholder_targets(self):
+        """Plans with schema placeholder values should not be offered for approval."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context"
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[
+                        {
+                            "step": 1,
+                            "description": "Assign new material to object",
+                            "route": "material/assign",
+                            "params": {"gameObject": "GameObjectPath", "material": "Assets/Materials/New.mat"},
+                        }
+                    ],
+                ):
+                    reply = assistant._try_model_backed_plan("make the game look better")
+
+        assert reply is None
+        assert not getattr(bridge, "_pending_model_plan", None)
+
     def test_handle_message_preserves_structured_steps(self):
         """Structured assistant replies should persist step previews into chat history."""
         from unittest.mock import MagicMock, patch

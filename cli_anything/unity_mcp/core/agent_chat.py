@@ -91,6 +91,79 @@ class _OfflineUnityAssistant:
         r"^apply\s+(?:option\s+)?(1|2|3|snappy|controlled|arcade)\b",
         re.IGNORECASE,
     )
+    _PENDING_PLAN_REVIEW_RE = re.compile(
+        r"\b(show|explain|which|what|why|target|targeting|before\s+changing|"
+        r"what\s+are\s+you\s+changing|what\s+will\s+you\s+change|plan)\b",
+        re.IGNORECASE,
+    )
+    _CHAT_FIRST_RE = re.compile(
+        r"\b(capabilities?|what\s+can\s+you\s+do|what\s+are\s+many\s+things|"
+        r"can\s+you\s+see|do\s+you\s+see|who\s+is|creator|why\s+did|"
+        r"explain|show\s+me|which\s+object|what\s+object|targeting|"
+        r"before\s+changing|what\s+are\s+you\s+changing|what\s+will\s+you\s+change)\b",
+        re.IGNORECASE,
+    )
+    _CHAT_FIRST_ACTION_WORDS: tuple[str, ...] = (
+        "create", "add", "make", "build", "set", "attach", "delete", "remove",
+        "rename", "duplicate", "save", "apply", "fix", "improve", "polish",
+        "wire", "change", "move",
+    )
+    _MODEL_PLAN_ROUTES: frozenset[str] = frozenset(
+        {
+            "gameobject/create",
+            "gameobject/delete",
+            "gameobject/duplicate",
+            "gameobject/rename",
+            "gameobject/set-transform",
+            "gameobject/set-tag",
+            "gameobject/set-layer",
+            "component/add",
+            "component/remove",
+            "component/set-property",
+            "component/wire-reference",
+            "script/create",
+            "script/update",
+            "material/create",
+            "material/set-property",
+            "material/assign",
+            "prefab/save",
+            "prefab/instantiate",
+            "physics/set-rigidbody",
+            "physics/set-collider",
+            "lighting/set-sun",
+            "lighting/set-ambient",
+            "asset/create-folder",
+            "tag/add",
+            "layer/add",
+            "scene/save",
+            "editor/play-mode",
+        }
+    )
+    _TARGET_PARAM_KEYS: tuple[str, ...] = (
+        "gameObjectPath",
+        "gameObject",
+        "target",
+        "targetPath",
+        "object",
+        "name",
+        "path",
+        "parent",
+        "material",
+    )
+    _PLACEHOLDER_PARAM_VALUES: frozenset[str] = frozenset(
+        {
+            "gameobjectpath",
+            "gameobject",
+            "objectname",
+            "target",
+            "targetpath",
+            "materialpath",
+            "scriptpath",
+            "path/to/prefab",
+            "route/name",
+            "...",
+        }
+    )
     _AUTONOMOUS_TRIGGERS: tuple[str, ...] = (
         "fix all", "fix everything", "fix the issues",
         "polish", "improve the", "clean up",
@@ -166,13 +239,19 @@ public class PlayerMovement : MonoBehaviour
         if not normalized:
             return self._help_reply()
         pending_model_plan = getattr(self.bridge, "_pending_model_plan", None)
+        if not isinstance(pending_model_plan, list) or not pending_model_plan:
+            pending_model_plan = None
         if pending_model_plan and lowered in {"yes", "go", "proceed", "do it", "execute", "run it", "confirm", "apply"}:
             return self._execute_pending_model_plan()
         if pending_model_plan and lowered in {"no", "cancel", "stop", "hold", "not now", "never mind"}:
             self.bridge._pending_model_plan = None
             return "Cancelled the pending plan. Tell me what to change and I’ll revise it before doing anything."
-        if self._GREETING_RE.match(normalized) or lowered in {"help", "what can you do", "what do you do"}:
+        if pending_model_plan and self._is_pending_plan_review_request(normalized):
+            return self._describe_pending_model_plan(pending_model_plan)
+        if self._GREETING_RE.match(normalized):
             return self._greeting_reply()
+        if lowered in {"help", "what can you do", "what do you do"} or "capabilit" in lowered or "what are many things" in lowered:
+            return self._help_reply()
         if lowered in {"context", "project context", "project info", "what do you know about the project"}:
             return self._context_reply()
         if any(phrase in lowered for phrase in ("improve project", "make the project better", "safe improvements", "fix what you can")):
@@ -448,6 +527,7 @@ public class PlayerMovement : MonoBehaviour
             "generate boilerplate.\n\n"
             "**Project context:** Inspect the current scene, show hierarchy, list scripts, and check compile errors.\n\n"
             "**Scene tools:** Show hierarchy, save the scene, and create primitives directly in-editor.\n\n"
+            "**Safety:** For broader changes, I propose a plan first and wait for approval before executing it.\n\n"
             "Just describe what you want to build or fix and I'll handle the Unity tedium."
         )
 
@@ -1938,6 +2018,15 @@ public class PlayerMovement : MonoBehaviour
                 "in the `.umcp/agent.env` file in your project (or in your system environment). "
                 "OpenRouter is simplest—one key, any model. Then I can help you think through design and execute it in the editor."
             )
+        if self._should_route_to_chat_first(content):
+            chatted = self._try_model_backed_chat(content)
+            if chatted:
+                return chatted
+            return (
+                "I can inspect the live Unity project, explain what I see, propose bounded changes, "
+                "and only execute them after approval. Ask me for scene info, hierarchy, compile errors, "
+                "or a specific change you want reviewed first."
+            )
         planned = self._try_model_backed_plan(content)
         if planned:
             return planned
@@ -1951,6 +2040,82 @@ public class PlayerMovement : MonoBehaviour
             f"\"Set up a state machine for enemy AI\"\n\n"
             f"Or just tell me what you're trying to build and I'll figure out the steps."
         )
+
+    def _should_route_to_chat_first(self, content: str) -> bool:
+        lowered = str(content or "").lower()
+        if not self._CHAT_FIRST_RE.search(lowered):
+            return False
+        review_phrases = (
+            "show me", "explain", "which object", "what object", "targeting",
+            "before changing", "what are you changing", "what will you change",
+        )
+        if any(phrase in lowered for phrase in review_phrases):
+            return True
+        return not any(word in lowered for word in self._CHAT_FIRST_ACTION_WORDS)
+
+    def _is_pending_plan_review_request(self, content: str) -> bool:
+        return bool(self._PENDING_PLAN_REVIEW_RE.search(str(content or "")))
+
+    def _describe_pending_model_plan(self, plan: list[dict[str, Any]]) -> dict[str, Any]:
+        preview_steps = self._plan_preview_steps(plan)
+        lines = [
+            "The pending plan is still waiting for approval. I have not changed anything yet.",
+            "",
+            "Pending steps:",
+        ]
+        for index, step in enumerate(plan, 1):
+            description = str(step.get("description") or step.get("route") or f"Step {index}")
+            lines.append(f"{index}. {description}")
+
+        targets = self._extract_model_plan_targets(plan)
+        lines.append("")
+        if targets:
+            lines.append("Concrete targets named in the plan:")
+            for target in targets:
+                lines.append(f"- {target}")
+            lines.append("")
+            lines.append("That is what would be touched if you approve it. I have not verified the target beyond the current plan payload yet.")
+        else:
+            lines.append("Concrete target: no concrete target is named in this pending plan.")
+            lines.append("Do not approve it yet. Tell me the object to use, or ask me to inspect the scene and revise the plan first.")
+
+        lines.append("")
+        lines.append("Reply `yes` to apply the current plan, `cancel` to discard it, or describe the revision you want.")
+        return {
+            "content": "\n".join(lines),
+            "steps": preview_steps,
+            "metadata": {
+                "approvalRequired": True,
+                "kind": "model-plan-review",
+                "stepCount": len(plan),
+            },
+        }
+
+    def _extract_model_plan_targets(self, plan: list[dict[str, Any]]) -> list[str]:
+        seen: set[str] = set()
+        targets: list[str] = []
+
+        def add_target(key: str, value: Any) -> None:
+            if isinstance(value, (dict, list, tuple)):
+                return
+            text = str(value or "").strip()
+            if not text:
+                return
+            label = f"{key}: {text}"
+            if label not in seen:
+                seen.add(label)
+                targets.append(label)
+
+        for step in plan:
+            if not isinstance(step, dict):
+                continue
+            params = step.get("params") or {}
+            if not isinstance(params, dict):
+                continue
+            for key in self._TARGET_PARAM_KEYS:
+                if key in params:
+                    add_target(key, params.get(key))
+        return targets
 
     def _plan_preview_steps(self, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         total = len(steps)
@@ -1972,9 +2137,11 @@ public class PlayerMovement : MonoBehaviour
             return "No pending plan to execute. Tell me what you want to change and I’ll propose it first."
 
         self.bridge._pending_model_plan = None
+        self.bridge.write_status("executing", 0, len(plan), "Executing approved plan")
         loop = AgentLoop(self.bridge.client, max_retries=1, status_path=self.bridge._status_path)
         results = loop.execute(plan)
         self._invalidate_context_cache()
+        self.bridge.write_status("idle", len(results), len(results), "")
 
         result_steps: list[dict[str, Any]] = []
         total = len(results)
@@ -2016,6 +2183,9 @@ public class PlayerMovement : MonoBehaviour
         )
         if not isinstance(steps, list) or not steps:
             return None
+        if not self._is_valid_model_plan(steps):
+            self.bridge._pending_model_plan = None
+            return None
         self.bridge._pending_model_plan = steps
         self.bridge.write_status("awaiting_approval", 0, len(steps), "Waiting for approval")
         preview_steps = self._plan_preview_steps(steps)
@@ -2034,6 +2204,30 @@ public class PlayerMovement : MonoBehaviour
                 "stepCount": len(steps),
             },
         }
+
+    def _is_valid_model_plan(self, steps: list[Any]) -> bool:
+        for raw_step in steps:
+            if not isinstance(raw_step, dict):
+                return False
+            route = str(raw_step.get("route") or "").strip()
+            params = raw_step.get("params") or {}
+            if route not in self._MODEL_PLAN_ROUTES:
+                return False
+            if not isinstance(params, dict):
+                return False
+            if self._has_placeholder_param_value(params):
+                return False
+        return True
+
+    def _has_placeholder_param_value(self, value: Any) -> bool:
+        if isinstance(value, dict):
+            return any(self._has_placeholder_param_value(v) for v in value.values())
+        if isinstance(value, (list, tuple)):
+            return any(self._has_placeholder_param_value(v) for v in value)
+        if not isinstance(value, str):
+            return False
+        normalized = value.strip().strip("<>{}[]()'\"").lower()
+        return normalized in self._PLACEHOLDER_PARAM_VALUES
 
     def _try_model_backed_chat(self, content: str) -> str | None:
         try:
