@@ -176,7 +176,7 @@ Each step:
 
 Hard rule: every step must be directly executable through one of the routes below.
 Do NOT include human/offline tasks such as playtesting with users, collecting feedback, analyzing feedback, researching, brainstorming, waiting, asking the user, or "plan and implement later".
-Do NOT include placeholder steps. If the user asks for a complete small game like Tetris, Pong, Snake, Asteroids, etc., build a playable vertical slice by creating GameObjects, materials, and C# scripts with full script content. Do not output a tutorial or TODO plan.
+Do NOT include placeholder steps. If the user asks you to build or generate something, build a playable/testable vertical slice by creating GameObjects, materials, and C# scripts with full script content. Do not output a tutorial or TODO plan.
 Prefer compact working implementations: one manager script that builds runtime objects is valid when it makes the game playable faster.
 Use editor/play-mode only when the user explicitly asks to enter/exit play mode; do not start play mode before scene/script/material edits.
 For broad build requests, end with scene/save after creating the assets and scene objects.

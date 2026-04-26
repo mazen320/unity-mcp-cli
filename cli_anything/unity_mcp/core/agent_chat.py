@@ -123,9 +123,8 @@ class _OfflineUnityAssistant:
         r"test\s+the\s+changes\s+in\s+a\s+playtest)\b",
         re.IGNORECASE,
     )
-    _BROAD_GAME_BUILD_RE = re.compile(
-        r"\b(make|build|create|generate)\b.*\b(game|tetris|pong|snake|asteroids|breakout|platformer|shooter|rpg)\b|"
-        r"\b(tetris|pong|snake|asteroids|breakout|platformer|shooter|rpg)(?:-like|\s+game)?\b",
+    _GENERATION_REQUEST_RE = re.compile(
+        r"\b(make|build|create|generate|set\s+up|prototype)\b",
         re.IGNORECASE,
     )
     _MODEL_PLAN_ROUTES: frozenset[str] = frozenset(
@@ -2260,12 +2259,12 @@ public class PlayerMovement : MonoBehaviour
         planned = self._try_model_backed_plan(content)
         if planned:
             return planned
-        if self._is_broad_game_build_request(content):
+        if self._is_generation_request(content):
             return (
                 "I can build that, but the model did not produce a safe executable Unity plan this time. "
                 "I rejected the vague plan instead of applying it.\n\n"
-                "Try again with a direct build request like: `Build a small Tetris-like game with one generated manager script, "
-                "a scene object, keyboard controls, score, game over, and save the scene.`"
+                "Try again with the same idea but include the playable result you expect, the controls or interaction, "
+                "and whether I should create scripts, scene objects, UI, and save the scene."
             )
         chatted = self._try_model_backed_chat(content)
         if chatted:
@@ -2290,8 +2289,8 @@ public class PlayerMovement : MonoBehaviour
             return True
         return not any(word in lowered for word in self._CHAT_FIRST_ACTION_WORDS)
 
-    def _is_broad_game_build_request(self, content: str) -> bool:
-        return bool(self._BROAD_GAME_BUILD_RE.search(str(content or "")))
+    def _is_generation_request(self, content: str) -> bool:
+        return bool(self._GENERATION_REQUEST_RE.search(str(content or "")))
 
     def _is_pending_plan_review_request(self, content: str) -> bool:
         return bool(self._PENDING_PLAN_REVIEW_RE.search(str(content or "")))
@@ -2447,15 +2446,15 @@ public class PlayerMovement : MonoBehaviour
 
     def _planning_intent(self, content: str) -> str:
         normalized = str(content or "").strip()
-        if not self._is_broad_game_build_request(normalized):
+        if not self._is_generation_request(normalized):
             return normalized
         return (
             f"{normalized}\n\n"
             "Planner instruction: Return ONLY an executable Unity route JSON array. "
-            "Do not return prose or a tutorial. Build a playable vertical slice now by creating an Empty GameObject, "
+            "Do not return prose or a tutorial. Build a playable/testable vertical slice now by creating an Empty GameObject, "
             "creating one or more C# scripts with full content, attaching the script(s), creating simple materials/objects if useful, "
             "and saving the scene. Do not include playtesting, feedback collection, analysis, research, or TODO steps. "
-            "A single generated manager MonoBehaviour that creates its board/pieces/UI at runtime is acceptable."
+            "A single generated manager MonoBehaviour that creates runtime objects and UI is acceptable when it is the fastest reliable path."
         )
 
     def _is_valid_model_plan(self, steps: list[Any]) -> bool:

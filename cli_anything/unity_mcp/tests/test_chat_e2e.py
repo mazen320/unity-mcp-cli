@@ -646,8 +646,8 @@ class ChatE2ETests(unittest.TestCase):
         assert reply is None
         assert not getattr(bridge, "_pending_model_plan", None)
 
-    def test_try_model_backed_plan_accepts_generic_build_game_script_plan(self):
-        """Generic game requests should be allowed when the model emits executable Unity edits."""
+    def test_try_model_backed_plan_accepts_generation_script_plan(self):
+        """Generation requests should be allowed when the model emits executable Unity edits."""
         from unittest.mock import MagicMock, patch
         from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
 
@@ -669,46 +669,46 @@ class ChatE2ETests(unittest.TestCase):
                     return_value=[
                         {
                             "step": 1,
-                            "description": "Create a Tetris game manager object",
+                            "description": "Create a generated prototype manager object",
                             "route": "gameobject/create",
-                            "params": {"name": "TetrisGame", "primitiveType": "Empty"},
+                            "params": {"name": "GeneratedPrototype", "primitiveType": "Empty"},
                         },
                         {
                             "step": 2,
-                            "description": "Create the generated Tetris gameplay script",
+                            "description": "Create the generated gameplay script",
                             "route": "script/create",
                             "params": {
-                                "path": "Assets/Scripts/TetrisGame.cs",
-                                "content": "using UnityEngine;\npublic class TetrisGame : MonoBehaviour { void Start() {} }",
+                                "path": "Assets/Scripts/GeneratedPrototype.cs",
+                                "content": "using UnityEngine;\npublic class GeneratedPrototype : MonoBehaviour { void Start() {} }",
                             },
                         },
                         {
                             "step": 3,
-                            "description": "Attach the Tetris script to the game manager",
+                            "description": "Attach the generated script to the manager",
                             "route": "component/add",
-                            "params": {"gameObjectPath": "TetrisGame", "componentType": "TetrisGame"},
+                            "params": {"gameObjectPath": "GeneratedPrototype", "componentType": "GeneratedPrototype"},
                         },
                         {
                             "step": 4,
-                            "description": "Save the generated Tetris scene setup",
+                            "description": "Save the generated scene setup",
                             "route": "scene/save",
                             "params": {},
                         },
                     ],
                 ) as generate_plan:
-                    reply = assistant._try_model_backed_plan("make me a small Tetris-like game")
+                    reply = assistant._try_model_backed_plan("make me a small arcade block puzzle prototype")
 
         assert isinstance(reply, dict)
         assert reply["metadata"]["approvalRequired"] is True
         assert len(reply["steps"]) == 4
         assert getattr(bridge, "_pending_model_plan", None)
         generated_intent = generate_plan.call_args.args[0]
-        assert "playable vertical slice" in generated_intent
+        assert "playable/testable vertical slice" in generated_intent
         assert "Do not return prose" in generated_intent
-        assert "Tetris-like game" in generated_intent
+        assert "arcade block puzzle prototype" in generated_intent
 
-    def test_best_effort_broad_game_build_does_not_fall_back_to_tutorial(self):
-        """If a broad game build plan fails validation, explain instead of returning prose steps."""
+    def test_best_effort_generation_request_does_not_fall_back_to_tutorial(self):
+        """If a generation plan fails validation, explain instead of returning prose steps."""
         from unittest.mock import MagicMock, patch
         from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
 
@@ -722,7 +722,7 @@ class ChatE2ETests(unittest.TestCase):
                     "_try_model_backed_chat",
                     return_value="Here is a tutorial checklist with playtesting and research.",
                 ) as chat_reply:
-                    reply = assistant._best_effort_agent_reply("make me a small Tetris-like game")
+                    reply = assistant._best_effort_agent_reply("make me a small arcade prototype")
 
         chat_reply.assert_not_called()
         assert "safe executable Unity plan" in reply
