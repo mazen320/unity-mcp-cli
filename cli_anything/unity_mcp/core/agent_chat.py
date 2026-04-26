@@ -115,6 +115,19 @@ class _OfflineUnityAssistant:
         "rename", "duplicate", "save", "apply", "fix", "improve", "polish",
         "wire", "change", "move",
     )
+    _NON_EXECUTABLE_PLAN_RE = re.compile(
+        r"\b(playtest|play\s+test|small\s+group|players?\s+to\s+gather|"
+        r"collect\s+feedback|gather\s+feedback|user\s+feedback|analy[sz]e\s+feedback|"
+        r"feedback\s+received|suggested\s+changes|based\s+on\s+player\s+feedback|"
+        r"research|brainstorm|ask\s+the\s+user|wait\s+for|plan\s+and\s+implement|"
+        r"test\s+the\s+changes\s+in\s+a\s+playtest)\b",
+        re.IGNORECASE,
+    )
+    _BROAD_GAME_BUILD_RE = re.compile(
+        r"\b(make|build|create|generate)\b.*\b(game|tetris|pong|snake|asteroids|breakout|platformer|shooter|rpg)\b|"
+        r"\b(tetris|pong|snake|asteroids|breakout|platformer|shooter|rpg)(?:-like|\s+game)?\b",
+        re.IGNORECASE,
+    )
     _MODEL_PLAN_ROUTES: frozenset[str] = frozenset(
         {
             "gameobject/create",
@@ -2247,6 +2260,13 @@ public class PlayerMovement : MonoBehaviour
         planned = self._try_model_backed_plan(content)
         if planned:
             return planned
+        if self._is_broad_game_build_request(content):
+            return (
+                "I can build that, but the model did not produce a safe executable Unity plan this time. "
+                "I rejected the vague plan instead of applying it.\n\n"
+                "Try again with a direct build request like: `Build a small Tetris-like game with one generated manager script, "
+                "a scene object, keyboard controls, score, game over, and save the scene.`"
+            )
         chatted = self._try_model_backed_chat(content)
         if chatted:
             return chatted
@@ -2269,6 +2289,9 @@ public class PlayerMovement : MonoBehaviour
         if any(phrase in lowered for phrase in review_phrases):
             return True
         return not any(word in lowered for word in self._CHAT_FIRST_ACTION_WORDS)
+
+    def _is_broad_game_build_request(self, content: str) -> bool:
+        return bool(self._BROAD_GAME_BUILD_RE.search(str(content or "")))
 
     def _is_pending_plan_review_request(self, content: str) -> bool:
         return bool(self._PENDING_PLAN_REVIEW_RE.search(str(content or "")))
@@ -2393,7 +2416,7 @@ public class PlayerMovement : MonoBehaviour
             return None
         self._set_status("Planning task with model")
         steps = _generate_plan_from_intent(
-            content,
+            self._planning_intent(content),
             model=self._selected_model(),
             context_prompt=self._model_context_prompt(),
             history=self._recent_history(),
@@ -2422,9 +2445,26 @@ public class PlayerMovement : MonoBehaviour
             },
         }
 
+    def _planning_intent(self, content: str) -> str:
+        normalized = str(content or "").strip()
+        if not self._is_broad_game_build_request(normalized):
+            return normalized
+        return (
+            f"{normalized}\n\n"
+            "Planner instruction: Return ONLY an executable Unity route JSON array. "
+            "Do not return prose or a tutorial. Build a playable vertical slice now by creating an Empty GameObject, "
+            "creating one or more C# scripts with full content, attaching the script(s), creating simple materials/objects if useful, "
+            "and saving the scene. Do not include playtesting, feedback collection, analysis, research, or TODO steps. "
+            "A single generated manager MonoBehaviour that creates its board/pieces/UI at runtime is acceptable."
+        )
+
     def _is_valid_model_plan(self, steps: list[Any]) -> bool:
+        started_play_mode = False
         for raw_step in steps:
             if not isinstance(raw_step, dict):
+                return False
+            description = str(raw_step.get("description") or "").strip()
+            if self._is_non_executable_model_step(description):
                 return False
             route = str(raw_step.get("route") or "").strip()
             params = raw_step.get("params") or {}
@@ -2434,7 +2474,21 @@ public class PlayerMovement : MonoBehaviour
                 return False
             if self._has_placeholder_param_value(params):
                 return False
+            if started_play_mode and route != "editor/play-mode":
+                return False
+            if route == "editor/play-mode":
+                action = str(params.get("action") or "").strip().lower()
+                if action == "play":
+                    started_play_mode = True
+                elif action == "stop":
+                    started_play_mode = False
         return True
+
+    def _is_non_executable_model_step(self, description: str) -> bool:
+        normalized = " ".join(str(description or "").split())
+        if not normalized:
+            return True
+        return bool(self._NON_EXECUTABLE_PLAN_RE.search(normalized))
 
     def _has_placeholder_param_value(self, value: Any) -> bool:
         if isinstance(value, dict):

@@ -566,6 +566,168 @@ class ChatE2ETests(unittest.TestCase):
         assert reply is None
         assert not getattr(bridge, "_pending_model_plan", None)
 
+    def test_try_model_backed_plan_rejects_non_executable_feedback_steps(self):
+        """Model plans must not offer offline human tasks for approval."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: Prototype"
+
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[
+                        {
+                            "step": 1,
+                            "description": "Playtest the current game mechanics with a small group of players",
+                            "route": "editor/play-mode",
+                            "params": {"action": "play"},
+                        },
+                        {
+                            "step": 2,
+                            "description": "Collect feedback focusing on controls and player satisfaction",
+                            "route": "scene/save",
+                            "params": {},
+                        },
+                    ],
+                ):
+                    reply = assistant._try_model_backed_plan("make the game better")
+
+        assert reply is None
+        assert not getattr(bridge, "_pending_model_plan", None)
+
+    def test_try_model_backed_plan_rejects_play_mode_before_scene_edits(self):
+        """Plans should not start Play Mode and then try to mutate or save the scene."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: Prototype"
+
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[
+                        {
+                            "step": 1,
+                            "description": "Enter play mode to test the prototype",
+                            "route": "editor/play-mode",
+                            "params": {"action": "play"},
+                        },
+                        {
+                            "step": 2,
+                            "description": "Save the scene after testing",
+                            "route": "scene/save",
+                            "params": {},
+                        },
+                    ],
+                ):
+                    reply = assistant._try_model_backed_plan("test and save the scene")
+
+        assert reply is None
+        assert not getattr(bridge, "_pending_model_plan", None)
+
+    def test_try_model_backed_plan_accepts_generic_build_game_script_plan(self):
+        """Generic game requests should be allowed when the model emits executable Unity edits."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge.client = MagicMock()
+            bridge._status_path = project / ".umcp" / "agent-status.json"
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.as_system_prompt.return_value = "## Unity Project Context\nScene: EmptyPrototype"
+
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_plan_from_intent",
+                    return_value=[
+                        {
+                            "step": 1,
+                            "description": "Create a Tetris game manager object",
+                            "route": "gameobject/create",
+                            "params": {"name": "TetrisGame", "primitiveType": "Empty"},
+                        },
+                        {
+                            "step": 2,
+                            "description": "Create the generated Tetris gameplay script",
+                            "route": "script/create",
+                            "params": {
+                                "path": "Assets/Scripts/TetrisGame.cs",
+                                "content": "using UnityEngine;\npublic class TetrisGame : MonoBehaviour { void Start() {} }",
+                            },
+                        },
+                        {
+                            "step": 3,
+                            "description": "Attach the Tetris script to the game manager",
+                            "route": "component/add",
+                            "params": {"gameObjectPath": "TetrisGame", "componentType": "TetrisGame"},
+                        },
+                        {
+                            "step": 4,
+                            "description": "Save the generated Tetris scene setup",
+                            "route": "scene/save",
+                            "params": {},
+                        },
+                    ],
+                ) as generate_plan:
+                    reply = assistant._try_model_backed_plan("make me a small Tetris-like game")
+
+        assert isinstance(reply, dict)
+        assert reply["metadata"]["approvalRequired"] is True
+        assert len(reply["steps"]) == 4
+        assert getattr(bridge, "_pending_model_plan", None)
+        generated_intent = generate_plan.call_args.args[0]
+        assert "playable vertical slice" in generated_intent
+        assert "Do not return prose" in generated_intent
+        assert "Tetris-like game" in generated_intent
+
+    def test_best_effort_broad_game_build_does_not_fall_back_to_tutorial(self):
+        """If a broad game build plan fails validation, explain instead of returning prose steps."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+            with patch.object(assistant, "_try_model_backed_plan", return_value=None):
+                with patch.object(
+                    assistant,
+                    "_try_model_backed_chat",
+                    return_value="Here is a tutorial checklist with playtesting and research.",
+                ) as chat_reply:
+                    reply = assistant._best_effort_agent_reply("make me a small Tetris-like game")
+
+        chat_reply.assert_not_called()
+        assert "safe executable Unity plan" in reply
+        assert "rejected the vague plan" in reply
+
     def test_handle_message_preserves_structured_steps(self):
         """Structured assistant replies should persist step previews into chat history."""
         from unittest.mock import MagicMock, patch
