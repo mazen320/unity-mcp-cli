@@ -507,6 +507,40 @@ class ChatE2ETests(unittest.TestCase):
         plan_reply.assert_not_called()
         assert "inspect scenes" in reply
 
+    def test_best_effort_reply_routes_question_shaped_build_requests_to_chat(self):
+        """Question-shaped build discussion should chat instead of immediately proposing a plan."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+            with patch.object(assistant, "_try_model_backed_chat", return_value="Yes. I can help design and build that safely.") as chat_reply:
+                with patch.object(assistant, "_try_model_backed_plan", return_value={"content": "bad plan"}) as plan_reply:
+                    reply = assistant._best_effort_agent_reply("can you build me something like tetris?")
+
+        chat_reply.assert_called_once_with("can you build me something like tetris?")
+        plan_reply.assert_not_called()
+        assert "design and build" in reply
+
+    def test_best_effort_reply_routes_imperative_build_requests_to_plan(self):
+        """Imperative build commands should still propose an executable plan first."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+            with patch.object(assistant, "_try_model_backed_plan", return_value={"content": "I found a concrete plan."}) as plan_reply:
+                with patch.object(assistant, "_try_model_backed_chat", return_value="chat") as chat_reply:
+                    reply = assistant._best_effort_agent_reply("build me a small arcade prototype")
+
+        plan_reply.assert_called_once_with("build me a small arcade prototype")
+        chat_reply.assert_not_called()
+        assert reply["content"] == "I found a concrete plan."
+
     def test_try_model_backed_plan_rejects_invalid_routes(self):
         """Model plans with hallucinated routes should fall back instead of awaiting approval."""
         from unittest.mock import MagicMock, patch

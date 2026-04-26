@@ -98,8 +98,10 @@ class _OfflineUnityAssistant:
     )
     _CHAT_FIRST_RE = re.compile(
         r"\b(capabilities?|what\s+can\s+you\s+do|what\s+are\s+many\s+things|"
-        r"can\s+you\s+see|do\s+you\s+see|who\s+is|creator|why\s+did|"
-        r"explain|show\s+me|which\s+object|what\s+object|targeting|"
+        r"can\s+you|could\s+you|would\s+you|should\s+i|should\s+we|"
+        r"do\s+you|does\s+it|can\s+you\s+see|do\s+you\s+see|who\s+is|creator|"
+        r"why\s+did|how\s+would|how\s+should|what\s+if|opinion|"
+        r"explain|show\s+me|tell\s+me|which\s+object|what\s+object|targeting|"
         r"before\s+changing|what\s+are\s+you\s+changing|what\s+will\s+you\s+change)\b",
         re.IGNORECASE,
     )
@@ -125,6 +127,11 @@ class _OfflineUnityAssistant:
     )
     _GENERATION_REQUEST_RE = re.compile(
         r"\b(make|build|create|generate|set\s+up|prototype)\b",
+        re.IGNORECASE,
+    )
+    _PLAN_FIRST_RE = re.compile(
+        r"^\s*(?:please\s+)?(?:create|add|make|build|generate|set\s+up|attach|"
+        r"delete|remove|rename|duplicate|save|apply|fix|polish|wire|change|move)\b",
         re.IGNORECASE,
     )
     _MODEL_PLAN_ROUTES: frozenset[str] = frozenset(
@@ -2256,16 +2263,17 @@ public class PlayerMovement : MonoBehaviour
                 "and only execute them after approval. Ask me for scene info, hierarchy, compile errors, "
                 "or a specific change you want reviewed first."
             )
-        planned = self._try_model_backed_plan(content)
-        if planned:
-            return planned
-        if self._is_generation_request(content):
-            return (
-                "I can build that, but the model did not produce a safe executable Unity plan this time. "
-                "I rejected the vague plan instead of applying it.\n\n"
-                "Try again with the same idea but include the playable result you expect, the controls or interaction, "
-                "and whether I should create scripts, scene objects, UI, and save the scene."
-            )
+        if self._should_route_to_plan_first(content):
+            planned = self._try_model_backed_plan(content)
+            if planned:
+                return planned
+            if self._is_generation_request(content):
+                return (
+                    "I can build that, but the model did not produce a safe executable Unity plan this time. "
+                    "I rejected the vague plan instead of applying it.\n\n"
+                    "Try again with the same idea but include the playable result you expect, the controls or interaction, "
+                    "and whether I should create scripts, scene objects, UI, and save the scene."
+                )
         chatted = self._try_model_backed_chat(content)
         if chatted:
             return chatted
@@ -2288,6 +2296,16 @@ public class PlayerMovement : MonoBehaviour
         if any(phrase in lowered for phrase in review_phrases):
             return True
         return not any(word in lowered for word in self._CHAT_FIRST_ACTION_WORDS)
+
+    def _should_route_to_plan_first(self, content: str) -> bool:
+        text = " ".join(str(content or "").strip().split())
+        if not text:
+            return False
+        if self._should_route_to_chat_first(text):
+            return False
+        if "?" in text:
+            return False
+        return bool(self._PLAN_FIRST_RE.search(text))
 
     def _is_generation_request(self, content: str) -> bool:
         return bool(self._GENERATION_REQUEST_RE.search(str(content or "")))
