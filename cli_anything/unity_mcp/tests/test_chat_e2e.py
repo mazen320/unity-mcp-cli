@@ -651,6 +651,150 @@ class ChatE2ETests(unittest.TestCase):
             assert "Unity Project Context" in kwargs["context_prompt"]
             assert "Stay grounded in the real scene." in kwargs["context_prompt"]
 
+    def test_dispatch_game_review_intent_uses_review_mode_before_planning(self):
+        """Natural feedback requests should review live context instead of becoming edit plans."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.object(assistant, "_game_review_reply", return_value="Here is my read on the game.") as review_reply:
+            with patch.object(assistant, "_try_model_backed_plan") as plan_reply:
+                reply = assistant._dispatch("look at my game and tell me what you think")
+
+        review_reply.assert_called_once_with("look at my game and tell me what you think")
+        plan_reply.assert_not_called()
+        assert "my read" in reply
+
+    def test_game_review_reply_passes_live_hierarchy_scripts_and_excerpts_to_model(self):
+        """Game review should feed the model actual Unity scene/script context."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        with _workspace_temp_dir() as tmp:
+            project = Path(tmp)
+            (project / "AGENTS.md").write_text("Respect the existing scene and ask before changing it.\n", encoding="utf-8")
+
+            bridge = MagicMock()
+            bridge.project_path = project
+            bridge._history = []
+            bridge._context = MagicMock()
+            bridge._context.get.return_value = {
+                "projectName": "OutsideTheBox",
+                "unityVersion": "6000.4.0f1",
+                "scene": {
+                    "name": "CodexBirdPovBash",
+                    "objectCount": 34,
+                    "rootObjects": ["CodexBirdPovBash"],
+                },
+            }
+            bridge.client = MagicMock()
+
+            def route_side_effect(route, payload):
+                if route == "editor/state":
+                    return {
+                        "activeScene": "CodexBirdPovBash",
+                        "unityVersion": "6000.4.0f1",
+                        "sceneDirty": False,
+                        "isPlaying": False,
+                        "isCompiling": False,
+                    }
+                if route == "scene/hierarchy":
+                    return {
+                        "sceneName": "CodexBirdPovBash",
+                        "totalTraversed": 34,
+                        "nodes": [
+                            {
+                                "name": "BirdPlayer",
+                                "path": "/CodexBirdPovBash/BirdPlayer",
+                                "components": ["Transform", "Rigidbody", "CodexBirdPovBashBirdPovController"],
+                            }
+                        ],
+                    }
+                if route == "script/list":
+                    return {
+                        "count": 2,
+                        "scripts": [
+                            {
+                                "name": "CodexBirdPovBashBirdPovController",
+                                "path": "Assets/CodexSamples/BirdPov/CodexBirdPovBashBirdPovController.cs",
+                            },
+                            {
+                                "name": "OutsideTheBoxSmokeTests",
+                                "path": "Assets/Tests/OutsideTheBoxSmokeTests.cs",
+                            },
+                        ],
+                    }
+                if route == "compilation/errors":
+                    return {"hasErrors": False, "count": 0, "entries": []}
+                if route == "script/read":
+                    return {
+                        "path": payload["path"],
+                        "lineCount": 20,
+                        "content": "public class CodexBirdPovBashBirdPovController : MonoBehaviour { public float LaunchForce = 42f; }",
+                    }
+                raise AssertionError(route)
+
+            bridge.client.call_route.side_effect = route_side_effect
+            assistant = _OfflineUnityAssistant(bridge)
+
+            with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=True):
+                with patch(
+                    "cli_anything.unity_mcp.commands.agent_loop_cmd._generate_chat_reply_from_intent",
+                    return_value="This looks like a bird-launch prototype with a clear core loop.",
+                ) as generate_chat:
+                    reply = assistant._game_review_reply("look at my game")
+
+        assert "bird-launch prototype" in reply
+        kwargs = generate_chat.call_args.kwargs
+        context_prompt = kwargs["context_prompt"]
+        assert "Live Unity Game Review Context" in context_prompt
+        assert "CodexBirdPovBash" in context_prompt
+        assert "/CodexBirdPovBash/BirdPlayer" in context_prompt
+        assert "CodexBirdPovBashBirdPovController" in context_prompt
+        assert "LaunchForce" in context_prompt
+        assert "approval before applying" in context_prompt
+
+    def test_game_review_falls_back_without_model_provider(self):
+        """Review requests should still return a grounded summary without an API key."""
+        from unittest.mock import MagicMock, patch
+        from cli_anything.unity_mcp.core.agent_chat import _OfflineUnityAssistant
+
+        bridge = MagicMock()
+        bridge.project_path = Path("C:/tmp/OutsideTheBox")
+        bridge._history = []
+        bridge._context = MagicMock()
+        bridge._context.get.return_value = {
+            "projectName": "OutsideTheBox",
+            "scene": {"name": "PrototypeArena", "objectCount": 12, "rootObjects": ["PrototypeArena"]},
+        }
+        bridge.client = MagicMock()
+
+        def route_side_effect(route, payload):
+            if route == "editor/state":
+                return {"activeScene": "PrototypeArena", "sceneDirty": False, "isPlaying": False, "isCompiling": False}
+            if route == "scene/hierarchy":
+                return {"sceneName": "PrototypeArena", "totalTraversed": 12, "nodes": [{"name": "Player", "components": ["Transform"]}]}
+            if route == "script/list":
+                return {"count": 1, "scripts": [{"name": "PlayerMovement", "path": "Assets/Scripts/PlayerMovement.cs"}]}
+            if route == "compilation/errors":
+                return {"hasErrors": False, "count": 0, "entries": []}
+            if route == "script/read":
+                return {"content": "public class PlayerMovement : MonoBehaviour {}", "lineCount": 1}
+            raise AssertionError(route)
+
+        bridge.client.call_route.side_effect = route_side_effect
+        assistant = _OfflineUnityAssistant(bridge)
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.object(assistant, "_try_model_backed_plan") as plan_reply:
+                reply = assistant._dispatch("what do you think of my game?")
+
+        plan_reply.assert_not_called()
+        assert "prototypearena" in reply.lower()
+        assert "compile state looks clean" in reply.lower()
+
     def test_capture_after_action_does_not_invalidate_cached_context(self):
         """Disabled capture path should return empty and avoid touching cached context."""
         from unittest.mock import MagicMock

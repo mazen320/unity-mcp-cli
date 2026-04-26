@@ -103,6 +103,13 @@ class _OfflineUnityAssistant:
         r"before\s+changing|what\s+are\s+you\s+changing|what\s+will\s+you\s+change)\b",
         re.IGNORECASE,
     )
+    _GAME_REVIEW_RE = re.compile(
+        r"\b(look\s+at|review|critique|analy[sz]e|evaluate|feedback|thoughts?\s+on|"
+        r"what\s+do\s+you\s+think\s+of|tell\s+me\s+what\s+you\s+think)\b"
+        r".*\b(game|project|scene|level|prototype|it)\b|"
+        r"\b(what\s+should\s+i\s+improve|how\s+can\s+i\s+improve|give\s+me\s+feedback)\b",
+        re.IGNORECASE,
+    )
     _CHAT_FIRST_ACTION_WORDS: tuple[str, ...] = (
         "create", "add", "make", "build", "set", "attach", "delete", "remove",
         "rename", "duplicate", "save", "apply", "fix", "improve", "polish",
@@ -254,9 +261,11 @@ public class PlayerMovement : MonoBehaviour
             return self._help_reply()
         if lowered in {"context", "project context", "project info", "what do you know about the project"}:
             return self._context_reply()
+        if self._GAME_REVIEW_RE.search(normalized):
+            return self._game_review_reply(normalized)
         if any(phrase in lowered for phrase in ("improve project", "make the project better", "safe improvements", "fix what you can")):
             return self._improve_project_reply()
-        if any(phrase in lowered for phrase in ("inspect project", "audit project", "analyze project", "review project")):
+        if any(phrase in lowered for phrase in ("inspect project", "audit project", "analyze project")):
             return self._project_audit_reply()
         if "quality score" in lowered or "project score" in lowered or "how healthy" in lowered:
             return self._quality_score_reply()
@@ -347,6 +356,13 @@ public class PlayerMovement : MonoBehaviour
     def _context_payload(self) -> dict[str, Any]:
         self._set_status("Reading Unity project context")
         return dict(self.bridge._context.get(force=True) or {})
+
+    def _safe_route(self, route: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            result = self.bridge.client.call_route(route, payload or {})
+        except Exception as exc:
+            return {"error": str(exc)}
+        return dict(result) if isinstance(result, dict) else {"value": result}
 
     def _skill_project_context(self) -> "ProjectContext":
         from .skills import ProjectContext
@@ -498,6 +514,163 @@ public class PlayerMovement : MonoBehaviour
             sections.append(f"## Project Instructions\n{instructions}")
         return "\n\n".join(section for section in sections if section)
 
+    def _build_game_review_context(self) -> tuple[str, dict[str, Any]]:
+        self._set_status("Reading game context", current=0, total=3)
+        try:
+            context = dict(self.bridge._context.get(force=True, full=True) or {})
+        except Exception:
+            context = {}
+
+        editor_state = self._safe_route("editor/state")
+        hierarchy = self._safe_route("scene/hierarchy", {"maxNodes": 120})
+        scripts_payload = self._safe_route("script/list")
+        compile_payload = self._safe_route("compilation/errors")
+
+        if not isinstance(context.get("editorState"), dict) and not editor_state.get("error"):
+            context["editorState"] = editor_state
+        if "hierarchy" not in context and not hierarchy.get("error"):
+            context["hierarchy"] = hierarchy
+
+        scene = dict(context.get("scene") or {})
+        active_scene = (
+            editor_state.get("activeScene")
+            or hierarchy.get("sceneName")
+            or scene.get("name")
+            or "unknown"
+        )
+        scripts = list(scripts_payload.get("scripts") or context.get("scripts") or [])
+        candidate_scripts = self._select_game_review_scripts(scripts, str(active_scene))
+        excerpts: list[dict[str, str]] = []
+        self._set_status("Reading gameplay scripts", current=1, total=3)
+        for script in candidate_scripts[:3]:
+            path = str(script.get("path") or "").strip()
+            if not path:
+                continue
+            payload = self._safe_route("script/read", {"path": path})
+            content = str(payload.get("content") or "").strip()
+            if not content:
+                continue
+            excerpts.append(
+                {
+                    "name": str(script.get("name") or Path(path).stem),
+                    "path": path,
+                    "content": self._trim_script_excerpt(content),
+                }
+            )
+
+        root_objects = scene.get("rootObjects") or []
+        nodes = list(hierarchy.get("nodes") or [])
+        lines = [
+            "## Live Unity Game Review Context",
+            f"Project: {context.get('projectName') or self.bridge.project_path.name}",
+            f"Active scene: {active_scene}",
+            f"Unity: {editor_state.get('unityVersion') or context.get('unityVersion') or '?'}",
+            f"Scene dirty: {editor_state.get('sceneDirty', scene.get('isDirty', '?'))}",
+            f"Play mode: {editor_state.get('isPlaying', '?')}",
+            f"Compiling: {editor_state.get('isCompiling', context.get('isCompiling', '?'))}",
+        ]
+        if compile_payload.get("hasErrors"):
+            lines.append(f"Compile errors: {compile_payload.get('count', '?')}")
+            for entry in list(compile_payload.get("entries") or [])[:4]:
+                lines.append("- " + str(entry.get("message") or entry)[:180])
+        else:
+            lines.append("Compile errors: none reported")
+
+        lines.extend(
+            [
+                "",
+                "## Scene Summary",
+                f"Context object count: {scene.get('objectCount', '?')}",
+                f"Hierarchy traversed: {hierarchy.get('totalTraversed', '?')}",
+                f"Root objects: {', '.join(str(item) for item in root_objects[:12]) or 'n/a'}",
+            ]
+        )
+        if nodes:
+            lines.append("Hierarchy sample:")
+            for node in nodes[:35]:
+                name = str(node.get("name") or "?")
+                path = str(node.get("path") or name)
+                components = ", ".join(str(c) for c in (node.get("components") or []))
+                lines.append(f"- {path} [{components}]".rstrip())
+
+        lines.extend(["", "## Scripts"])
+        lines.append(f"Script count: {scripts_payload.get('count', len(scripts))}")
+        if scripts:
+            for script in scripts[:25]:
+                lines.append(f"- {script.get('name')} ({script.get('path')})")
+
+        if excerpts:
+            lines.extend(["", "## Relevant Script Excerpts"])
+            for excerpt in excerpts:
+                lines.append(f"### {excerpt['name']} ({excerpt['path']})")
+                lines.append(excerpt["content"])
+
+        project_instructions = self._project_instructions()
+        if project_instructions:
+            lines.extend(["", "## Project Instructions", project_instructions])
+
+        lines.extend(
+            [
+                "",
+                "## Review Instructions",
+                "The user asked for honest feedback on the real Unity game/prototype.",
+                "Use only the context above. Separate observed facts from inferences.",
+                "Answer conversationally with: what you can see, what the game seems to be, what is promising, what is weak or unclear, and the best 2-4 next improvements.",
+                "Do not claim you changed anything. If suggesting edits, say you can propose them for approval before applying.",
+                "If the context is too thin, state exactly what extra inspection is needed instead of guessing.",
+            ]
+        )
+
+        snapshot = {
+            "activeScene": active_scene,
+            "context": context,
+            "editorState": editor_state,
+            "hierarchy": hierarchy,
+            "scripts": scripts,
+            "compile": compile_payload,
+            "excerpts": excerpts,
+        }
+        return "\n".join(lines), snapshot
+
+    def _select_game_review_scripts(self, scripts: list[Any], scene_name: str) -> list[dict[str, Any]]:
+        scene_tokens = {
+            token.lower()
+            for token in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", scene_name or "")
+            if len(token) >= 3
+        }
+        gameplay_tokens = {
+            "player", "controller", "movement", "camera", "enemy", "pig", "target",
+            "game", "manager", "network", "input", "weapon", "health", "score",
+        }
+
+        ranked: list[tuple[int, dict[str, Any]]] = []
+        for raw in scripts:
+            script = dict(raw) if isinstance(raw, dict) else {}
+            name = str(script.get("name") or "")
+            path = str(script.get("path") or "")
+            haystack = f"{name} {path}".lower()
+            if not path.lower().endswith(".cs"):
+                continue
+            score = 0
+            score += sum(3 for token in scene_tokens if token and token in haystack)
+            score += sum(2 for token in gameplay_tokens if token in haystack)
+            if "test" in haystack or "editor" in haystack or "bootstrap" in haystack:
+                score -= 3
+            if "assets/" in path.lower():
+                score += 1
+            ranked.append((score, script))
+
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [script for score, script in ranked if score > 0][:6]
+
+    def _trim_script_excerpt(self, content: str, *, max_chars: int = 2200) -> str:
+        lines = content.splitlines()
+        meaningful = [line.rstrip() for line in lines if line.strip()]
+        excerpt = "\n".join(meaningful[:90]).strip()
+        if len(excerpt) > max_chars:
+            excerpt = excerpt[:max_chars].rstrip() + "\n..."
+        return excerpt
+
     def _invalidate_context_cache(self) -> None:
         context = getattr(self.bridge, "_context", None)
         invalidate = getattr(context, "invalidate", None)
@@ -555,6 +728,50 @@ public class PlayerMovement : MonoBehaviour
             lines.append("Recent console issue: " + str(recent_console_errors[0].get("message") or "")[:140])
         else:
             lines.append("Compiler state looks clean right now.")
+        return "\n".join(lines)
+
+    def _game_review_reply(self, content: str) -> str:
+        context_prompt, snapshot = self._build_game_review_context()
+        prompt = (
+            f"{content}\n\n"
+            "Review the live Unity game context above. Be specific, practical, and honest. "
+            "Do not produce a route plan or say you applied changes."
+        )
+        self._set_status("Reviewing game with model", current=2, total=3)
+        reply = self._try_model_backed_chat(prompt, context_prompt=context_prompt)
+        if reply:
+            return reply
+        return self._game_review_fallback(snapshot)
+
+    def _game_review_fallback(self, snapshot: dict[str, Any]) -> str:
+        active_scene = snapshot.get("activeScene") or "unknown"
+        scripts = list(snapshot.get("scripts") or [])
+        hierarchy = dict(snapshot.get("hierarchy") or {})
+        compile_payload = dict(snapshot.get("compile") or {})
+        nodes = list(hierarchy.get("nodes") or [])
+        script_names = ", ".join(str(s.get("name")) for s in scripts[:8] if isinstance(s, dict) and s.get("name"))
+        lines = [
+            f"I inspected the live Unity context for **{active_scene}**.",
+            "",
+            f"What I can see: {hierarchy.get('totalTraversed', '?')} scene objects were visible through the hierarchy route, and the project exposes {len(scripts)} scripts.",
+        ]
+        if script_names:
+            lines.append(f"The scripts that stand out are: {script_names}.")
+        if compile_payload.get("hasErrors"):
+            lines.append(f"There are {compile_payload.get('count', '?')} compile errors, so fixing those should come first.")
+        else:
+            lines.append("Compile state looks clean, so this is safe to review at the gameplay/design layer.")
+        if nodes:
+            names = ", ".join(str(node.get("name")) for node in nodes[:6] if isinstance(node, dict))
+            lines.append(f"The hierarchy sample starts with: {names}.")
+        lines.extend(
+            [
+                "",
+                "My practical take: I can identify the active scene and likely gameplay scripts, but I need the model provider available for a deeper natural critique. Based on the current context, the next best improvements are to make the core player loop obvious, verify camera/player targets from actual components, and add one polished interaction that proves the game direction.",
+                "",
+                "If you ask me to build one of those, I should propose the target and exact changes first, then wait for approval before editing the scene.",
+            ]
+        )
         return "\n".join(lines)
 
     def _project_audit_reply(self) -> str:
@@ -2229,7 +2446,7 @@ public class PlayerMovement : MonoBehaviour
         normalized = value.strip().strip("<>{}[]()'\"").lower()
         return normalized in self._PLACEHOLDER_PARAM_VALUES
 
-    def _try_model_backed_chat(self, content: str) -> str | None:
+    def _try_model_backed_chat(self, content: str, *, context_prompt: str | None = None) -> str | None:
         try:
             from ..commands.agent_loop_cmd import _generate_chat_reply_from_intent
         except Exception:
@@ -2240,7 +2457,7 @@ public class PlayerMovement : MonoBehaviour
         reply = _generate_chat_reply_from_intent(
             content,
             model=self._selected_model(),
-            context_prompt=self._model_context_prompt(),
+            context_prompt=context_prompt if context_prompt is not None else self._model_context_prompt(),
             history=self._recent_history(),
         )
         text = str(reply or "").strip()
