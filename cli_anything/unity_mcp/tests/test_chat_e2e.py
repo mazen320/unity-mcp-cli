@@ -625,9 +625,9 @@ class ChatE2ETests(unittest.TestCase):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
             with patch.object(assistant, "_try_model_backed_chat", return_value="Yes. I can help design and build that safely.") as chat_reply:
                 with patch.object(assistant, "_try_model_backed_plan", return_value={"content": "bad plan"}) as plan_reply:
-                    reply = assistant._best_effort_agent_reply("can you build me something like tetris?")
+                    reply = assistant._best_effort_agent_reply("can you help build the requested feature?")
 
-        chat_reply.assert_called_once_with("can you build me something like tetris?")
+        chat_reply.assert_called_once_with("can you help build the requested feature?")
         plan_reply.assert_not_called()
         assert "design and build" in reply
 

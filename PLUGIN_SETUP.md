@@ -1,10 +1,10 @@
 # Unity Plugin Setup
 
-This page explains the full advanced AnkleBreaker plugin path.
+This page explains the full advanced optional plugin path.
 
-If you want the standalone core route path that does not require the AnkleBreaker plugin, use [FILE_IPC.md](FILE_IPC.md) instead.
+If you want the standalone core route path that does not require the optional plugin, use [FILE_IPC.md](FILE_IPC.md) instead.
 
-`unity-mcp-cli` is the client. For the plugin HTTP path, the Unity Editor also needs the AnkleBreaker plugin inside the Unity project.
+`unity-mcp-cli` is the client. For the plugin HTTP path, the Unity Editor also needs the upstream Unity MCP plugin inside the Unity project.
 
 ## What The Plugin Is
 
@@ -32,7 +32,7 @@ Simple mental model:
 
 So when the docs say "install the upstream Unity plugin in your Unity project", they mean:
 
-- put the AnkleBreaker Unity MCP package into the Unity project you want to control
+- put the upstream Unity MCP package into the Unity project you want to control
 - open that project in Unity
 - let the plugin start its local server
 - then run `cli-anything-unity-mcp`
@@ -179,7 +179,7 @@ This CLI is a better client layer plus a growing standalone bridge, not a full r
 
 Right now:
 
-- the File IPC bridge performs core editor actions without the AnkleBreaker plugin
+- the File IPC bridge performs core editor actions without the optional plugin
 - the plugin is still the thing inside Unity that performs the broad advanced route surface
 - the CLI is the lightweight way to drive either path
 

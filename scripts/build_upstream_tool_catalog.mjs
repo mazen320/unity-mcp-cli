@@ -163,7 +163,7 @@ async function main() {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    source: "AnkleBreaker-Studio/unity-mcp-server",
+    source: "upstream-unity-mcp-server",
     totalTools: catalog.length,
     tools: catalog,
   };

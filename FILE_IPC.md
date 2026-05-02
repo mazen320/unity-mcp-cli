@@ -1,8 +1,8 @@
 # Standalone File IPC Bridge
 
-This is the no-port, no-AnkleBreaker-plugin path for core Unity editor control.
+This is the no-port, no-plugin path for core Unity editor control.
 
-Use this when you want the CLI to talk to Unity through the lightweight scripts in this repo instead of the AnkleBreaker HTTP bridge.
+Use this when you want the CLI to talk to Unity through the lightweight scripts in this repo instead of an optional HTTP bridge.
 
 ## What It Is
 
@@ -94,7 +94,7 @@ cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --j
 cli-anything-unity-mcp agent save builder --role builder --agent-id unity-builder
 ```
 
-File IPC does not need the old Unity request queue because Unity reads each `.umcp/inbox` command on the main thread. So `agent queue` reports a direct File IPC queue state instead of polling the AnkleBreaker HTTP queue:
+File IPC does not need the old Unity request queue because Unity reads each `.umcp/inbox` command on the main thread. So `agent queue` reports a direct File IPC queue state instead of polling an HTTP queue:
 
 ```powershell
 cli-anything-unity-mcp --transport file --file-ipc-path "C:/Projects/MyGame" --json agent queue
@@ -115,7 +115,7 @@ It now also includes a lightweight Agent tab:
 
 That Agent tab is intentionally thin. The prompt loop, planning, and execution stay in the CLI/agent process, while Unity stays fast and main-thread-safe.
 
-## What Works Without AnkleBreaker
+## What Works With Standalone File IPC
 
 Standalone File IPC currently covers the core local route surface:
 
@@ -147,7 +147,7 @@ Standalone File IPC currently covers the core local route surface:
 
 The standalone File IPC bridge is not the full 328-tool advanced surface yet.
 
-Use the AnkleBreaker Unity plugin HTTP bridge when you need the broad advanced catalog today, especially:
+Use the optional Unity plugin HTTP bridge when you need the broad advanced catalog today, especially:
 
 - terrain
 - deeper animation authoring beyond clip/controller inspection, default-state edits, controller scaffold, and controller assignment

@@ -2,7 +2,7 @@
  * StandaloneRouteHandler.cs — Core Unity routes without the full MCP plugin
  *
  * This handles ~20 essential routes that the CLI uses most often.
- * When the full AnkleBreaker Unity MCP plugin is installed,
+ * When the full optional Unity MCP plugin is installed,
  * FileIPCBridge will dispatch to it first; this only runs as fallback.
  *
  * All execution happens on Unity's main thread (called from

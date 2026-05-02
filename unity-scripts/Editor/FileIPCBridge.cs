@@ -513,7 +513,7 @@ public static class FileIPCBridge
         {
             _pluginChecked = true;
             // Look for the MCP plugin's route dispatcher via reflection
-            // Common class names in the AnkleBreaker Unity MCP plugin
+            // Common class names in optional Unity MCP plugin packages
             foreach (string typeName in new[]
             {
                 "UnityMCP.Editor.MCPRouteDispatcher",

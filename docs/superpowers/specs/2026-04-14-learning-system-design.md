@@ -28,7 +28,7 @@ Today, when the assistant succeeds or fails:
 - we do not build structured memory from repeated project patterns
 - we do not convert enough real runs into eval cases
 
-That means the product still improves mostly through manual prompt and workflow edits. That is too slow if the goal is to become better than broader competitors with larger tool catalogs.
+That means the product still improves mostly through manual prompt and workflow edits. That is too slow if the goal is to become a reliable Unity copilot with a broad tool surface.
 
 ## Recommendation
 
@@ -55,7 +55,7 @@ This is the highest-leverage path because it improves:
 
 ## Why This Is The Right Wedge
 
-Competing Unity AI projects can win on breadth, built-in tool count, or installation polish.
+Other Unity AI projects can win on breadth, built-in tool count, or installation polish.
 
 This product should win on:
 

@@ -110,7 +110,7 @@ feat(skills): add skill interface scaffolding
 
 ## Step 2 — Physics-feel audit
 
-**Why:** this is the taste layer. The thing Bezi can't copy.
+**Why:** this is the taste layer. The thing a generic action wrapper cannot provide.
 
 **Create:** `cli_anything/unity_mcp/core/skills/physics_feel.py`
 
@@ -254,7 +254,7 @@ cli-anything-unity-mcp --json tool-info unity_set_physics_gravity
 
 **Two options:**
 
-**Option A (fastest):** target plugin HTTP only for MVP. Skill errors cleanly on File IPC with "This tuning needs the AnkleBreaker plugin for now." Ship the demo, file a follow-up to port to File IPC.
+**Option A (fastest):** target plugin HTTP only for MVP. Skill errors cleanly on File IPC with "This tuning needs the optional HTTP plugin for now." Ship the demo, file a follow-up to port to File IPC.
 
 **Option B (better long-term):** add bounded `physics/set-gravity` and `component/set-rigidbody-field` routes to `StandaloneRouteHandler.cs`. ~80 lines of C#. The read-existing-Rigidbody-field path is already solved by `gameobject/inspect` routes, so you're mostly adding the write side. Gravity write is a one-liner: `Physics.gravity = new Vector3(0, value, 0);`.
 

@@ -9,7 +9,7 @@
 
 ## Why this spec exists
 
-The current `PLAN.md` Phase 4 says "deepen specialist lenses." That framing is too generic. It describes what Bezi already ships. It does not name what makes this product structurally different.
+The current `PLAN.md` Phase 4 says "deepen specialist lenses." That framing is too generic. It does not name what makes this product structurally different.
 
 The approved unified product plan (`docs/superpowers/specs/2026-04-14-unified-product-plan.md`) already defined:
 - specialist skills per Unity domain (UI, Physics, Animation, TDD, Level Design, Tech Art, Systems, Prototyping)
@@ -151,13 +151,13 @@ Phase 4 ships behind one concrete demo that exercises the full stack. If the dem
 
 - **User efficiency:** one sentence, ~4 second response, one click to apply. Not a 30-step wizard.
 - **Exercises five phases at once:** Phase 3 (visible magic in panel), Phase 4 (specialist skill), Phase 5 (LLM-first routing), Phase 6 (capture + markdown export), Phase 7 (learning ledger seed).
-- **Structurally hard for competitors to copy:** most tools expose broad Unity actions. This direction adds specialist judgement, grounded edits, verification, and local learning.
+- **Structurally hard to flatten into a generic wrapper:** most tools expose broad Unity actions. This direction adds specialist judgement, grounded edits, verification, and local learning.
 - **Template value:** once this works, the same shape clones to Animation ("my attack doesn't feel impactful"), UI ("my HUD feels cluttered"), Level Design ("this room feels empty"). Same interface, different expertise.
 - **Visible before/after:** jump arc capture is an obvious demo GIF for GitHub.
 
 ### Taste vs API
 
-The key difference from Bezi/Coplay: they wrap the Unity API. This skill encodes **taste**. A generalist LLM can tell you what `Rigidbody.drag` does. A physics skill should know the difference between controlled air movement, snappy jumps, and loose floaty movement in terms of actual Unity values and tradeoffs. That's the discipline. That's what wins users over.
+The key difference from a generic Unity API wrapper: this skill encodes **taste**. A generalist LLM can tell you what `Rigidbody.drag` does. A physics skill should know the difference between controlled air movement, snappy jumps, and loose floaty movement in terms of actual Unity values and tradeoffs. That's the discipline. That's what wins users over.
 
 ---
 

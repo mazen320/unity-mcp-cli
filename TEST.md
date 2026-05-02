@@ -34,7 +34,7 @@ End-to-end coverage:
 - Exercise `tool-coverage --support-plan` so unsupported Unity Hub work has an explicit implementation track and guardrails.
 - Exercise `tool-coverage --handoff-plan` so remaining deferred and unsupported work has one cross-track contributor handoff.
 - Exercise File IPC route params so the Python client writes Unity-readable raw JSON strings instead of objects that `JsonUtility` drops.
-- Exercise File IPC agent registry routes so `agent queue`, `agent sessions`, `agent log`, and `agent watch` work without the AnkleBreaker HTTP queue.
+- Exercise File IPC agent registry routes so `agent queue`, `agent sessions`, `agent log`, and `agent watch` work without the optional HTTP queue.
 - Exercise the higher-level workflow layer:
   - `workflow inspect`
   - `workflow audit-advanced` across memory, graphics, physics, profiler, sceneview, settings, testing, ui, audio, lighting, animation, input, shadergraph, terrain, and navmesh

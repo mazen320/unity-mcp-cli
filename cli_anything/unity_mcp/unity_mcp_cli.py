@@ -161,7 +161,7 @@ def cli(
     transport: str,
     file_ipc_paths: tuple[Path, ...],
 ) -> None:
-    """Direct CLI client for Unity projects using the AnkleBreaker Unity MCP editor bridge."""
+    """Direct CLI client for Unity projects using HTTP or File IPC editor bridges."""
     profile_store = _build_agent_profile_store(session_path, agent_profiles_path)
     developer_store = _build_developer_profile_store(session_path, None)
     requested_profile_name = agent_profile or profile_store.load().selected_profile
