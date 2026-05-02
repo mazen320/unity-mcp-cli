@@ -149,7 +149,7 @@ Goal: make the repo honest, installable, testable, and contribution-friendly.
 
 - Align README, PLAN, TODO, AGENTS, and contribution docs.
 - Keep public claims limited to what works today.
-- Add or update screenshots.
+- Record real demo media from the in-editor chat flow before adding visuals to the README.
 - Make local junk ignored.
 - Run the full test suite.
 - Push a clean branch.
@@ -192,7 +192,7 @@ Goal: make the in-editor assistant feel like a product.
 - Plan cards instead of plain text.
 - Progress cards.
 - Evidence cards.
-- Inline screenshots.
+- Inline proof cards with real captures or short GIFs from actual agent runs.
 - Visible Undo affordance.
 - Model/provider setup that is obvious on first run.
 

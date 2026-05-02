@@ -37,7 +37,7 @@ Prepare the repo for open-source use while keeping the technical direction corre
 
 - The assistant can still overstate success if a route says OK but no follow-up readback verifies the final Unity state.
 - Generated scripts need stronger compile-error repair and rollback.
-- Visual workflows need automatic screenshots as evidence.
+- Visual workflows need real proof media: short GIFs or captures from actual in-editor chat plus applied Unity changes, not static placeholder screenshots.
 - Some docs in the deeper backlog may still mention retired score/benchmark language.
 - The project has local/import artifacts that should stay ignored and out of commits.
 

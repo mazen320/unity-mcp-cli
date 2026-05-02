@@ -30,12 +30,6 @@ This is not a pile of hardcoded Python recipes. The assistant should learn the u
 
 It can help create or modify project features when asked. The difference is that the LLM should use real Unity context and editor routes rather than prewritten task recipes.
 
-## Screenshots
-
-![Unity Game View](docs/media/unity-debug-game-view.png)
-
-![Unity Scene View](docs/media/unity-debug-scene-view.png)
-
 ## How It Works
 
 ```text

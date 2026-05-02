@@ -18,7 +18,7 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
@@ -2609,6 +2609,7 @@ class ChatBridge:
         self._status_total = 0
         self._status_action = ""
         self._last_status_write = 0.0
+        self._last_status_updated_at: datetime | None = None
         self._status_heartbeat_interval = 2.0
 
         # Watchdog state
@@ -3011,6 +3012,13 @@ class ChatBridge:
                 return "environment"
         return None
 
+    def _next_status_timestamp(self) -> str:
+        now = datetime.now(timezone.utc)
+        if self._last_status_updated_at is not None and now <= self._last_status_updated_at:
+            now = self._last_status_updated_at + timedelta(microseconds=1)
+        self._last_status_updated_at = now
+        return now.isoformat()
+
     def _write_status(self, state: str, current: int, total: int, action: str) -> None:
         try:
             self._reload_project_env_if_changed()
@@ -3029,7 +3037,7 @@ class ChatBridge:
                 "llmProvider": llm_provider,
                 "llmModel": llm_model,
                 "llmConfigSource": llm_config_source,
-                "lastUpdated": datetime.now(timezone.utc).isoformat(),
+                "lastUpdated": self._next_status_timestamp(),
             }
             tmp = self._status_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
