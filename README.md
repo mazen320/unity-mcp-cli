@@ -101,8 +101,10 @@ The split matters:
    Example:
 
    ```dotenv
-   OPENROUTER_API_KEY=...
+   OPENAI_API_KEY=...
    ```
+
+   Direct OpenAI defaults to `gpt-5.2-codex` for coding-oriented Unity planning when that model is available on your API account. You can pick another OpenAI, OpenRouter, or Anthropic model from the Unity settings panel.
 
 5. Click `Connect` in the Unity window.
 

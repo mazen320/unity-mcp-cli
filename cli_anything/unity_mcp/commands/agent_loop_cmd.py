@@ -27,7 +27,7 @@ import click
 @click.option("--max-retries", type=int, default=1, show_default=True,
               help="Retries per failing step.")
 @click.option("--model", default=None,
-              help="AI model for plan generation (e.g. claude-haiku-4-5-20251001 or gpt-4o-mini).")
+              help="AI model for plan generation (e.g. gpt-5.2-codex or claude-haiku-4-5-20251001).")
 @click.pass_context
 def agent_loop_command(
     ctx: click.Context,
@@ -304,7 +304,7 @@ def _generate_plan_from_intent(
     if api_key:
         try:
             payload = _json.dumps({
-                "model": model or "gpt-4o-mini",
+                "model": model or "gpt-5.2-codex",
                 "messages": [
                     {"role": "system", "content": _PLAN_SYSTEM_PROMPT},
                     *messages,
@@ -417,7 +417,7 @@ def _generate_chat_reply_from_intent(
     if api_key:
         try:
             payload = _json.dumps({
-                "model": model or "gpt-4o-mini",
+                "model": model or "gpt-5.2-codex",
                 "messages": [
                     {"role": "system", "content": _CHAT_SYSTEM_PROMPT},
                     *messages,

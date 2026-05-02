@@ -469,6 +469,85 @@ class ChatE2ETests(unittest.TestCase):
         assert client.calls.index("editor/state") < client.calls.index("component/add")
         assert client.state_polls >= 2
 
+    def test_agent_loop_verifies_scene_new_with_scene_info_readback(self):
+        """scene/new should only report ok after the active scene readback matches."""
+        from cli_anything.unity_mcp.core.agent_loop import AgentLoop
+
+        class SceneClient:
+            def __init__(self):
+                self.active_name = "ExistingScene"
+                self.active_path = "Assets/Scenes/ExistingScene.unity"
+                self.calls = []
+
+            def call_route(self, route, params):
+                self.calls.append(route)
+                if route == "scene/new":
+                    self.active_name = str(params.get("name") or "Untitled")
+                    self.active_path = f"Assets/Scenes/{self.active_name}.unity"
+                    return {
+                        "success": True,
+                        "sceneName": self.active_name,
+                        "path": self.active_path,
+                    }
+                if route == "scene/info":
+                    return {
+                        "name": self.active_name,
+                        "activeScene": self.active_name,
+                        "path": self.active_path,
+                        "isLoaded": True,
+                    }
+                return {"success": True}
+
+        client = SceneClient()
+        results = AgentLoop(client, max_retries=0).execute(
+            [
+                {
+                    "step": 1,
+                    "description": "Create a new scene",
+                    "route": "scene/new",
+                    "params": {"name": "GeneratedScene"},
+                }
+            ]
+        )
+
+        assert results[0].status == "ok"
+        assert results[0].result["verifiedScene"]["name"] == "GeneratedScene"
+        assert client.calls == ["scene/new", "scene/info"]
+
+    def test_agent_loop_rejects_scene_new_when_readback_stays_on_old_scene(self):
+        """scene/new should fail loudly if Unity does not actually switch scenes."""
+        from cli_anything.unity_mcp.core.agent_loop import AgentLoop
+
+        class LyingSceneClient:
+            def call_route(self, route, params):
+                if route == "scene/new":
+                    return {
+                        "success": True,
+                        "sceneName": "GeneratedScene",
+                        "path": "Assets/Scenes/GeneratedScene.unity",
+                    }
+                if route == "scene/info":
+                    return {
+                        "name": "ExistingScene",
+                        "activeScene": "ExistingScene",
+                        "path": "Assets/Scenes/ExistingScene.unity",
+                    }
+                return {"success": True}
+
+        results = AgentLoop(LyingSceneClient(), max_retries=0).execute(
+            [
+                {
+                    "step": 1,
+                    "description": "Create a new scene",
+                    "route": "scene/new",
+                    "params": {"name": "GeneratedScene"},
+                }
+            ]
+        )
+
+        assert results[0].status == "error"
+        assert "scene/new readback mismatch" in results[0].error
+
     def test_pending_model_plan_target_question_describes_plan_without_replanning(self):
         """Plan review questions should explain the pending plan, not create a new plan."""
         from unittest.mock import MagicMock, patch

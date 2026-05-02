@@ -200,6 +200,9 @@ class AgentLoop:
                 if step.route in {"script/create", "script/update"}:
                     self._wait_for_unity_compilation()
 
+                if step.route == "scene/new":
+                    result = self._verify_scene_new(step, result)
+
                 return StepResult(
                     step=step.step,
                     description=step.description,
@@ -281,6 +284,44 @@ class AgentLoop:
             or "monobehaviour" in lowered
             or "cannot be found" in lowered
         )
+
+    def _verify_scene_new(self, step: PlanStep, result: Any) -> Any:
+        """Read back the active scene after creation so we do not report false success."""
+        if not isinstance(result, dict):
+            raise AssertionError("scene/new did not return a structured result")
+
+        info = self.client.call_route("scene/info", {})
+        if not isinstance(info, dict):
+            raise AssertionError("scene/new verification failed: scene/info returned no data")
+        if info.get("error"):
+            raise AssertionError(f"scene/new verification failed: {info['error']}")
+
+        active_name = str(info.get("name") or info.get("activeScene") or "").strip()
+        active_path = str(info.get("path") or "").replace("\\", "/").strip()
+        result_name = str(result.get("sceneName") or result.get("name") or "").strip()
+        requested_name = str(step.params.get("name") or "").strip()
+        expected_name = result_name or requested_name
+
+        if expected_name and active_name != expected_name:
+            raise AssertionError(
+                f"scene/new readback mismatch: expected active scene {expected_name!r} "
+                f"but scene/info returned {active_name!r}"
+            )
+
+        result_path = str(result.get("path") or "").replace("\\", "/").strip()
+        if result_path and active_path and result_path != active_path:
+            raise AssertionError(
+                f"scene/new path mismatch: route returned {result_path!r} "
+                f"but scene/info returned {active_path!r}"
+            )
+
+        enriched = dict(result)
+        enriched["verifiedScene"] = {
+            "name": active_name,
+            "path": active_path,
+            "isLoaded": bool(info.get("isLoaded", True)),
+        }
+        return enriched
 
 
 # ── Formatting helpers ────────────────────────────────────────────────────────

@@ -221,7 +221,10 @@ public static class StandaloneRouteHandler
     private static object HandleSceneSave()
     {
         var scene = SceneManager.GetActiveScene();
-        EditorSceneManager.SaveScene(scene);
+        if (string.IsNullOrEmpty(scene.path))
+            return new ErrorResult { error = "Active scene has no saved path. Create it with scene/new and a name first." };
+        if (!EditorSceneManager.SaveScene(scene))
+            return new ErrorResult { error = "Failed to save active scene at " + scene.path };
         return new Dictionary<string, object>
         {
             {"success", true},
@@ -232,12 +235,54 @@ public static class StandaloneRouteHandler
 
     private static object HandleSceneNew(Dictionary<string, object> p)
     {
-        string name = GetString(p, "name", "Untitled");
+        var activeScene = SceneManager.GetActiveScene();
+        bool saveIfDirty = GetBool(p, "saveIfDirty", false);
+        bool discardUnsaved = GetBool(p, "discardUnsaved", false);
+        if (saveIfDirty && discardUnsaved)
+            return new ErrorResult { error = "Choose either saveIfDirty or discardUnsaved, not both." };
+        if (activeScene.isDirty)
+        {
+            if (discardUnsaved)
+            {
+            }
+            else if (saveIfDirty)
+            {
+                if (string.IsNullOrEmpty(activeScene.path))
+                    return new ErrorResult { error = "Active scene is dirty and unsaved. Save it first or pass discardUnsaved." };
+                if (!EditorSceneManager.SaveScene(activeScene))
+                    return new ErrorResult { error = "Failed to save the active scene before creating a new scene." };
+            }
+            else
+            {
+                return new ErrorResult { error = "Active scene has unsaved changes. Pass saveIfDirty or discardUnsaved." };
+            }
+        }
+
+        string folder = GetString(p, "folder", "Assets/Scenes").Replace("\\", "/").Trim().TrimEnd('/');
+        if (string.IsNullOrEmpty(folder))
+            folder = "Assets/Scenes";
+        if (!folder.StartsWith("Assets", StringComparison.OrdinalIgnoreCase))
+            return new ErrorResult { error = "Scene folder must live under Assets/." };
+
+        string name = SanitizeAssetName(GetString(p, "name", "Untitled"), "Untitled");
+        string requestedPath = folder + "/" + name + ".unity";
+        string relativePath = AssetDatabase.GenerateUniqueAssetPath(requestedPath);
+        string projectRoot = Path.GetDirectoryName(Application.dataPath);
+        string fullPath = Path.Combine(projectRoot, relativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
+        string targetDirectory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(targetDirectory))
+            Directory.CreateDirectory(targetDirectory);
+
         var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        if (!EditorSceneManager.SaveScene(scene, relativePath))
+            return new ErrorResult { error = "Failed to save new scene at " + relativePath };
+        scene = SceneManager.GetActiveScene();
         return new Dictionary<string, object>
         {
             {"success", true},
-            {"sceneName", name},
+            {"sceneName", scene.name},
+            {"name", scene.name},
+            {"requestedName", name},
             {"path", scene.path}
         };
     }
@@ -2436,6 +2481,16 @@ public static class StandaloneRouteHandler
         if (p != null && p.TryGetValue(key, out object val) && val != null)
             return val.ToString();
         return defaultValue;
+    }
+
+    private static string SanitizeAssetName(string value, string fallback)
+    {
+        string cleaned = new string((value ?? "")
+            .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == ' ')
+            .ToArray()).Trim();
+        if (string.IsNullOrWhiteSpace(cleaned))
+            cleaned = fallback;
+        return cleaned;
     }
 
     private static float GetFloat(Dictionary<string, object> p, string key, float defaultValue)

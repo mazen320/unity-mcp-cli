@@ -110,8 +110,9 @@ public class CliAnythingWindow : EditorWindow
     private string      _modelFetchError = null;
 
     private static readonly string[] OpenAIModels = {
-        "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo",
-        "o1", "o1-mini", "o3-mini",
+        "gpt-5.2-codex", "gpt-5.1-codex", "gpt-5-codex",
+        "gpt-5.5", "gpt-5.2", "gpt-5.1", "gpt-5",
+        "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini",
     };
     private static readonly string[] AnthropicModels = {
         "claude-opus-4-5-20251001", "claude-sonnet-4-5-20251001",
@@ -1111,7 +1112,7 @@ public class CliAnythingWindow : EditorWindow
         _agentAutoStartOnSend = EditorGUILayout.ToggleLeft("Auto-start bridge when sending while offline", _agentAutoStartOnSend);
         EditorGUILayout.LabelField("Launcher examples: py -3.12, py -3.11, python, or a full python.exe path.", EditorStyles.miniLabel);
         EditorGUILayout.LabelField("Model examples (OpenRouter): anthropic/claude-3-haiku, openai/gpt-4o-mini, google/gemini-flash-1.5.", EditorStyles.miniLabel);
-        EditorGUILayout.LabelField("Model examples (direct): gpt-5-codex, claude-haiku-4-5-20251001.", EditorStyles.miniLabel);
+        EditorGUILayout.LabelField("Model examples (direct): gpt-5.2-codex, gpt-5.5, claude-haiku-4-5-20251001.", EditorStyles.miniLabel);
 
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("Save Settings", EditorStyles.miniButton, GUILayout.Width(92)))

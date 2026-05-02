@@ -475,7 +475,7 @@ public class PlayerMovement : MonoBehaviour
             return str(model).strip() or None
         provider = self._configured_model_provider()
         if provider == "OpenAI":
-            return "gpt-5-codex"
+            return "gpt-5.2-codex"
         if provider == "Anthropic":
             return "claude-haiku-4-5-20251001"
         if provider == "OpenRouter":
