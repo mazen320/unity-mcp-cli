@@ -139,7 +139,7 @@ def audit_physics_feel(context: ProjectContext) -> AuditResult:
 
 **Signal computation (the "discipline" layer):**
 
-- **Gravity magnitude:** `Physics.gravity.y`. Anything weaker than −9.8 is suspect for platformers.
+- **Gravity magnitude:** `Physics.gravity.y`. Anything weaker than -9.8 can feel light for punchy movement.
 - **Player jump estimate:** if we can find a jump script, parse `jumpPower` / `jumpForce` constants; else heuristic from Rigidbody.mass + inferred impulse.
 - **Airtime estimate:** `t_air = 2 * jumpPower / |gravity|` (simple kinematic approximation).
 - **Drag:** Rigidbody.drag, Rigidbody.angularDrag.
@@ -158,7 +158,7 @@ floatiness = clamp(
 **Tuning paths (generated in `propose`):**
 
 Three paths, chosen based on current project vibe:
-1. **Snappy platformer:** gravity=−20, jump scaled so peak height stays same, drag unchanged.
+1. **Snappy movement:** gravity=-20, jump scaled so peak height stays same, drag unchanged.
 2. **Controlled air:** drag=2, gravity unchanged, jump power reduced by ~30%.
 3. **Arcade / stylized:** per-player gravity override via `Physics.gravity` scaled body or a `customGravity` field if the movement script supports it, else fallback to option 1.
 

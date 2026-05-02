@@ -1,65 +1,77 @@
 # Contributing
 
-Thanks for helping improve `unity-mcp-cli`.
+Thanks for helping improve CLI Anything Unity MCP.
 
-## Before You Start
+This project is alpha. Contributions that make the assistant more honest, more Unity-aware, and easier to install are especially valuable.
 
-Please check whether your change belongs in this repo.
+## Project Scope
 
 This repo owns:
 
-- CLI commands
-- workflow helpers
-- bridge discovery and recovery logic
-- JSON output and REPL behavior
-- docs and tests for the CLI layer
+- Python CLI and agent backend.
+- File IPC client and execution loop.
+- Unity editor scripts under `unity-scripts/Editor/`.
+- Agent tab UX.
+- Local memory, ledger, tests, docs, and packaging.
 
-This repo does not own:
-
-- Unity plugin internals
-- Unity Editor command implementations
-- Unity-side API additions that only exist inside the plugin
-
-If your fix depends on changing Unity plugin behavior, open an issue here for tracking if useful, but plan to also update the plugin fork or upstream plugin repo.
+The key direction: the LLM should decide what to do from context. The backend should provide tools, validation, execution, and verification. Avoid adding task-specific hardcoded recipes unless they are small safety or validation rules.
 
 ## Local Setup
 
-From the repo root:
+```powershell
+python -m pip install -e .
+```
+
+Optional test dependency:
 
 ```powershell
-python -m pip install -r requirements.txt
-python -m pip install -e .
+python -m pip install pytest
 ```
 
 ## Run Tests
 
+Full suite:
+
 ```powershell
-python -m unittest cli_anything.unity_mcp.tests.test_core cli_anything.unity_mcp.tests.test_full_e2e -v
+python -m unittest discover -s cli_anything/unity_mcp/tests -t . -v
 ```
 
-If you add or change CLI behavior, update tests in both places when relevant:
+Quick smoke:
 
-- `test_core.py` for isolated behavior
-- `test_full_e2e.py` for realistic workflows and bridge interaction
+```powershell
+python -m unittest cli_anything.unity_mcp.tests.test_chat_e2e -v
+cli-anything-unity-mcp --help
+```
 
-## Development Guidelines
+If your change touches Unity editor behavior, also test manually in a real Unity project.
 
-- Keep the CLI stateful, scriptable, and JSON-friendly.
-- Prefer wrapping real bridge behavior instead of reimplementing Unity logic in Python.
-- Preserve the REPL-first experience when adding new commands.
-- Add fallbacks when live bridge behavior is inconsistent across plugin versions.
-- Keep docs beginner-friendly. If a new command is important, update `README.md` and `START_HERE.md`.
+## Good First Contribution Areas
 
-## Pull Requests
+- Clearer setup docs.
+- Better route error messages.
+- Stronger File IPC route tests.
+- Unity Undo coverage audits.
+- Compile/console verification after script changes.
+- Screenshot/evidence capture after visual changes.
+- Target resolution from hierarchy, components, and scripts.
+- Agent tab UI polish.
 
-Good PRs usually include:
+## Pull Request Checklist
 
-- a short explanation of the user workflow being improved
-- the code change
-- test coverage or a reason tests could not be added
-- doc updates for user-facing behavior
+Please include:
 
-If your PR changes public command behavior, include before/after examples in the description.
+- What user workflow changed.
+- What was verified.
+- Test output or why tests were not possible.
+- Screenshots or short video for UI changes.
+- Docs updates for user-facing behavior.
+
+If public behavior changes, update:
+
+- `README.md`
+- `PLAN.md` if direction changed
+- `TODO.md` if priority changed
+- `CHANGELOG.md`
 
 ## Contributor Rights And Sign-Offs
 
@@ -67,9 +79,9 @@ This repository uses a lightweight contributor rights policy so future project o
 
 For outside contributors:
 
-- read [CLA.md](CLA.md) before opening a non-trivial pull request
-- sign off your commits with `git commit -s`
-- be ready to leave an explicit PR comment agreeing to the CLA policy if a maintainer asks
+- Read [CLA.md](CLA.md) before opening a non-trivial pull request.
+- Sign off commits with `git commit -s`.
+- Be ready to leave an explicit PR comment agreeing to the CLA policy if a maintainer asks.
 
 Helpful command:
 
@@ -77,34 +89,17 @@ Helpful command:
 git commit -s -m "Describe your change"
 ```
 
-Maintainers may request a separate signed copy of the CLA before merge for larger contributions.
+## Reporting Issues
 
-## Refreshing the Upstream Tool Catalog
+Good bug reports include:
 
-This repo carries a generated snapshot of the upstream Unity MCP tool catalog so the CLI can expose richer discovery and MCP-compatible tool names without depending on the MCP server at runtime.
+- Unity version.
+- Python version.
+- Commit or package version.
+- Whether you used File IPC or another transport.
+- Exact prompt or command.
+- Expected result.
+- Actual result.
+- Relevant `.umcp` status/history/log files if safe to share.
 
-When the upstream server adds or renames tools, refresh the snapshot from the local upstream clone:
-
-```powershell
-node scripts/build_upstream_tool_catalog.mjs
-```
-
-Then rerun the test suite before committing.
-
-## Scope Tips
-
-Good issues and PRs for this repo:
-
-- better workflow commands
-- stronger play-mode recovery
-- clearer errors
-- improved discovery and session behavior
-- better JSON output for agent use
-- docs, templates, packaging, and contributor ergonomics
-
-Issues that may belong elsewhere:
-
-- new Unity-side bridge routes
-- editor features that require new C# backend support
-- plugin serialization bugs
-- scene save behavior controlled entirely inside the Unity plugin
+Do not include API keys or private project assets in issues.

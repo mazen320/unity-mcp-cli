@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
-
-import pytest
+from contextlib import contextmanager
 
 from cli_anything.unity_mcp.core.skills import (
     ActionOutcome,
@@ -18,6 +17,15 @@ from cli_anything.unity_mcp.core.skills import (
     find_skill,
     register_skill,
 )
+
+
+@contextmanager
+def _raises(expected_exception):
+    try:
+        yield
+    except expected_exception:
+        return
+    raise AssertionError(f"Expected {expected_exception.__name__} to be raised")
 
 
 class _DummySkill:
@@ -62,15 +70,6 @@ class _DummySkill:
     def capture_proof(self, bridge, tag: str) -> ProofArtifact:
         return ProofArtifact(kind="markdown", path=None, data={"tag": tag})
 
-
-@pytest.fixture(autouse=True)
-def _fresh_registry():
-    """Clear the global registry around each test."""
-    clear_skills()
-    yield
-    clear_skills()
-
-
 def test_protocol_structural_check() -> None:
     skill = _DummySkill()
     assert isinstance(skill, Skill)
@@ -102,7 +101,7 @@ def test_clear_skills() -> None:
 
 def test_dataclasses_are_frozen() -> None:
     finding = AuditFinding(severity="high", title="t", detail="d")
-    with pytest.raises(dataclasses.FrozenInstanceError):
+    with _raises(dataclasses.FrozenInstanceError):
         finding.severity = "low"  # type: ignore[misc]
 
     result = AuditResult(
@@ -111,19 +110,19 @@ def test_dataclasses_are_frozen() -> None:
         grade="weak",
         confidence=0.5,
     )
-    with pytest.raises(dataclasses.FrozenInstanceError):
+    with _raises(dataclasses.FrozenInstanceError):
         result.score = 99  # type: ignore[misc]
 
     action = ProposedAction(action_id="a", title="t", tradeoff="t")
-    with pytest.raises(dataclasses.FrozenInstanceError):
+    with _raises(dataclasses.FrozenInstanceError):
         action.title = "new"  # type: ignore[misc]
 
     outcome = ActionOutcome(action_id="a", applied=True)
-    with pytest.raises(dataclasses.FrozenInstanceError):
+    with _raises(dataclasses.FrozenInstanceError):
         outcome.applied = False  # type: ignore[misc]
 
     artifact = ProofArtifact(kind="markdown")
-    with pytest.raises(dataclasses.FrozenInstanceError):
+    with _raises(dataclasses.FrozenInstanceError):
         artifact.kind = "other"  # type: ignore[misc]
 
 

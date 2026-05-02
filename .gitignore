@@ -1,8 +1,13 @@
 .cli-anything-unity-mcp/
+.claude/
+.tmp-import/
 .tmp-agent-chat*.log
 .worktrees/
 .pip-tmp/
 .tmp-tests/
+.uv-cache/
+.uv-python/
+.venv/
 cli_anything_unity_mcp.egg-info/
 __pycache__/
 *.py[cod]

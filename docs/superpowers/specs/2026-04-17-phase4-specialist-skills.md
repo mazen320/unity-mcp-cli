@@ -151,13 +151,13 @@ Phase 4 ships behind one concrete demo that exercises the full stack. If the dem
 
 - **User efficiency:** one sentence, ~4 second response, one click to apply. Not a 30-step wizard.
 - **Exercises five phases at once:** Phase 3 (visible magic in panel), Phase 4 (specialist skill), Phase 5 (LLM-first routing), Phase 6 (capture + markdown export), Phase 7 (learning ledger seed).
-- **Structurally hard for competitors to copy:** Bezi does Actions but one generalist agent. Muse does generators. Nobody ships "physics as discipline" with local learning.
+- **Structurally hard for competitors to copy:** most tools expose broad Unity actions. This direction adds specialist judgement, grounded edits, verification, and local learning.
 - **Template value:** once this works, the same shape clones to Animation ("my attack doesn't feel impactful"), UI ("my HUD feels cluttered"), Level Design ("this room feels empty"). Same interface, different expertise.
 - **Visible before/after:** jump arc capture is an obvious demo GIF for GitHub.
 
 ### Taste vs API
 
-The key difference from Bezi/Coplay: they wrap the Unity API. This skill encodes **taste**. A generalist LLM can tell you what `Rigidbody.drag` does. A physics skill knows that drag=2 + gravity=−15 + jump=8 feels like Hollow Knight, and drag=0 + gravity=−25 + jump=14 feels like Celeste. That's the discipline. That's what users pay for (or in our case, what wins users over vs a paid closed tool).
+The key difference from Bezi/Coplay: they wrap the Unity API. This skill encodes **taste**. A generalist LLM can tell you what `Rigidbody.drag` does. A physics skill should know the difference between controlled air movement, snappy jumps, and loose floaty movement in terms of actual Unity values and tradeoffs. That's the discipline. That's what wins users over.
 
 ---
 

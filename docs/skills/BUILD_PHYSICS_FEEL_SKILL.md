@@ -185,10 +185,10 @@ def propose_physics_feel_tuning(
     current = audit.summary
     paths = []
 
-    # Path 1: Snappy platformer
+    # Path 1: Snappy movement
     paths.append(ProposedAction(
         action_id="physics_feel/snappy",
-        title="Snappier jump (Celeste-style)",
+        title="Snappier jump",
         tradeoff=(
             "Gravity jumps from {} to -25, jump power stays. "
             "Player hits peak faster and falls quicker. "
@@ -201,7 +201,7 @@ def propose_physics_feel_tuning(
     # Path 2: Controlled air
     paths.append(ProposedAction(
         action_id="physics_feel/controlled",
-        title="More air control (Hollow Knight-style)",
+        title="More air control",
         tradeoff=(
             "Drag rises from {} to 2.0, gravity unchanged. "
             "Player slows in air, reads as heavier without losing hangtime. "
@@ -214,7 +214,7 @@ def propose_physics_feel_tuning(
     # Path 3: Arcade / stylized
     paths.append(ProposedAction(
         action_id="physics_feel/arcade",
-        title="Arcade bounce (Mario 64-style)",
+        title="Arcade bounce",
         tradeoff=(
             "Gravity to -30 but jump power raised to match peak height. "
             "Extremely punchy, feels weighty on landings. "
@@ -227,7 +227,7 @@ def propose_physics_feel_tuning(
     return paths
 ```
 
-The `tradeoff` strings are the skill's value. Spend time writing them like a senior Unity dev would explain to a junior. Reference real games. Name what the user gains and loses. This is what makes it not-Bezi.
+The `tradeoff` strings are the skill's value. Spend time writing them like a senior Unity dev would explain to a junior. Name what the user gains and loses without leaning on named game examples. This is what makes it useful.
 
 **Test:** extend `test_physics_feel.py` with propose assertions — 3 paths, stable action_ids, each has non-empty tradeoff string.
 

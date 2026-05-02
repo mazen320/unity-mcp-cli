@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **open-source readiness docs** — refreshed the public README, product plan, contributor guide, start-here guide, and agent operating rules around the current alpha direction: an LLM-driven Unity project copilot where the backend provides context, route validation, execution, and verification instead of hardcoded task recipes.
 - **standalone `CLI Copilot` workspace** — the Unity editor now has a dedicated chat-first copilot window in addition to the existing multi-tab panel. It keeps the same bridge and history, but adds a sidebar for current work, latest plan, and evidence so the assistant can show what it is doing instead of burying everything in one scroll column.
 - **approval-first model plans** — freeform model-backed action plans no longer execute immediately. The bridge now returns a structured proposal with visible pending steps, stores it as a pending plan, and waits for explicit approval before running changes.
 - **conversational model fallback for freeform chat** — when a configured model cannot turn a message into an executable Unity plan, the Agent bridge now uses the same provider for grounded conversational replies with full Unity context and recent chat history instead of immediately falling back to the old “rephrase it as something concrete” planner prompt.

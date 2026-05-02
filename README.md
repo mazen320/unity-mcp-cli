@@ -1,185 +1,173 @@
-# Unity AI Copilot
+# CLI Anything Unity MCP
 
-A Unity AI copilot for real game development. Like Bezi or Cursor, but native to the Unity editor.
+An open-source Unity AI copilot that runs inside the Unity Editor.
 
-It does not generate games. It helps users build the one they already have.
+The goal is simple: make Unity development feel faster by letting an LLM inspect the real project, propose changes, execute through Unity editor APIs, and verify what actually happened.
 
-The target is straightforward: eliminate Unity tedium without bulldozing project architecture, code style, or design intent.
+This is not a pile of hardcoded Python recipes. The assistant should learn the user's intent from chat, read Unity context, choose available Unity routes, and operate the editor safely.
 
-## Product stance
+> Status: alpha. Useful, but still being hardened. Expect rough edges around generated scripts, route coverage, and verification. Contributions are welcome.
 
-- **Collaborator, not generator**. Work with the existing project. Respect current architecture, naming, and conventions.
-- **Context-aware**. Read the real scene, scripts, prefabs, assets, and settings before acting.
-- **Execute in-editor**. Scene and inspector changes should happen through Unity editor APIs, not blind file writes.
-- **Reversible**. Every mutation should be Undo-safe.
-- **Tedious-work first**. Focus on wiring, inspector edits, event hookups, physics setup, animator setup, references, and other work that slows real Unity development down.
-- **Verify and self-correct**. Compile, inspect, capture, and report the real result instead of pretending success.
-- **Conversational**. The product surface is natural-language chat inside Unity.
-- **Safe by default**. Destructive work needs clear consent. Batch sweeps are not the default.
+## What It Can Do Today
 
-## What it does today
+- Chat inside Unity through `Window > CLI Copilot` or the `Agent` tab in `Window > CLI Anything`.
+- Use OpenRouter, OpenAI, or Anthropic API keys for model-backed conversation and planning.
+- Read live Unity context: active scene, hierarchy, scripts, compile state, project settings, and recent chat.
+- Propose executable multi-step plans and wait for approval before applying.
+- Create and modify GameObjects, components, materials, scripts, scenes, prefabs, lighting, tags, layers, and physics setup through File IPC routes.
+- Create new scenes when the user asks for work to happen separately.
+- Wait for Unity script compilation before attaching newly generated MonoBehaviours.
+- Review a game/project conversationally without immediately turning every message into a plan.
+- Run local debugging and inspection commands from the CLI.
 
-- Runs inside the Unity editor through the `Agent` tab in `Window > CLI Anything`
-- Reads live project and scene context before bounded actions
-- Supports project-local model/provider configuration through `.umcp/agent-config.json`
-- Supports project-local provider secrets through `.umcp/agent.env`
-- Ships a first specialist skill, `physics_feel`, for requests like `my player feels floaty`
-- Applies bounded scene hygiene fixes through the Unity bridge for low-risk setup issues
-- Captures before/after proof for visual flows
-- Logs local run history in `.umcp/ledger/`
-- Exposes a CLI for debugging, bridge inspection, and power-user scripting
+## What It Is Not
 
-## What it is not
+- Not a one-click replacement for a Unity developer.
+- Not a prompt-only chatbot that pretends it changed Unity.
+- Not a code dump tool that blindly writes files without Unity context.
+- Not a benchmark or scoring product.
+- Not cloud-first telemetry. Project memory and run logs are local-first.
 
-- Not a game generator
-- Not a raw text-sandbox that rewrites code blindly
-- Not a batch cleanup bot that mutates a whole project without consent
-- Not a grading product whose main value is scores or benchmark numbers
-- Not a cloud-first system that depends on hidden telemetry
+It can help create or modify project features when asked. The difference is that the LLM should use real Unity context and editor routes rather than prewritten task recipes.
 
-## How it should feel
+## Screenshots
 
-Open Unity. Open `Window > CLI Anything`. Go to the `Agent` tab. Talk to it.
+![Unity Game View](docs/media/unity-debug-game-view.png)
 
-> **You:** my player feels floaty
->
-> **Copilot:** I checked the live player setup. Three ways to tighten the feel:
-> 1. Raise gravity for a snappier fall
-> 2. Increase body weight for a heavier feel
-> 3. Rebalance drag and gravity for more tuning headroom
->
-> Which direction do you want?
->
-> **You:** 1
->
-> **Copilot:** Applying option 1. I’ll capture before/after and keep this Undo-safe.
+![Unity Scene View](docs/media/unity-debug-scene-view.png)
 
-That loop matters more than raw tool count:
+## How It Works
 
-- read the real project
-- propose real tradeoffs
-- get consent
-- mutate safely
-- verify the result
-- make it easy to revert
+```text
+User chat in Unity
+        |
+        v
+Model-backed assistant
+        |
+        v
+Context + route-aware planner
+        |
+        v
+File IPC command queue in .umcp/
+        |
+        v
+Unity Editor main thread
+        |
+        v
+Route result, compile check, screenshots, history
+```
+
+The split matters:
+
+- The LLM decides what the user wants and what Unity actions to take.
+- Python validates that the plan is executable and safe enough to ask for approval.
+- Unity executes the work on the main thread through editor APIs.
+- The assistant reports route results instead of claiming success blindly.
 
 ## Install
 
 ### Requirements
 
-- Unity 2021.3+ recommended
-- Python 3.11+
-- `click>=8.1`
+- Unity 2021.3 or newer recommended
+- Python 3.11 or newer
+- A model provider key for real chat/planning:
+  - `OPENROUTER_API_KEY`
+  - `OPENAI_API_KEY`
+  - `ANTHROPIC_API_KEY`
 
 ### Setup
 
-1. Copy the bridge scripts into your Unity project:
-   - `unity-scripts/Editor/FileIPCBridge.cs` -> `Assets/Editor/`
-   - `unity-scripts/Editor/StandaloneRouteHandler.cs` -> `Assets/Editor/`
-   - `unity-scripts/Editor/CliAnythingWindow.cs` -> `Assets/Editor/`
-2. Install the Python package:
+1. Install the Python package from this repository:
 
-```powershell
-python -m pip install -e .
-```
+   ```powershell
+   python -m pip install -e .
+   ```
 
-3. In Unity, open `Window > CLI Anything`.
-4. Go to the `Agent` tab and click `Connect`.
+2. Copy the Unity editor scripts into your Unity project:
 
-Communication happens through `.umcp/` files in the Unity project. No ports are required for the File IPC path.
+   ```text
+   unity-scripts/Editor/FileIPCBridge.cs -> Assets/Editor/FileIPCBridge.cs
+   unity-scripts/Editor/StandaloneRouteHandler.cs -> Assets/Editor/StandaloneRouteHandler.cs
+   unity-scripts/Editor/CliAnythingWindow.cs -> Assets/Editor/CliAnythingWindow.cs
+   ```
 
-## Bridge configuration
+3. Open Unity and use one of:
 
-Per-project provider/model preferences live in `.umcp/agent-config.json`:
+   ```text
+   Window > CLI Copilot
+   Window > CLI Anything
+   ```
 
-```json
-{
-  "preferredProvider": "auto",
-  "preferredModel": "gpt-5-codex"
-}
-```
+4. In the Copilot settings, configure a provider/model, or add a project-local env file:
 
-Optional local provider secrets live in `.umcp/agent.env`:
+   ```text
+   <UnityProject>/.umcp/agent.env
+   ```
 
-```dotenv
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-```
+   Example:
 
-Process environment variables still take precedence. `.umcp/agent.env` is the project-local convenience layer, not a replacement for normal environment configuration.
+   ```dotenv
+   OPENROUTER_API_KEY=...
+   ```
 
-## Specialist skills
+5. Click `Connect` in the Unity window.
 
-The copilot should grow as a set of specialist skills. Each skill should follow the same shape:
+## Example Prompts
 
-`notice -> diagnose -> propose tradeoffs -> consent -> apply -> verify -> ledger`
-
-Current anchor skill:
-
-- `physics_feel`
-
-Next skills in the backlog:
-
-- `collision_setup`
-- `event_wiring`
-- `animator_wiring`
-- `ui_canvas`
-- `serialized_property`
-- `scriptable_refs`
-- `layer_matrix`
-- `prefab_overrides`
-- `input_binding`
-- `reference_rewiring`
-
-If you are adding a skill, use [docs/skills/WRITING_A_SKILL.md](docs/skills/WRITING_A_SKILL.md).
-
-## Architecture
+Use it conversationally:
 
 ```text
-You
-  -> Unity Agent tab
-  -> skill router
-  -> specialist skill
-  -> File IPC bridge
-  -> Unity main thread
-  -> local ledger + memory
+What do you think of this scene?
+Can you inspect my player controller setup?
+Why does the camera feel wrong?
 ```
 
-The CLI still matters, but as a support surface:
+Ask for bounded edits:
 
-- debugging
-- bridge inspection
-- scripted power-user flows
-- regression checks
+```text
+Create a new scene for testing this feature and set up the required objects.
+Add a CharacterController-based player to this scene.
+Create a script for this object and attach it after compile.
+Show me which object you are targeting before changing anything.
+```
 
-The chat surface inside Unity is the product. The CLI is the power-user and debugging layer behind it.
+For larger requests, the assistant should propose a plan first and wait for approval.
 
-## Power-user CLI
+## Power-User CLI
 
-Useful commands when debugging or scripting the bridge:
+The CLI is mainly for debugging and automation:
 
 ```powershell
-cli-anything-unity-mcp instances
-cli-anything-unity-mcp select <port>
-cli-anything-unity-mcp --json status --port <port>
-cli-anything-unity-mcp --json debug doctor --port <port>
-cli-anything-unity-mcp --json debug trace --tail 20
-cli-anything-unity-mcp --json debug capture --kind both --port <port>
-cli-anything-unity-mcp --json agent sessions
-cli-anything-unity-mcp --json agent queue
+cli-anything-unity-mcp --help
+cli-anything-unity-mcp --transport file --file-ipc-path "C:\Path\To\UnityProject" --json debug doctor
+cli-anything-unity-mcp --transport file --file-ipc-path "C:\Path\To\UnityProject" --json agent sessions
+cli-anything-unity-mcp --transport file --file-ipc-path "C:\Path\To\UnityProject" --json scene-info
 ```
 
-Use the CLI when you need to inspect the bridge, verify behavior, or automate a debugging flow. Do not treat it as the main user-facing product story.
+## Roadmap Direction
 
-## Docs
+The right direction is AI-driven Unity control, not hardcoded per-task scripts.
 
-- [../../PLAN.md](../../PLAN.md) — product vision and roadmap
-- [TODO.md](TODO.md) — current priorities
-- [TASKS.md](TASKS.md) — full backlog
-- [AGENTS.md](AGENTS.md) — repo operating rules for AI agents
-- [docs/skills/WRITING_A_SKILL.md](docs/skills/WRITING_A_SKILL.md) — skill template
-- [FILE_IPC.md](FILE_IPC.md) — transport details
-- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow
+Near-term priorities:
+
+1. Stronger project context indexing across scripts, scenes, prefabs, assets, and settings.
+2. Better post-action verification: compile errors, route readback, screenshots, and clear failure messages.
+3. Safer generated-code flow: diff first, compile, repair or rollback.
+4. Smarter target resolution from hierarchy, components, scripts, and user language.
+5. Cleaner in-editor UX for plan review, progress, evidence, and undo.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [AGENTS.md](AGENTS.md).
+
+Good first contribution areas:
+
+- Route reliability and clearer error messages.
+- Unity-side Undo coverage.
+- Context indexing.
+- Agent tab UX.
+- Real Unity project smoke tests.
+- Documentation and setup improvements.
 
 ## License
 

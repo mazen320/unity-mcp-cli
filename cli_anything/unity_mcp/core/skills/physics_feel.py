@@ -4,8 +4,7 @@ This is the anchor demo for Phase 4 (`docs/superpowers/specs/2026-04-17-
 phase4-specialist-skills.md`). It encodes physics *as a discipline* — not
 a wrapper around the Unity API. When a user says "my player feels floaty,"
 the skill audits the player's movement body, proposes three tuning paths
-with real tradeoffs (Celeste-snappy, Hollow-Knight-controlled,
-Mario-64-arcade), and applies one bounded change with before/after proof.
+with real tradeoffs, and applies one bounded change with before/after proof.
 
 Audit today runs from ``ProjectContext.inspect_payload`` component-name
 strings plus scene systems summary. Reading exact Rigidbody field values
@@ -145,11 +144,11 @@ def floatiness_score(
     """Return 0-100 where higher = more floaty.
 
     Three signals contribute: long airtime, low drag, weak gravity. Weights
-    were picked empirically against known-feel targets:
-        Celeste (snappy)    ~  8/100
-        Hollow Knight        ~ 35/100
-        Mario 64 (floaty)    ~ 65/100
-        "my player floats"   ~ 75/100+
+    were picked empirically against broad movement-feel targets:
+        responsive/stiff      ~  8/100
+        controlled            ~ 35/100
+        loose/floaty          ~ 65/100
+        "my player floats"    ~ 75/100+
     """
     # Each penalty is bounded so the total saturates cleanly at 100 without
     # any single signal dominating. Airtime is the biggest contributor because
@@ -364,7 +363,7 @@ def audit_physics_feel(context: ProjectContext) -> AuditResult:
             detail_parts.append("Drag is effectively zero — the player never slows in air.")
         if abs(gravity_y) < 15:
             detail_parts.append(
-                f"Gravity is {gravity_y:.1f} — default Unity gravity is light for punchy platformers."
+                f"Gravity is {gravity_y:.1f} — default Unity gravity can feel light for punchy movement."
             )
         findings.append(
             AuditFinding(
@@ -434,7 +433,7 @@ def propose_physics_feel_tuning(
     return [
         ProposedAction(
             action_id="physics_feel/snappy",
-            title="Snappier jump (Celeste-style)",
+            title="Snappier jump",
             tradeoff=(
                 f"Gravity jumps from {gravity_y:.1f} to -25.0 while drag stays at {drag:.2f}. "
                 "The player reaches the apex sooner and falls harder, which reads as responsive "
@@ -452,7 +451,7 @@ def propose_physics_feel_tuning(
         ),
         ProposedAction(
             action_id="physics_feel/controlled",
-            title="More air control (Hollow Knight-style)",
+            title="More air control",
             tradeoff=(
                 f"Drag rises from {drag:.2f} to 2.0 while gravity stays at {gravity_y:.1f}. "
                 "The player keeps roughly the same jump arc but stops gliding through the air, "
@@ -471,7 +470,7 @@ def propose_physics_feel_tuning(
         ),
         ProposedAction(
             action_id="physics_feel/arcade",
-            title="Arcade bounce (Mario 64-style)",
+            title="Arcade bounce",
             tradeoff=(
                 "Gravity shifts to -30.0 and jump power is expected to scale by 1.4x to keep a "
                 "similar peak height. The result is punchier takeoff and weightier landings with "
